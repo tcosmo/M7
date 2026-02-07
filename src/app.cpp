@@ -158,6 +158,18 @@ bool App::loadScore(const QString& musicXmlPath)
     qDebug() << "Parts:" << m_score->parts().size();
     qDebug() << "Measures:" << m_score->nmeasures();
 
+    // Page layout: Letter, matching MuseScore defaults
+    m_score->style().set(Sid::pageWidth, 8.5);
+    m_score->style().set(Sid::pageHeight, 11.0);
+    m_score->style().set(Sid::spatium, 0.046 * 1200.0); // 0.046in in internal units
+    m_score->style().set(Sid::pageOddTopMargin, 0.39);
+    m_score->style().set(Sid::pageOddBottomMargin, 0.79);
+    m_score->style().set(Sid::pageOddLeftMargin, 0.39);
+    m_score->style().set(Sid::pageEvenTopMargin, 0.39);
+    m_score->style().set(Sid::pageEvenBottomMargin, 0.79);
+    m_score->style().set(Sid::pageEvenLeftMargin, 0.39);
+    m_score->style().set(Sid::pagePrintableWidth, 8.5 - 0.39 - 0.39);
+
     // Ensure instrument names show on all systems
     m_score->style().set(Sid::firstSystemInstNameVisibility,
         mu::engraving::PropertyValue(int(InstrumentLabelVisibility::LONG)));
@@ -201,10 +213,14 @@ bool App::loadScore(const QString& musicXmlPath)
 
     qDebug() << "Score layout complete, pages:" << m_score->pages().size();
 
-    // Debug: check instrument name settings
-    qDebug() << "Style firstSystemInstNameVisibility:" << m_score->style().styleI(Sid::firstSystemInstNameVisibility);
-    qDebug() << "Style subsSystemInstNameVisibility:" << m_score->style().styleI(Sid::subsSystemInstNameVisibility);
-    qDebug() << "Style hideInstrumentNameIfOneInstrument:" << m_score->style().styleB(Sid::hideInstrumentNameIfOneInstrument);
+    // Debug: page layout
+    qDebug() << "pageWidth:" << m_score->style().styleD(Sid::pageWidth) << "in"
+             << "pageHeight:" << m_score->style().styleD(Sid::pageHeight) << "in";
+    qDebug() << "spatium:" << m_score->style().spatium() / 1200.0 << "in";
+    qDebug() << "margins - top:" << m_score->style().styleD(Sid::pageOddTopMargin)
+             << "bottom:" << m_score->style().styleD(Sid::pageOddBottomMargin)
+             << "left:" << m_score->style().styleD(Sid::pageOddLeftMargin)
+             << "right:" << m_score->style().styleD(Sid::pageEvenLeftMargin);
     for (const auto* part : m_score->parts()) {
         const auto& instr = *part->instrument();
         qDebug() << "Part:" << part->partName()

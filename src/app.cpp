@@ -3,6 +3,7 @@
 #include "audioplayer.h"
 #include "synctimer.h"
 #include "partpanel.h"
+#include "displaysettings.h"
 #include "beatdata.h"
 
 #include "modularity/ioc.h"
@@ -53,6 +54,13 @@ App::App(QWidget* parent)
         m_scoreWidget->setScore(m_score); // refresh
     });
 
+    connect(m_displaySettings, &DisplaySettings::settingChanged, [this]() {
+        if (!m_score || !m_renderer) return;
+        m_score->setShowVBox(m_displaySettings->showTitleFrame());
+        m_renderer->layoutScore(m_score, Fraction(0, 1), Fraction(-1, 1));
+        m_scoreWidget->setScore(m_score); // refresh
+    });
+
     // Set up beat data
     m_syncTimer->setMeasureStarts(MAGNIFICAT_MEASURE_STARTS);
     m_syncTimer->setBeatTimes(MAGNIFICAT_BEAT_TIMES, BEATS_PER_MEASURE);
@@ -70,6 +78,9 @@ void App::setupUI()
 
     m_partPanel = new PartPanel(this);
     addDockWidget(Qt::RightDockWidgetArea, m_partPanel);
+
+    m_displaySettings = new DisplaySettings(this);
+    addDockWidget(Qt::RightDockWidgetArea, m_displaySettings);
 }
 
 void App::setupToolbar()
@@ -226,6 +237,9 @@ bool App::loadScore(const QString& musicXmlPath)
             instr->setShortName(muse::String::fromQString(shortName));
         }
     }
+
+    // Apply display settings before layout
+    m_score->setShowVBox(m_displaySettings->showTitleFrame());
 
     // Layout the score
     m_renderer->layoutScore(m_score, Fraction(0, 1), Fraction(-1, 1));

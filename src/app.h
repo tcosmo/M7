@@ -20,6 +20,7 @@ class ScoreWidget;
 class AudioPlayer;
 class SyncTimer;
 class PartPanel;
+class DisplaySettings;
 
 class App : public QMainWindow
 {
@@ -45,6 +46,7 @@ private:
     // UI
     ScoreWidget* m_scoreWidget = nullptr;
     PartPanel* m_partPanel = nullptr;
+    DisplaySettings* m_displaySettings = nullptr;
     QToolBar* m_toolbar = nullptr;
     QAction* m_playPauseAction = nullptr;
     QAction* m_stopAction = nullptr;

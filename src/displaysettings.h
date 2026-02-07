@@ -1,12 +1,12 @@
 #pragma once
 
-#include <QDockWidget>
+#include <QWidget>
 #include <QCheckBox>
 #include <QComboBox>
 
 namespace scoretracker {
 
-class DisplaySettings : public QDockWidget
+class DisplaySettings : public QWidget
 {
     Q_OBJECT
 

@@ -134,6 +134,7 @@ add_executable(scoretracker
     src/synctimer.cpp
     src/partpanel.h
     src/partpanel.cpp
+    src/collapsiblesection.h
     src/displaysettings.h
     src/displaysettings.cpp
     src/beatdata.h

@@ -13,17 +13,21 @@ using namespace mu::engraving::rendering;
 namespace scoretracker {
 
 PartPanel::PartPanel(QWidget* parent)
-    : QDockWidget("Parts", parent)
+    : QWidget(parent)
 {
-    setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-
-    auto* container = new QWidget(this);
-    auto* layout = new QVBoxLayout(container);
+    setStyleSheet(
+        "PartPanel { background-color: #2d2d2d; }"
+        "QListWidget { background-color: #252525; border: none; }"
+        "QPushButton { background-color: #3d3d3d; border: 1px solid #555; padding: 4px; border-radius: 3px; }"
+        "QPushButton:hover { background-color: #4d4d4d; }"
+    );
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(4, 4, 4, 4);
 
     // Buttons
     auto* btnLayout = new QHBoxLayout();
-    auto* btnAll = new QPushButton("Show All", container);
-    auto* btnSolo = new QPushButton("Solo", container);
+    auto* btnAll = new QPushButton("Show All", this);
+    auto* btnSolo = new QPushButton("Solo", this);
 
     btnLayout->addWidget(btnAll);
     btnLayout->addWidget(btnSolo);
@@ -33,12 +37,10 @@ PartPanel::PartPanel(QWidget* parent)
     connect(btnSolo, &QPushButton::clicked, this, &PartPanel::showSoloPart);
 
     // Part list
-    m_listWidget = new QListWidget(container);
+    m_listWidget = new QListWidget(this);
     layout->addWidget(m_listWidget);
 
     connect(m_listWidget, &QListWidget::itemChanged, this, &PartPanel::onItemChanged);
-
-    setWidget(container);
 }
 
 void PartPanel::setScore(Score* score)
@@ -50,6 +52,16 @@ void PartPanel::setScore(Score* score)
 void PartPanel::setRenderer(IScoreRenderer* renderer)
 {
     m_renderer = renderer;
+}
+
+int PartPanel::desiredHeight() const
+{
+    int totalRowH = 0;
+    for (int i = 0; i < m_listWidget->count(); ++i) {
+        totalRowH += m_listWidget->sizeHintForRow(i);
+    }
+    // rows + list frame + buttons + layout margins
+    return totalRowH + 4 + 40 + 16;
 }
 
 void PartPanel::populateList()

@@ -2,6 +2,7 @@
 
 #include <QPainter>
 #include <QPaintEvent>
+#include <QResizeEvent>
 #include <QScrollBar>
 #include <QGestureEvent>
 #include <QPinchGesture>
@@ -269,6 +270,11 @@ static constexpr double ZOOM_DEFAULT = 1.5;
 ScoreWidget::ScoreWidget(QWidget* parent)
     : QScrollArea(parent)
 {
+    QPalette pal = palette();
+    pal.setColor(QPalette::Window, QColor(200, 200, 200));
+    setPalette(pal);
+    setAutoFillBackground(true);
+
     m_canvas = new ScoreCanvas(this);
     setWidget(m_canvas);
     setWidgetResizable(false);
@@ -315,7 +321,7 @@ void ScoreWidget::zoomToFit()
     if (maxW <= 0) return;
 
     double dpi = m_canvas->logicalDpiX();
-    int vpWidth = viewport()->width();
+    int vpWidth = viewport()->width() - 20; // margin on both sides
 
     // zoom * dpi / 1200 = scale, and we want: maxW * scale = vpWidth
     // so zoom = vpWidth * 1200 / (maxW * dpi)
@@ -361,6 +367,12 @@ void ScoreWidget::setCursorRect(const muse::RectF& rect, int pageIndex)
     if (pageIndex >= 0 && pageIndex != prevPage) {
         ensureCursorVisible();
     }
+}
+
+void ScoreWidget::resizeEvent(QResizeEvent* event)
+{
+    QScrollArea::resizeEvent(event);
+    zoomToFit();
 }
 
 void ScoreWidget::ensureCursorVisible()

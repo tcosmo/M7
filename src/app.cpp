@@ -4,6 +4,7 @@
 #include "synctimer.h"
 #include "partpanel.h"
 #include "displaysettings.h"
+#include "collapsiblesection.h"
 #include "beatdata.h"
 
 #include "modularity/ioc.h"
@@ -26,6 +27,9 @@
 #include <QFileInfo>
 #include <QPainter>
 #include <QStyle>
+#include <QTimer>
+#include <QVBoxLayout>
+#include <QSplitter>
 
 using namespace mu::engraving;
 using namespace mu::engraving::rendering;
@@ -86,14 +90,74 @@ App::~App()
 
 void App::setupUI()
 {
-    m_scoreWidget = new ScoreWidget(this);
-    setCentralWidget(m_scoreWidget);
+    m_mainSplitter = new QSplitter(Qt::Horizontal, this);
+    setCentralWidget(m_mainSplitter);
 
-    m_partPanel = new PartPanel(this);
-    addDockWidget(Qt::RightDockWidgetArea, m_partPanel);
+    m_scoreWidget = new ScoreWidget(m_mainSplitter);
+    m_mainSplitter->addWidget(m_scoreWidget);
 
-    m_displaySettings = new DisplaySettings(this);
-    addDockWidget(Qt::RightDockWidgetArea, m_displaySettings);
+    // Sidebar: a widget containing the vertical splitter
+    m_sidebarWidget = new QWidget(m_mainSplitter);
+    m_sidebarWidget->setMinimumWidth(200);
+    m_sidebarWidget->setMaximumWidth(500);
+    m_sidebarWidget->setStyleSheet("background-color: #2d2d2d;");
+
+    auto* sidebarLayout = new QVBoxLayout(m_sidebarWidget);
+    sidebarLayout->setContentsMargins(0, 0, 0, 0);
+
+    m_sidebarSplitter = new QSplitter(Qt::Vertical);
+    m_sidebarSplitter->setChildrenCollapsible(false);
+    m_sidebarSplitter->setStyleSheet(
+        "QSplitter { background-color: #2d2d2d; }"
+        "QSplitter::handle { background-color: #2d2d2d; height: 2px; }"
+    );
+
+    m_partPanel = new PartPanel();
+    m_sidebarSplitter->addWidget(new CollapsibleSection("Parts", m_partPanel));
+
+    m_displaySettings = new DisplaySettings();
+    m_sidebarSplitter->addWidget(new CollapsibleSection("Score Display", m_displaySettings));
+
+    // Spacer absorbs extra space at the bottom
+    auto* spacer = new QWidget();
+    spacer->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    m_sidebarSplitter->addWidget(spacer);
+
+    m_sidebarSplitter->setStretchFactor(0, 0);
+    m_sidebarSplitter->setStretchFactor(1, 0);
+    m_sidebarSplitter->setStretchFactor(2, 1);
+
+    sidebarLayout->addWidget(m_sidebarSplitter);
+    m_mainSplitter->addWidget(m_sidebarWidget);
+
+    // Allow the sidebar to collapse when dragged past its minimum
+    m_mainSplitter->setCollapsible(0, false); // score never collapses
+    m_mainSplitter->setCollapsible(1, true);  // sidebar collapses on drag
+
+    // Initial sizes: score gets most space, sidebar gets 250
+    m_mainSplitter->setSizes({1000, 250});
+
+    // Detect sidebar collapse/expand via splitter movement
+    connect(m_mainSplitter, &QSplitter::splitterMoved, [this]() {
+        QList<int> sizes = m_mainSplitter->sizes();
+        bool collapsed = (sizes.size() > 1 && sizes[1] == 0);
+        m_sidebarAction->blockSignals(true);
+        m_sidebarAction->setChecked(!collapsed);
+        m_sidebarAction->blockSignals(false);
+    });
+}
+
+void App::setSidebarVisible(bool visible)
+{
+    if (visible) {
+        // Restore sidebar to 250px
+        int total = m_mainSplitter->sizes()[0] + m_mainSplitter->sizes()[1];
+        m_mainSplitter->setSizes({total - 250, 250});
+    } else {
+        // Collapse sidebar to 0
+        int total = m_mainSplitter->sizes()[0] + m_mainSplitter->sizes()[1];
+        m_mainSplitter->setSizes({total, 0});
+    }
 }
 
 void App::setupToolbar()
@@ -158,6 +222,16 @@ void App::setupToolbar()
 
     connect(m_scoreWidget, &ScoreWidget::zoomChanged, [this](double zoom) {
         m_zoomLabel->setText(QString("%1%").arg(static_cast<int>(zoom * 100)));
+    });
+
+    m_toolbar->addSeparator();
+
+    m_sidebarAction = m_toolbar->addAction("Sidebar");
+    m_sidebarAction->setCheckable(true);
+    m_sidebarAction->setChecked(true);
+    m_sidebarAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_B));
+    connect(m_sidebarAction, &QAction::toggled, [this](bool on) {
+        setSidebarVisible(on);
     });
 
     connect(m_audioPlayer, &AudioPlayer::playbackStarted, [this]() {
@@ -288,7 +362,20 @@ bool App::loadScore(const QString& musicXmlPath)
     m_partPanel->setScore(m_score);
     m_partPanel->setRenderer(m_renderer.get());
 
+    // Size the Parts section: show all parts or cap at 60% of window
+    int sectionHeaderH = 28; // CollapsibleSection header
+    int desiredPartsHeight = sectionHeaderH + m_partPanel->desiredHeight();
+    int maxPartsHeight = height() * 6 / 10;
+    int partsHeight = std::min(desiredPartsHeight, maxPartsHeight);
+    int displayHeight = 120;
+    int remaining = height() - partsHeight - displayHeight;
+    if (remaining < 0) remaining = 0;
+    m_sidebarSplitter->setSizes({partsHeight, displayHeight, remaining});
+
     setWindowTitle(QString("ScoreTracker - %1").arg(fi.fileName()));
+
+    // Fit score to viewport after layout settles
+    QTimer::singleShot(0, m_scoreWidget, &ScoreWidget::zoomToFit);
 
     return true;
 }

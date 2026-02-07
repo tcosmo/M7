@@ -12,25 +12,26 @@
 namespace scoretracker {
 
 DisplaySettings::DisplaySettings(QWidget* parent)
-    : QDockWidget("Score Display", parent)
+    : QWidget(parent)
 {
-    setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    setStyleSheet(
+        "DisplaySettings { background-color: #2d2d2d; }"
+        "QLabel { background-color: transparent; }"
+        "QComboBox { background-color: #3d3d3d; border: 1px solid #555; padding: 2px 4px; border-radius: 3px; }"
+        "QCheckBox { background-color: transparent; }"
+    );
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(4, 4, 4, 4);
 
-    auto* container = new QWidget(this);
-    auto* layout = new QVBoxLayout(container);
-
-    layout->addWidget(new QLabel("Layout", container));
-    m_layoutModeCombo = new QComboBox(container);
+    layout->addWidget(new QLabel("Layout", this));
+    m_layoutModeCombo = new QComboBox(this);
     m_layoutModeCombo->addItem("Page");
     m_layoutModeCombo->addItem("Continuous Horizontal");
     m_layoutModeCombo->addItem("Continuous Vertical");
     layout->addWidget(m_layoutModeCombo);
 
-    m_showTitleCheckbox = new QCheckBox("Show title and composer", container);
+    m_showTitleCheckbox = new QCheckBox("Show title and composer", this);
     layout->addWidget(m_showTitleCheckbox);
-    layout->addStretch();
-
-    setWidget(container);
 
     load();
 

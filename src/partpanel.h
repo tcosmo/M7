@@ -1,6 +1,6 @@
 #pragma once
 
-#include <QDockWidget>
+#include <QWidget>
 #include <QListWidget>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -16,7 +16,7 @@ class IScoreRenderer;
 
 namespace scoretracker {
 
-class PartPanel : public QDockWidget
+class PartPanel : public QWidget
 {
     Q_OBJECT
 
@@ -25,6 +25,7 @@ public:
 
     void setScore(mu::engraving::Score* score);
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
+    int desiredHeight() const;
 
 signals:
     void partsChanged();

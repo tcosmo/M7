@@ -187,6 +187,7 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
     painter.setAntialiasing(true);
 
     PaintOptions paintOpt;
+    paintOpt.isPrinting = true;
     double yOffsetScore = PAGE_GAP / (2.0 * s); // gap in score coords
 
     for (size_t pi = 0; pi < pages.size(); ++pi) {

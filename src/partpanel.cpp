@@ -20,18 +20,15 @@ PartPanel::PartPanel(QWidget* parent)
 
     // Buttons
     auto* btnLayout = new QHBoxLayout();
-    auto* btnFull = new QPushButton("Full Score", container);
-    auto* btnSolo = new QPushButton("Solo", container);
     auto* btnAll = new QPushButton("Show All", container);
+    auto* btnSolo = new QPushButton("Solo", container);
 
-    btnLayout->addWidget(btnFull);
-    btnLayout->addWidget(btnSolo);
     btnLayout->addWidget(btnAll);
+    btnLayout->addWidget(btnSolo);
     layout->addLayout(btnLayout);
 
-    connect(btnFull, &QPushButton::clicked, this, &PartPanel::showFullScore);
-    connect(btnSolo, &QPushButton::clicked, this, &PartPanel::showSoloPart);
     connect(btnAll, &QPushButton::clicked, this, &PartPanel::showAllParts);
+    connect(btnSolo, &QPushButton::clicked, this, &PartPanel::showSoloPart);
 
     // Part list
     m_listWidget = new QListWidget(container);
@@ -95,19 +92,6 @@ void PartPanel::onItemChanged(QListWidgetItem* item)
     relayout();
 }
 
-void PartPanel::showFullScore()
-{
-    if (!m_score) return;
-
-    m_listWidget->blockSignals(true);
-    for (int i = 0; i < static_cast<int>(m_parts.size()); ++i) {
-        m_parts[i]->setShow(true);
-        m_listWidget->item(i)->setCheckState(Qt::Checked);
-    }
-    m_listWidget->blockSignals(false);
-    relayout();
-}
-
 void PartPanel::showSoloPart()
 {
     if (!m_score || m_parts.empty()) return;
@@ -128,7 +112,15 @@ void PartPanel::showSoloPart()
 
 void PartPanel::showAllParts()
 {
-    showFullScore(); // Same behavior
+    if (!m_score) return;
+
+    m_listWidget->blockSignals(true);
+    for (int i = 0; i < static_cast<int>(m_parts.size()); ++i) {
+        m_parts[i]->setShow(true);
+        m_listWidget->item(i)->setCheckState(Qt::Checked);
+    }
+    m_listWidget->blockSignals(false);
+    relayout();
 }
 
 void PartPanel::relayout()

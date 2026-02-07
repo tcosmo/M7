@@ -31,7 +31,6 @@ signals:
 
 private slots:
     void onItemChanged(QListWidgetItem* item);
-    void showFullScore();
     void showSoloPart();
     void showAllParts();
 

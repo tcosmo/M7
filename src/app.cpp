@@ -113,6 +113,25 @@ void App::setupToolbar()
         }
     });
 
+    m_toolbar->addSeparator();
+
+    auto* zoomOutAction = m_toolbar->addAction("-");
+    zoomOutAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus));
+    connect(zoomOutAction, &QAction::triggered, m_scoreWidget, &ScoreWidget::zoomOut);
+
+    m_zoomLabel = new QLabel("150%", this);
+    m_zoomLabel->setMinimumWidth(50);
+    m_zoomLabel->setAlignment(Qt::AlignCenter);
+    m_toolbar->addWidget(m_zoomLabel);
+
+    auto* zoomInAction = m_toolbar->addAction("+");
+    zoomInAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Equal));
+    connect(zoomInAction, &QAction::triggered, m_scoreWidget, &ScoreWidget::zoomIn);
+
+    connect(m_scoreWidget, &ScoreWidget::zoomChanged, [this](double zoom) {
+        m_zoomLabel->setText(QString("%1%").arg(static_cast<int>(zoom * 100)));
+    });
+
     connect(m_audioPlayer, &AudioPlayer::playbackStarted, [this]() {
         m_playPauseAction->setText("Pause");
     });

@@ -2,6 +2,7 @@
 
 #include <QWidget>
 #include <QScrollArea>
+#include <QGestureEvent>
 #include <memory>
 
 #include "types/geometry.h"
@@ -58,12 +59,21 @@ public:
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
     void setZoom(double zoom);
     double zoom() const;
+    void zoomIn();
+    void zoomOut();
+
+signals:
+    void zoomChanged(double zoom);
 
 public slots:
     void setCursorRect(const muse::RectF& rect, int pageIndex);
 
+protected:
+    bool event(QEvent* event) override;
+
 private:
     void ensureCursorVisible();
+    void applyZoom(double newZoom);
 
     ScoreCanvas* m_canvas = nullptr;
 };

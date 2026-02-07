@@ -51,6 +51,7 @@ private:
     QAction* m_trackingAction = nullptr;
     QSlider* m_seekSlider = nullptr;
     QLabel* m_timeLabel = nullptr;
+    QLabel* m_zoomLabel = nullptr;
 
     // Backend
     AudioPlayer* m_audioPlayer = nullptr;

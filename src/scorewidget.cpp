@@ -3,6 +3,8 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QScrollBar>
+#include <QGestureEvent>
+#include <QPinchGesture>
 #include <QDebug>
 
 #include "draw/painter.h"
@@ -248,6 +250,11 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
 
 // --- ScoreWidget ---
 
+static constexpr double ZOOM_MIN = 0.5;
+static constexpr double ZOOM_MAX = 4.0;
+static constexpr double ZOOM_STEP = 0.1;
+static constexpr double ZOOM_DEFAULT = 1.5;
+
 ScoreWidget::ScoreWidget(QWidget* parent)
     : QScrollArea(parent)
 {
@@ -257,6 +264,8 @@ ScoreWidget::ScoreWidget(QWidget* parent)
     setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
+    grabGesture(Qt::PinchGesture);
+    m_canvas->setZoom(ZOOM_DEFAULT);
 }
 
 void ScoreWidget::setScore(Score* score)
@@ -271,12 +280,45 @@ void ScoreWidget::setRenderer(IScoreRenderer* renderer)
 
 void ScoreWidget::setZoom(double zoom)
 {
-    m_canvas->setZoom(zoom);
+    applyZoom(zoom);
 }
 
 double ScoreWidget::zoom() const
 {
     return m_canvas->zoom();
+}
+
+void ScoreWidget::zoomIn()
+{
+    applyZoom(m_canvas->zoom() + ZOOM_STEP);
+}
+
+void ScoreWidget::zoomOut()
+{
+    applyZoom(m_canvas->zoom() - ZOOM_STEP);
+}
+
+void ScoreWidget::applyZoom(double newZoom)
+{
+    newZoom = std::clamp(newZoom, ZOOM_MIN, ZOOM_MAX);
+    if (qFuzzyCompare(newZoom, m_canvas->zoom())) return;
+    m_canvas->setZoom(newZoom);
+    emit zoomChanged(newZoom);
+}
+
+bool ScoreWidget::event(QEvent* event)
+{
+    if (event->type() == QEvent::Gesture) {
+        auto* ge = static_cast<QGestureEvent*>(event);
+        if (auto* pinch = static_cast<QPinchGesture*>(ge->gesture(Qt::PinchGesture))) {
+            if (pinch->changeFlags() & QPinchGesture::ScaleFactorChanged) {
+                double factor = pinch->scaleFactor();
+                applyZoom(m_canvas->zoom() * factor);
+            }
+            return true;
+        }
+    }
+    return QScrollArea::event(event);
 }
 
 void ScoreWidget::setCursorRect(const muse::RectF& rect, int pageIndex)

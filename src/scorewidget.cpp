@@ -321,12 +321,18 @@ void ScoreWidget::zoomToFit()
     if (maxW <= 0) return;
 
     double dpi = m_canvas->logicalDpiX();
-    int vpWidth = viewport()->width() - 20; // margin on both sides
+    int vpWidth = viewport()->width() - 20 - m_overlayWidth; // margins + sidebar overlay
+    if (vpWidth < 100) vpWidth = 100;
 
     // zoom * dpi / 1200 = scale, and we want: maxW * scale = vpWidth
     // so zoom = vpWidth * 1200 / (maxW * dpi)
     double fitZoom = (vpWidth * 1200.0) / (maxW * dpi);
     applyZoom(fitZoom);
+}
+
+void ScoreWidget::setOverlayWidth(int width)
+{
+    m_overlayWidth = width;
 }
 
 void ScoreWidget::scrollToTop()

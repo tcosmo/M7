@@ -15,12 +15,6 @@ namespace scoretracker {
 PartPanel::PartPanel(QWidget* parent)
     : QWidget(parent)
 {
-    setStyleSheet(
-        "PartPanel { background-color: #2d2d2d; }"
-        "QListWidget { background-color: #252525; border: none; }"
-        "QPushButton { background-color: #3d3d3d; border: 1px solid #555; padding: 4px; border-radius: 3px; }"
-        "QPushButton:hover { background-color: #4d4d4d; }"
-    );
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
 

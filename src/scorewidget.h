@@ -64,6 +64,7 @@ public:
     void zoomOut();
     void zoomToFit();
     void scrollToTop();
+    void setOverlayWidth(int width);
 
 signals:
     void zoomChanged(double zoom);
@@ -80,6 +81,7 @@ private:
     void applyZoom(double newZoom);
 
     ScoreCanvas* m_canvas = nullptr;
+    int m_overlayWidth = 0;
 };
 
 } // namespace scoretracker

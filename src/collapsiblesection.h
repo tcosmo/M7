@@ -22,9 +22,8 @@ public:
         layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(0);
 
-        // Header
+        // Header — transparent so it inherits sidebar background
         auto* header = new QWidget(this);
-        header->setStyleSheet("background-color: #333333;");
         auto* headerLayout = new QHBoxLayout(header);
         headerLayout->setContentsMargins(4, 4, 4, 4);
 
@@ -62,25 +61,37 @@ public:
 
         int headerH = m_header->sizeHint().height();
 
-        if (m_collapsed) {
-            m_expandedHeight = height();
-            setFixedHeight(headerH);
-        } else {
-            setMinimumHeight(0);
-            setMaximumHeight(QWIDGETSIZE_MAX);
-        }
-
-        // Redistribute space in parent splitter
-        if (auto* splitter = qobject_cast<QSplitter*>(parentWidget())) {
+        auto* splitter = qobject_cast<QSplitter*>(parentWidget());
+        if (splitter) {
             QList<int> sizes = splitter->sizes();
             int idx = splitter->indexOf(this);
             if (idx >= 0) {
-                int oldSize = sizes[idx];
-                int newSize = m_collapsed ? headerH : m_expandedHeight;
-                int diff = oldSize - newSize;
-                sizes[idx] = newSize;
-                sizes[sizes.size() - 1] += diff;
+                if (m_collapsed) {
+                    m_expandedSize = sizes[idx];
+                    int diff = m_expandedSize - headerH;
+                    sizes[idx] = headerH;
+                    sizes[sizes.size() - 1] += diff;
+                } else {
+                    int diff = m_expandedSize - headerH;
+                    sizes[idx] = m_expandedSize;
+                    sizes[sizes.size() - 1] -= diff;
+                }
+
+                if (m_collapsed) {
+                    setFixedHeight(headerH);
+                } else {
+                    setMinimumHeight(0);
+                    setMaximumHeight(QWIDGETSIZE_MAX);
+                }
+
                 splitter->setSizes(sizes);
+            }
+        } else {
+            if (m_collapsed) {
+                setFixedHeight(headerH);
+            } else {
+                setMinimumHeight(0);
+                setMaximumHeight(QWIDGETSIZE_MAX);
             }
         }
     }
@@ -100,7 +111,7 @@ private:
     QWidget* m_content = nullptr;
     QToolButton* m_arrow = nullptr;
     bool m_collapsed = false;
-    int m_expandedHeight = 0;
+    int m_expandedSize = 0;
 };
 
 } // namespace scoretracker

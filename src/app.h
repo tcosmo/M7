@@ -39,16 +39,21 @@ private slots:
     void onSeekSliderMoved(int value);
     void onPositionChanged(double seconds);
 
+protected:
+    void resizeEvent(QResizeEvent* event) override;
+    bool eventFilter(QObject* obj, QEvent* event) override;
+
 private:
     void setupToolbar();
     void setupUI();
     void setSidebarVisible(bool visible);
+    void repositionSidebar();
     QString formatTime(double seconds) const;
 
     // UI
     ScoreWidget* m_scoreWidget = nullptr;
-    QSplitter* m_mainSplitter = nullptr;
     QWidget* m_sidebarWidget = nullptr;
+    QWidget* m_sidebarHandle = nullptr;
     QSplitter* m_sidebarSplitter = nullptr;
     PartPanel* m_partPanel = nullptr;
     DisplaySettings* m_displaySettings = nullptr;
@@ -70,6 +75,10 @@ private:
     std::shared_ptr<mu::engraving::rendering::IScoreRenderer> m_renderer;
 
     bool m_sliderDragging = false;
+    int m_sidebarWidth = 250;
+    bool m_sidebarDragging = false;
+    int m_dragStartX = 0;
+    int m_dragStartWidth = 0;
 };
 
 } // namespace scoretracker

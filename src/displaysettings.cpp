@@ -14,12 +14,6 @@ namespace scoretracker {
 DisplaySettings::DisplaySettings(QWidget* parent)
     : QWidget(parent)
 {
-    setStyleSheet(
-        "DisplaySettings { background-color: #2d2d2d; }"
-        "QLabel { background-color: transparent; }"
-        "QComboBox { background-color: #3d3d3d; border: 1px solid #555; padding: 2px 4px; border-radius: 3px; }"
-        "QCheckBox { background-color: transparent; }"
-    );
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
 

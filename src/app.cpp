@@ -25,6 +25,7 @@
 
 #include <QDebug>
 #include <QFileInfo>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QStyle>
 #include <QTimer>
@@ -81,6 +82,10 @@ App::App(QWidget* parent)
     // Set up beat data
     m_syncTimer->setMeasureStarts(MAGNIFICAT_MEASURE_STARTS);
     m_syncTimer->setBeatTimes(MAGNIFICAT_BEAT_TIMES, BEATS_PER_MEASURE);
+
+    // Set initial overlay width and position sidebar
+    m_scoreWidget->setOverlayWidth(m_sidebarWidth);
+    QTimer::singleShot(0, this, &App::repositionSidebar);
 }
 
 App::~App()
@@ -90,27 +95,19 @@ App::~App()
 
 void App::setupUI()
 {
-    m_mainSplitter = new QSplitter(Qt::Horizontal, this);
-    setCentralWidget(m_mainSplitter);
+    // Score view takes full window area
+    m_scoreWidget = new ScoreWidget(this);
+    setCentralWidget(m_scoreWidget);
 
-    m_scoreWidget = new ScoreWidget(m_mainSplitter);
-    m_mainSplitter->addWidget(m_scoreWidget);
-
-    // Sidebar: a widget containing the vertical splitter
-    m_sidebarWidget = new QWidget(m_mainSplitter);
-    m_sidebarWidget->setMinimumWidth(200);
-    m_sidebarWidget->setMaximumWidth(500);
-    m_sidebarWidget->setStyleSheet("background-color: #2d2d2d;");
+    // Sidebar overlays the score on the right edge
+    m_sidebarWidget = new QWidget(this);
+    m_sidebarWidget->setAutoFillBackground(true);
 
     auto* sidebarLayout = new QVBoxLayout(m_sidebarWidget);
     sidebarLayout->setContentsMargins(0, 0, 0, 0);
 
     m_sidebarSplitter = new QSplitter(Qt::Vertical);
     m_sidebarSplitter->setChildrenCollapsible(false);
-    m_sidebarSplitter->setStyleSheet(
-        "QSplitter { background-color: #2d2d2d; }"
-        "QSplitter::handle { background-color: #2d2d2d; height: 2px; }"
-    );
 
     m_partPanel = new PartPanel();
     m_sidebarSplitter->addWidget(new CollapsibleSection("Parts", m_partPanel));
@@ -128,36 +125,95 @@ void App::setupUI()
     m_sidebarSplitter->setStretchFactor(2, 1);
 
     sidebarLayout->addWidget(m_sidebarSplitter);
-    m_mainSplitter->addWidget(m_sidebarWidget);
 
-    // Allow the sidebar to collapse when dragged past its minimum
-    m_mainSplitter->setCollapsible(0, false); // score never collapses
-    m_mainSplitter->setCollapsible(1, true);  // sidebar collapses on drag
+    // Drag handle on the left edge of the sidebar
+    m_sidebarHandle = new QWidget(this);
+    m_sidebarHandle->setFixedWidth(5);
+    m_sidebarHandle->setCursor(Qt::SplitHCursor);
+    m_sidebarHandle->installEventFilter(this);
+}
 
-    // Initial sizes: score gets most space, sidebar gets 250
-    m_mainSplitter->setSizes({1000, 250});
+void App::repositionSidebar()
+{
+    if (!m_sidebarWidget) return;
+    QRect cr = centralWidget()->geometry();
+    if (m_sidebarWidget->isVisible()) {
+        int x = cr.right() - m_sidebarWidth + 1;
+        m_sidebarWidget->setGeometry(x, cr.top(), m_sidebarWidth, cr.height());
+        m_sidebarHandle->setGeometry(x - 5, cr.top(), 5, cr.height());
+        m_sidebarHandle->show();
+        m_sidebarWidget->raise();
+        m_sidebarHandle->raise();
+    } else if (!m_sidebarDragging) {
+        m_sidebarHandle->hide();
+    }
+}
 
-    // Detect sidebar collapse/expand via splitter movement
-    connect(m_mainSplitter, &QSplitter::splitterMoved, [this]() {
-        QList<int> sizes = m_mainSplitter->sizes();
-        bool collapsed = (sizes.size() > 1 && sizes[1] == 0);
-        m_sidebarAction->blockSignals(true);
-        m_sidebarAction->setChecked(!collapsed);
-        m_sidebarAction->blockSignals(false);
-    });
+void App::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+    repositionSidebar();
+}
+
+bool App::eventFilter(QObject* obj, QEvent* event)
+{
+    if (obj == m_sidebarHandle) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto* me = static_cast<QMouseEvent*>(event);
+            m_sidebarDragging = true;
+            m_dragStartX = me->globalPosition().toPoint().x();
+            m_dragStartWidth = m_sidebarWidth;
+            return true;
+        }
+        if (event->type() == QEvent::MouseMove && m_sidebarDragging) {
+            auto* me = static_cast<QMouseEvent*>(event);
+            int dx = me->globalPosition().toPoint().x() - m_dragStartX;
+            int newWidth = m_dragStartWidth - dx;
+            static const int MIN_WIDTH = 200;
+            static const int MAX_WIDTH = 500;
+            static const int COLLAPSE_THRESHOLD = 120;
+            if (newWidth < COLLAPSE_THRESHOLD) {
+                // Collapse but keep dragging
+                if (m_sidebarWidget->isVisible()) {
+                    m_sidebarWidget->setVisible(false);
+                    m_scoreWidget->setOverlayWidth(0);
+                    m_sidebarHandle->raise();
+                    m_sidebarAction->blockSignals(true);
+                    m_sidebarAction->setChecked(false);
+                    m_sidebarAction->blockSignals(false);
+                }
+            } else {
+                // Uncollapse if needed
+                if (!m_sidebarWidget->isVisible()) {
+                    m_sidebarWidget->setVisible(true);
+                    m_scoreWidget->setOverlayWidth(m_sidebarWidth);
+                    m_sidebarAction->blockSignals(true);
+                    m_sidebarAction->setChecked(true);
+                    m_sidebarAction->blockSignals(false);
+                }
+                m_sidebarWidth = std::clamp(newWidth, MIN_WIDTH, MAX_WIDTH);
+                m_scoreWidget->setOverlayWidth(m_sidebarWidth);
+                repositionSidebar();
+            }
+            return true;
+        }
+        if (event->type() == QEvent::MouseButtonRelease) {
+            m_sidebarDragging = false;
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
 }
 
 void App::setSidebarVisible(bool visible)
 {
     if (visible) {
-        // Restore sidebar to 250px
-        int total = m_mainSplitter->sizes()[0] + m_mainSplitter->sizes()[1];
-        m_mainSplitter->setSizes({total - 250, 250});
-    } else {
-        // Collapse sidebar to 0
-        int total = m_mainSplitter->sizes()[0] + m_mainSplitter->sizes()[1];
-        m_mainSplitter->setSizes({total, 0});
+        m_sidebarWidth = 250;
     }
+    m_sidebarWidget->setVisible(visible);
+    m_scoreWidget->setOverlayWidth(visible ? m_sidebarWidth : 0);
+    repositionSidebar();
+    m_scoreWidget->zoomToFit();
 }
 
 void App::setupToolbar()

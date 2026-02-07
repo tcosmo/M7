@@ -34,7 +34,7 @@ App::App(QWidget* parent)
     : QMainWindow(parent)
 {
     setWindowTitle("ScoreTracker");
-    resize(1200, 800);
+    resize(1250, 850);
 
     m_audioPlayer = new AudioPlayer(this);
     m_syncTimer = new SyncTimer(this);

@@ -4,6 +4,8 @@
 #include "engraving/dom/part.h"
 #include "engraving/rendering/iscorerenderer.h"
 #include "engraving/types/fraction.h"
+#include "engraving/types/types.h"
+#include "engraving/style/styledef.h"
 
 using namespace mu::engraving;
 using namespace mu::engraving::rendering;
@@ -126,6 +128,19 @@ void PartPanel::showAllParts()
 void PartPanel::relayout()
 {
     if (!m_score || !m_renderer) return;
+
+    // Count visible parts
+    int visibleCount = 0;
+    for (const auto* part : m_parts) {
+        if (part->show()) ++visibleCount;
+    }
+
+    // Hide instrument names on subsequent systems when <= 2 parts visible
+    auto subsVis = (visibleCount <= 2)
+        ? InstrumentLabelVisibility::HIDE
+        : InstrumentLabelVisibility::SHORT;
+    m_score->style().set(Sid::subsSystemInstNameVisibility,
+        mu::engraving::PropertyValue(int(subsVis)));
 
     m_renderer->layoutScore(m_score, Fraction(0, 1), Fraction(-1, 1));
     emit partsChanged();

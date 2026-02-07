@@ -18,6 +18,7 @@
 #include "engraving/style/styledef.h"
 #include "engraving/types/types.h"
 #include "engraving/types/fraction.h"
+#include "engraving/rendering/layoutoptions.h"
 
 #include "importexport/musicxml/internal/import/importmusicxml.h"
 
@@ -30,6 +31,16 @@ using namespace mu::engraving;
 using namespace mu::engraving::rendering;
 
 namespace scoretracker {
+
+static LayoutMode comboIndexToLayoutMode(int index)
+{
+    switch (index) {
+    case 0: return LayoutMode::PAGE;
+    case 1: return LayoutMode::LINE;
+    case 2: return LayoutMode::SYSTEM;
+    default: return LayoutMode::SYSTEM;
+    }
+}
 
 App::App(QWidget* parent)
     : QMainWindow(parent)
@@ -56,9 +67,11 @@ App::App(QWidget* parent)
 
     connect(m_displaySettings, &DisplaySettings::settingChanged, [this]() {
         if (!m_score || !m_renderer) return;
+        m_score->setLayoutMode(comboIndexToLayoutMode(m_displaySettings->layoutMode()));
         m_score->setShowVBox(m_displaySettings->showTitleFrame());
         m_renderer->layoutScore(m_score, Fraction(0, 1), Fraction(-1, 1));
         m_scoreWidget->setScore(m_score); // refresh
+        m_scoreWidget->scrollToTop();
     });
 
     // Set up beat data
@@ -138,6 +151,10 @@ void App::setupToolbar()
     auto* zoomInAction = m_toolbar->addAction("+");
     zoomInAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Equal));
     connect(zoomInAction, &QAction::triggered, m_scoreWidget, &ScoreWidget::zoomIn);
+
+    auto* fitAction = m_toolbar->addAction("Fit");
+    fitAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
+    connect(fitAction, &QAction::triggered, m_scoreWidget, &ScoreWidget::zoomToFit);
 
     connect(m_scoreWidget, &ScoreWidget::zoomChanged, [this](double zoom) {
         m_zoomLabel->setText(QString("%1%").arg(static_cast<int>(zoom * 100)));
@@ -239,6 +256,7 @@ bool App::loadScore(const QString& musicXmlPath)
     }
 
     // Apply display settings before layout
+    m_score->setLayoutMode(comboIndexToLayoutMode(m_displaySettings->layoutMode()));
     m_score->setShowVBox(m_displaySettings->showTitleFrame());
 
     // Layout the score

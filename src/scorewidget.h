@@ -33,6 +33,7 @@ public:
     QRect cursorWidgetRect() const;
     QRect pageWidgetRect(int pageIndex) const;
     int cursorPageIndex() const { return m_cursorPageIndex; }
+    double maxPageWidthScore() const;
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -61,6 +62,8 @@ public:
     double zoom() const;
     void zoomIn();
     void zoomOut();
+    void zoomToFit();
+    void scrollToTop();
 
 signals:
     void zoomChanged(double zoom);

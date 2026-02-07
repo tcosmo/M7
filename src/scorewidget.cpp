@@ -129,10 +129,20 @@ void ScoreCanvas::updateCanvasSize()
         totalHeight += bbox.height() * s + PAGE_GAP;
     }
 
-    setMinimumSize(
-        static_cast<int>(maxWidth) + 20,
-        static_cast<int>(totalHeight) + 20
-    );
+    int w = static_cast<int>(maxWidth) + 20;
+    int h = static_cast<int>(totalHeight) + 20;
+    setMinimumSize(0, 0);
+    resize(w, h);
+}
+
+double ScoreCanvas::maxPageWidthScore() const
+{
+    if (!m_score) return 0;
+    double maxW = 0;
+    for (const Page* page : m_score->pages()) {
+        maxW = std::max(maxW, page->ldata()->bbox().width());
+    }
+    return maxW;
 }
 
 muse::RectF ScoreCanvas::mapToRenderCoords(const muse::RectF& pageRelRect, int pageIndex) const
@@ -297,6 +307,26 @@ void ScoreWidget::zoomIn()
 void ScoreWidget::zoomOut()
 {
     applyZoom(m_canvas->zoom() - ZOOM_STEP);
+}
+
+void ScoreWidget::zoomToFit()
+{
+    double maxW = m_canvas->maxPageWidthScore();
+    if (maxW <= 0) return;
+
+    double dpi = m_canvas->logicalDpiX();
+    int vpWidth = viewport()->width();
+
+    // zoom * dpi / 1200 = scale, and we want: maxW * scale = vpWidth
+    // so zoom = vpWidth * 1200 / (maxW * dpi)
+    double fitZoom = (vpWidth * 1200.0) / (maxW * dpi);
+    applyZoom(fitZoom);
+}
+
+void ScoreWidget::scrollToTop()
+{
+    horizontalScrollBar()->setValue(0);
+    verticalScrollBar()->setValue(0);
 }
 
 void ScoreWidget::applyZoom(double newZoom)

@@ -1,6 +1,7 @@
 #include "displaysettings.h"
 
 #include <QVBoxLayout>
+#include <QLabel>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -18,6 +19,13 @@ DisplaySettings::DisplaySettings(QWidget* parent)
     auto* container = new QWidget(this);
     auto* layout = new QVBoxLayout(container);
 
+    layout->addWidget(new QLabel("Layout", container));
+    m_layoutModeCombo = new QComboBox(container);
+    m_layoutModeCombo->addItem("Page");
+    m_layoutModeCombo->addItem("Continuous Horizontal");
+    m_layoutModeCombo->addItem("Continuous Vertical");
+    layout->addWidget(m_layoutModeCombo);
+
     m_showTitleCheckbox = new QCheckBox("Show title and composer", container);
     layout->addWidget(m_showTitleCheckbox);
     layout->addStretch();
@@ -25,6 +33,11 @@ DisplaySettings::DisplaySettings(QWidget* parent)
     setWidget(container);
 
     load();
+
+    connect(m_layoutModeCombo, &QComboBox::currentIndexChanged, this, [this]() {
+        save();
+        emit settingChanged();
+    });
 
     connect(m_showTitleCheckbox, &QCheckBox::toggled, this, [this]() {
         save();
@@ -37,32 +50,45 @@ bool DisplaySettings::showTitleFrame() const
     return m_showTitleCheckbox->isChecked();
 }
 
+int DisplaySettings::layoutMode() const
+{
+    return m_layoutModeCombo->currentIndex();
+}
+
 void DisplaySettings::load()
 {
     QString path = settingsPath();
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
         qDebug() << "DisplaySettings: no settings.json found at" << path << "- using defaults";
+        m_layoutModeCombo->setCurrentIndex(2); // Continuous Vertical
         m_showTitleCheckbox->setChecked(false);
         return;
     }
 
     QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
-    bool show = doc.object().value("showTitleFrame").toBool(false);
-    qDebug() << "DisplaySettings: loaded settings.json from" << path << "- showTitleFrame:" << show;
+    QJsonObject obj = doc.object();
+    int mode = obj.value("layoutMode").toInt(2); // default Continuous Vertical
+    bool show = obj.value("showTitleFrame").toBool(false);
+    qDebug() << "DisplaySettings: loaded settings.json from" << path
+             << "- layoutMode:" << mode << "showTitleFrame:" << show;
+    m_layoutModeCombo->setCurrentIndex(mode);
     m_showTitleCheckbox->setChecked(show);
 }
 
 void DisplaySettings::save()
 {
     QJsonObject obj;
+    obj["layoutMode"] = m_layoutModeCombo->currentIndex();
     obj["showTitleFrame"] = m_showTitleCheckbox->isChecked();
 
     QString path = settingsPath();
     QFile file(path);
     if (file.open(QIODevice::WriteOnly)) {
         file.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
-        qDebug() << "DisplaySettings: saved settings.json to" << path << "- showTitleFrame:" << m_showTitleCheckbox->isChecked();
+        qDebug() << "DisplaySettings: saved settings.json to" << path
+                 << "- layoutMode:" << m_layoutModeCombo->currentIndex()
+                 << "showTitleFrame:" << m_showTitleCheckbox->isChecked();
     } else {
         qWarning() << "DisplaySettings: failed to save settings.json to" << path;
     }

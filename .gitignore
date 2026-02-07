@@ -1,0 +1,28 @@
+# Build
+build/
+CMakeUserPresets.json
+
+# C/C++
+*.o
+*.d
+*.a
+*.so
+*.dylib
+*.obj
+*.exe
+
+# macOS
+.DS_Store
+._*
+
+# IDE
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+compile_commands.json
+
+# Project-specific
+.specstory/
+thirdparty/musescore/
+thirdparty/musescore_a/

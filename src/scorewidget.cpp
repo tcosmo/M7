@@ -3,7 +3,6 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QScrollBar>
-#include <QWheelEvent>
 #include <QDebug>
 
 #include "draw/painter.h"
@@ -258,17 +257,6 @@ ScoreWidget::ScoreWidget(QWidget* parent)
     setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
-    // Snap back on any scroll when follow is on (catches momentum scrolling)
-    connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this]() {
-        if (m_followCursor) {
-            ensureCursorVisible();
-        }
-    });
-    connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, [this]() {
-        if (m_followCursor) {
-            ensureCursorVisible();
-        }
-    });
 }
 
 void ScoreWidget::setScore(Score* score)
@@ -291,55 +279,29 @@ double ScoreWidget::zoom() const
     return m_canvas->zoom();
 }
 
-void ScoreWidget::setFollowCursor(bool follow)
-{
-    m_followCursor = follow;
-    if (m_followCursor) {
-        ensureCursorVisible();
-    }
-}
-
-void ScoreWidget::wheelEvent(QWheelEvent* event)
-{
-    QScrollArea::wheelEvent(event);
-    // When following, let the scroll happen visually but snap back
-    if (m_followCursor) {
-        ensureCursorVisible();
-    }
-}
-
 void ScoreWidget::setCursorRect(const muse::RectF& rect, int pageIndex)
 {
     int prevPage = m_canvas->cursorPageIndex();
     m_canvas->setCursorRect(rect, pageIndex);
 
-    // When following, auto-scroll on page change
-    if (m_followCursor && pageIndex != prevPage) {
+    // Auto-scroll on page break so cursor stays visible
+    if (pageIndex >= 0 && pageIndex != prevPage) {
         ensureCursorVisible();
     }
 }
 
 void ScoreWidget::ensureCursorVisible()
 {
-    QRect cr = m_canvas->cursorWidgetRect();
-    if (cr.isNull()) return;
-
-    int vpH = viewport()->height();
-    int vpW = viewport()->width();
-
-    // Position cursor in the upper third of the viewport
-    int targetY = cr.top() - vpH / 4;
-    if (targetY < 0) targetY = 0;
-
-    // Center horizontally on the page containing the cursor
     QRect pr = m_canvas->pageWidgetRect(m_canvas->cursorPageIndex());
-    int targetX = 0;
-    if (!pr.isNull()) {
-        targetX = pr.left() - (vpW - pr.width()) / 2;
-        if (targetX < 0) targetX = 0;
-    }
+    if (pr.isNull()) return;
 
-    verticalScrollBar()->setValue(targetY);
+    // Scroll so the top of the current page is at the top of the viewport
+    verticalScrollBar()->setValue(pr.top());
+
+    // Center page horizontally
+    int vpW = viewport()->width();
+    int targetX = pr.left() - (vpW - pr.width()) / 2;
+    if (targetX < 0) targetX = 0;
     horizontalScrollBar()->setValue(targetX);
 }
 

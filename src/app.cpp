@@ -107,31 +107,11 @@ void App::setupToolbar()
     m_trackingAction->setChecked(true);
     m_trackingAction->setShortcut(QKeySequence(Qt::Key_T));
     connect(m_trackingAction, &QAction::toggled, [this](bool on) {
-        m_goToCursorAction->setEnabled(on);
         if (!on) {
-            // Turn off follow and disable it
-            m_followAction->setChecked(false);
-            m_followAction->setEnabled(false);
             // Clear cursor but don't move scroll position
             m_scoreWidget->setCursorRect(muse::RectF(), -1);
-        } else {
-            m_followAction->setEnabled(true);
-            m_followAction->setChecked(true);
         }
     });
-
-    m_followAction = m_toolbar->addAction(QString::fromUtf8("\xF0\x9F\x94\x92")); // 🔒
-    m_followAction->setCheckable(true);
-    m_followAction->setChecked(true);
-    m_followAction->setShortcut(QKeySequence(Qt::Key_F));
-    connect(m_followAction, &QAction::toggled, [this](bool on) {
-        m_scoreWidget->setFollowCursor(on);
-    });
-
-    m_goToCursorAction = m_toolbar->addAction("Go to Cursor");
-    m_goToCursorAction->setShortcut(QKeySequence(Qt::Key_G));
-    m_goToCursorAction->setEnabled(true);
-    connect(m_goToCursorAction, &QAction::triggered, m_scoreWidget, &ScoreWidget::ensureCursorVisible);
 
     connect(m_audioPlayer, &AudioPlayer::playbackStarted, [this]() {
         m_playPauseAction->setText("Pause");

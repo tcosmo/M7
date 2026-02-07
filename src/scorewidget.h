@@ -58,18 +58,14 @@ public:
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
     void setZoom(double zoom);
     double zoom() const;
-    void setFollowCursor(bool follow);
 
 public slots:
     void setCursorRect(const muse::RectF& rect, int pageIndex);
-    void ensureCursorVisible();
-
-protected:
-    void wheelEvent(QWheelEvent* event) override;
 
 private:
+    void ensureCursorVisible();
+
     ScoreCanvas* m_canvas = nullptr;
-    bool m_followCursor = true;
 };
 
 } // namespace scoretracker

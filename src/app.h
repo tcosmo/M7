@@ -49,8 +49,6 @@ private:
     QAction* m_playPauseAction = nullptr;
     QAction* m_stopAction = nullptr;
     QAction* m_trackingAction = nullptr;
-    QAction* m_followAction = nullptr;
-    QAction* m_goToCursorAction = nullptr;
     QSlider* m_seekSlider = nullptr;
     QLabel* m_timeLabel = nullptr;
 

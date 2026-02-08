@@ -509,6 +509,11 @@ bool App::loadScore(const QString& musicXmlPath)
     return true;
 }
 
+void App::setVisibleParts(const QList<int>& partNumbers)
+{
+    m_partPanel->showOnlyParts(partNumbers);
+}
+
 bool App::loadAudio(const QString& audioPath)
 {
     if (!m_audioPlayer->load(audioPath)) {

@@ -25,6 +25,7 @@
 #include <QResizeEvent>
 #include <QGuiApplication>
 #include <QCoreApplication>
+#include <QSet>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -976,6 +977,17 @@ void PartPanel::showAllParts()
 
     for (int i = 0; i < static_cast<int>(m_rows.size()); ++i) {
         updateRow(i, true);
+    }
+    relayout();
+}
+
+void PartPanel::showOnlyParts(const QList<int>& partNumbers)
+{
+    if (!m_score || m_rows.empty()) return;
+
+    QSet<int> visible(partNumbers.begin(), partNumbers.end());
+    for (int i = 0; i < static_cast<int>(m_rows.size()); ++i) {
+        updateRow(i, visible.contains(i + 1)); // 1-based
     }
     relayout();
 }

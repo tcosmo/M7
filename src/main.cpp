@@ -109,19 +109,28 @@ int main(int argc, char* argv[])
     // Parse arguments
     QString musicXmlPath;
     QString audioPath;
+    QList<int> visibleParts;
 
     QStringList args = qapp.arguments();
-    if (args.size() >= 2) {
-        musicXmlPath = args[1];
-    }
-    if (args.size() >= 3) {
-        audioPath = args[2];
+    for (int i = 1; i < args.size(); ++i) {
+        if (args[i] == "--parts" && i + 1 < args.size()) {
+            for (const QString& s : args[++i].split(',')) {
+                bool ok;
+                int n = s.trimmed().toInt(&ok);
+                if (ok && n > 0) visibleParts.append(n);
+            }
+        } else if (musicXmlPath.isEmpty()) {
+            musicXmlPath = args[i];
+        } else if (audioPath.isEmpty()) {
+            audioPath = args[i];
+        }
     }
 
     if (musicXmlPath.isEmpty()) {
-        qWarning() << "Usage: scoretracker <musicxml-file> [audio-file]";
+        qWarning() << "Usage: scoretracker <musicxml-file> [audio-file] [--parts 1,4,5]";
         qWarning() << "  musicxml-file: Path to MusicXML score (.musicxml, .xml, .mxl)";
         qWarning() << "  audio-file:    Path to audio recording (.m4a, .mp3, .wav)";
+        qWarning() << "  --parts:       Comma-separated 1-based part numbers to show";
         return 1;
     }
 
@@ -174,6 +183,10 @@ int main(int argc, char* argv[])
     if (!app.loadScore(musicXmlPath)) {
         qWarning() << "Failed to load score:" << musicXmlPath;
         return 1;
+    }
+
+    if (!visibleParts.isEmpty()) {
+        app.setVisibleParts(visibleParts);
     }
 
     if (!audioPath.isEmpty()) {

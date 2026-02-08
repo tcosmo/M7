@@ -90,6 +90,7 @@ public:
     void setScore(mu::engraving::Score* score);
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
     void setScoreFileName(const QString& fileName);
+    void showOnlyParts(const QList<int>& partNumbers);
     int desiredHeight() const;
 
 signals:

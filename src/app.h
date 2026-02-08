@@ -33,6 +33,7 @@ public:
 
     bool loadScore(const QString& musicXmlPath);
     bool loadAudio(const QString& audioPath);
+    void setVisibleParts(const QList<int>& partNumbers);
 
 private slots:
     void togglePlayPause();

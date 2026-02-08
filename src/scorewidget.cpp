@@ -376,11 +376,9 @@ bool ScoreWidget::event(QEvent* event)
 
 void ScoreWidget::setCursorRect(const muse::RectF& rect, int pageIndex)
 {
-    int prevPage = m_canvas->cursorPageIndex();
     m_canvas->setCursorRect(rect, pageIndex);
 
-    // Auto-scroll on page break so cursor stays visible
-    if (pageIndex >= 0 && pageIndex != prevPage) {
+    if (pageIndex >= 0 && !rect.isNull()) {
         ensureCursorVisible();
     }
 }
@@ -393,17 +391,29 @@ void ScoreWidget::resizeEvent(QResizeEvent* event)
 
 void ScoreWidget::ensureCursorVisible()
 {
-    QRect pr = m_canvas->pageWidgetRect(m_canvas->cursorPageIndex());
-    if (pr.isNull()) return;
+    QRect cr = m_canvas->cursorWidgetRect();
+    if (cr.isNull()) return;
 
-    // Scroll so the top of the current page is at the top of the viewport
-    verticalScrollBar()->setValue(pr.top());
-
-    // Center page horizontally
+    int vpH = viewport()->height();
     int vpW = viewport()->width();
-    int targetX = pr.left() - (vpW - pr.width()) / 2;
-    if (targetX < 0) targetX = 0;
-    horizontalScrollBar()->setValue(targetX);
+    int margin = 40; // pixels of breathing room
+
+    // Vertical: scroll if cursor is outside the visible area
+    int scrollY = verticalScrollBar()->value();
+    if (cr.top() < scrollY + margin) {
+        verticalScrollBar()->setValue(cr.top() - margin);
+    } else if (cr.bottom() > scrollY + vpH - margin) {
+        verticalScrollBar()->setValue(cr.bottom() - vpH + margin);
+    }
+
+    // Horizontal: scroll if cursor is outside the visible area
+    int scrollX = horizontalScrollBar()->value();
+    int effectiveW = vpW - m_overlayWidth;
+    if (cr.left() < scrollX + margin) {
+        horizontalScrollBar()->setValue(cr.left() - margin);
+    } else if (cr.right() > scrollX + effectiveW - margin) {
+        horizontalScrollBar()->setValue(cr.right() - effectiveW + margin);
+    }
 }
 
 } // namespace scoretracker

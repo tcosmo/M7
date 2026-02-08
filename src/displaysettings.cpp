@@ -21,7 +21,7 @@ DisplaySettings::DisplaySettings(QWidget* parent)
     setPalette(pal);
 
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(12, 4, 12, 4);
+    layout->setContentsMargins(12, 4, 12, 10);
 
     layout->addWidget(new QLabel("Layout", this));
     m_layoutModeCombo = new QComboBox(this);

@@ -22,7 +22,7 @@ PartPanel::PartPanel(QWidget* parent)
     setPalette(pal);
 
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(12, 4, 12, 4);
+    layout->setContentsMargins(12, 4, 12, 10);
 
     // Buttons
     auto* btnLayout = new QHBoxLayout();

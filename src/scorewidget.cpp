@@ -321,7 +321,7 @@ void ScoreWidget::zoomToFit()
     if (maxW <= 0) return;
 
     double dpi = m_canvas->logicalDpiX();
-    int vpWidth = viewport()->width() - 20 - m_overlayWidth; // margins + sidebar overlay
+    int vpWidth = width() - 20 - m_overlayWidth; // use full scroll area width (incl. scrollbar area)
     if (vpWidth < 100) vpWidth = 100;
 
     // zoom * dpi / 1200 = scale, and we want: maxW * scale = vpWidth

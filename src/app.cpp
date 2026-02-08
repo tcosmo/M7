@@ -24,6 +24,7 @@
 #include "importexport/musicxml/internal/import/importmusicxml.h"
 
 #include <QDebug>
+#include <QPushButton>
 #include <QFileInfo>
 #include <QMouseEvent>
 #include <QPainter>
@@ -210,7 +211,10 @@ bool App::eventFilter(QObject* obj, QEvent* event)
         }
         if (event->type() == QEvent::MouseButtonRelease) {
             m_sidebarDragging = false;
-            m_scoreWidget->zoomToFit();
+            // Only refit when sidebar was collapsed by dragging
+            if (!m_sidebarWidget->isVisible()) {
+                m_scoreWidget->zoomToFit();
+            }
             return true;
         }
     }
@@ -219,13 +223,12 @@ bool App::eventFilter(QObject* obj, QEvent* event)
 
 void App::setSidebarVisible(bool visible)
 {
-    if (visible) {
-        m_sidebarWidth = 250;
-    }
     m_sidebarWidget->setVisible(visible);
     m_scoreWidget->setOverlayWidth(visible ? m_sidebarWidth : 0);
     repositionSidebar();
-    m_scoreWidget->zoomToFit();
+    if (!visible) {
+        m_scoreWidget->zoomToFit();
+    }
 }
 
 void App::setupToolbar()
@@ -258,13 +261,44 @@ void App::setupToolbar()
 
     m_toolbar->addSeparator();
 
-    m_trackingAction = m_toolbar->addAction("Tracking");
+    m_trackingAction = new QAction(this);
     m_trackingAction->setCheckable(true);
     m_trackingAction->setChecked(true);
     m_trackingAction->setShortcut(QKeySequence(Qt::Key_T));
-    connect(m_trackingAction, &QAction::toggled, [this](bool on) {
+
+    auto* trackingButton = new QPushButton("Tracking", this);
+    trackingButton->setFlat(true);
+    trackingButton->setIconSize(QSize(8, 8));
+
+    auto makeIcon = [](bool on) -> QIcon {
+        int sz = 16; // render at 2x for retina
+        QPixmap px(sz + 3, sz + 3);
+        px.fill(Qt::transparent);
+        QPainter p(&px);
+        p.setRenderHint(QPainter::Antialiasing);
+        if (on) {
+            p.setBrush(QColor("#4CAF50"));
+            p.setPen(Qt::NoPen);
+        } else {
+            p.setBrush(Qt::NoBrush);
+            p.setPen(QPen(QColor("#888"), 1.5));
+        }
+        p.drawEllipse(QRectF(2, 3, sz - 2, sz - 2));
+        px.setDevicePixelRatio(2);
+        return QIcon(px);
+    };
+    trackingButton->setIcon(makeIcon(true));
+
+    m_toolbar->addWidget(trackingButton);
+    m_toolbar->addAction(m_trackingAction); // hidden, for shortcut
+    m_trackingAction->setVisible(false);
+
+    connect(trackingButton, &QPushButton::clicked, [this]() {
+        m_trackingAction->toggle();
+    });
+    connect(m_trackingAction, &QAction::toggled, [this, trackingButton, makeIcon](bool on) {
+        trackingButton->setIcon(makeIcon(on));
         if (!on) {
-            // Clear cursor but don't move scroll position
             m_scoreWidget->setCursorRect(muse::RectF(), -1);
         }
     });
@@ -284,9 +318,12 @@ void App::setupToolbar()
     zoomInAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Equal));
     connect(zoomInAction, &QAction::triggered, m_scoreWidget, &ScoreWidget::zoomIn);
 
-    auto* fitAction = m_toolbar->addAction("Fit");
-    fitAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
-    connect(fitAction, &QAction::triggered, m_scoreWidget, &ScoreWidget::zoomToFit);
+    auto* fitButton = new QPushButton("Fit", this);
+    fitButton->setFlat(true);
+    fitButton->setStyleSheet("QPushButton:pressed { background-color: rgba(255,255,255,0.1); }");
+    fitButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
+    m_toolbar->addWidget(fitButton);
+    connect(fitButton, &QPushButton::clicked, m_scoreWidget, &ScoreWidget::zoomToFit);
 
     connect(m_scoreWidget, &ScoreWidget::zoomChanged, [this](double zoom) {
         m_zoomLabel->setText(QString("%1%").arg(static_cast<int>(zoom * 100)));

@@ -25,6 +25,7 @@
 
 #include <QDebug>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QFileInfo>
 #include <QMouseEvent>
 #include <QPainter>
@@ -85,7 +86,8 @@ App::App(QWidget* parent)
     m_syncTimer->setBeatTimes(MAGNIFICAT_BEAT_TIMES, BEATS_PER_MEASURE);
 
     // Set initial overlay width and position sidebar
-    m_scoreWidget->setOverlayWidth(m_sidebarWidth);
+    int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
+    m_scoreWidget->setOverlayWidth(m_sidebarWidth + scrollbarW);
     QTimer::singleShot(0, this, &App::repositionSidebar);
 }
 
@@ -149,8 +151,9 @@ void App::repositionSidebar()
 {
     if (!m_sidebarWidget) return;
     QRect cr = centralWidget()->geometry();
+    int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
     if (m_sidebarWidget->isVisible()) {
-        int x = cr.right() - m_sidebarWidth + 1;
+        int x = cr.right() - m_sidebarWidth - scrollbarW + 1;
         m_sidebarWidget->setGeometry(x, cr.top(), m_sidebarWidth, cr.height());
         m_sidebarHandle->setGeometry(x - 5, cr.top(), 5, cr.height());
         m_sidebarHandle->show();
@@ -184,6 +187,7 @@ bool App::eventFilter(QObject* obj, QEvent* event)
             static const int MIN_WIDTH = 200;
             static const int MAX_WIDTH = 500;
             static const int COLLAPSE_THRESHOLD = 120;
+            int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
             if (newWidth < COLLAPSE_THRESHOLD) {
                 // Collapse but keep dragging
                 if (m_sidebarWidget->isVisible()) {
@@ -198,13 +202,13 @@ bool App::eventFilter(QObject* obj, QEvent* event)
                 // Uncollapse if needed
                 if (!m_sidebarWidget->isVisible()) {
                     m_sidebarWidget->setVisible(true);
-                    m_scoreWidget->setOverlayWidth(m_sidebarWidth);
+                    m_scoreWidget->setOverlayWidth(m_sidebarWidth + scrollbarW);
                     m_sidebarAction->blockSignals(true);
                     m_sidebarAction->setChecked(true);
                     m_sidebarAction->blockSignals(false);
                 }
                 m_sidebarWidth = std::clamp(newWidth, MIN_WIDTH, MAX_WIDTH);
-                m_scoreWidget->setOverlayWidth(m_sidebarWidth);
+                m_scoreWidget->setOverlayWidth(m_sidebarWidth + scrollbarW);
                 repositionSidebar();
             }
             return true;
@@ -223,8 +227,9 @@ bool App::eventFilter(QObject* obj, QEvent* event)
 
 void App::setSidebarVisible(bool visible)
 {
+    int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
     m_sidebarWidget->setVisible(visible);
-    m_scoreWidget->setOverlayWidth(visible ? m_sidebarWidth : 0);
+    m_scoreWidget->setOverlayWidth(visible ? m_sidebarWidth + scrollbarW : 0);
     repositionSidebar();
     if (!visible) {
         m_scoreWidget->zoomToFit();

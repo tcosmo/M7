@@ -346,6 +346,7 @@ void ScoreWidget::applyZoom(double newZoom)
     newZoom = std::clamp(newZoom, ZOOM_MIN, ZOOM_MAX);
     if (qFuzzyCompare(newZoom, m_canvas->zoom())) return;
     m_canvas->setZoom(newZoom);
+    verticalScrollBar()->setSingleStep(60);
     emit zoomChanged(newZoom);
 }
 

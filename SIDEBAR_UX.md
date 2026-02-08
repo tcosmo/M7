@@ -4,7 +4,7 @@
 - The sidebar **overlays** the score view (does not resize it). The score widget is always the full-width central widget.
 - The sidebar is positioned to the left of the vertical scrollbar. The scrollbar is always visible at the rightmost edge of the window, to the right of the sidebar.
 - A 5px drag handle sits at the left edge of the sidebar for resizing.
-- Default width: 250px. Min: 200px, Max: 500px.
+- Default width: 300px. Min: 280px, Max: 500px.
 
 ### Toggle behavior (Ctrl+B or toolbar button)
 - **Closing**: hides the sidebar and calls `zoomToFit` so the score fills the freed space.
@@ -37,7 +37,3 @@
 - Background matches the sidebar (`palette(window)`).
 - Handle is a subtle rounded oval: `rgba(255,255,255,0.15)`, `border-radius: 4px`, brighter on hover (`0.25`).
 - No arrow buttons. Width: 14px, handle margin: 2px vertical / 3px horizontal.
-
-### Part list focus
-- Clicking outside the part list (anywhere on sidebar or score) unfocuses it — selection dims to inactive style but is not cleared.
-- PartPanel and sidebar widget accept click focus (`Qt::ClickFocus`).

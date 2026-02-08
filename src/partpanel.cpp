@@ -7,6 +7,11 @@
 #include "engraving/dom/measure.h"
 #include "engraving/dom/segment.h"
 #include "engraving/dom/mscore.h"
+#include "engraving/dom/note.h"
+#include "engraving/dom/chord.h"
+#include "engraving/dom/keysig.h"
+#include "engraving/dom/instrument.h"
+#include "engraving/editing/transpose.h"
 #include "engraving/rendering/iscorerenderer.h"
 #include "engraving/types/fraction.h"
 #include "engraving/types/types.h"
@@ -136,6 +141,7 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
 
     auto* contentLayout = new QVBoxLayout(m_contentArea);
     contentLayout->setContentsMargins(32, 6, 12, 6);
+    contentLayout->setSpacing(2);
 
     // Clef selector row
     auto* clefRow = new QHBoxLayout();
@@ -189,6 +195,131 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     clefRow->addWidget(m_clefCombo);
     clefRow->addStretch();
     contentLayout->addLayout(clefRow);
+
+    // Transposing instrument section
+    Interval transpose = m_part->instrument()->transpose();
+    m_isTransposing = !transpose.isZero();
+    if (m_isTransposing) {
+        m_origTranspose = transpose;
+    }
+
+    auto* transposeSection = new QWidget(m_contentArea);
+    auto* transposeSectionLayout = new QVBoxLayout(transposeSection);
+    transposeSectionLayout->setContentsMargins(0, 0, 0, 0);
+    transposeSectionLayout->setSpacing(4);
+
+    auto* sectionLabel = new QLabel("Transposing instrument", transposeSection);
+    sectionLabel->setStyleSheet("color: #ccc; font-size: 12px;");
+    transposeSectionLayout->addWidget(sectionLabel);
+
+    auto* radioRow = new QHBoxLayout();
+    radioRow->setContentsMargins(12, 0, 0, 0);
+    radioRow->setSpacing(12);
+    QString radioStyle =
+        "QRadioButton { color: #ccc; font-size: 11px; spacing: 4px; }"
+        "QRadioButton::indicator { width: 9px; height: 9px; }"
+        "QRadioButton::indicator::unchecked { border: 1px solid #888; border-radius: 5px; background: transparent; }"
+        "QRadioButton::indicator::checked { border: 1px solid #4a9eff; border-radius: 5px; background: #4a9eff; }"
+        "QRadioButton:disabled { color: #555; }"
+        "QRadioButton::indicator:disabled { border-color: #444; background: transparent; }"
+        "QRadioButton::indicator::checked:disabled { border-color: #555; background: #555; }";
+
+    m_writtenRadio = new QRadioButton("Written", transposeSection);
+    m_writtenRadio->setStyleSheet(radioStyle);
+    m_writtenRadio->setChecked(true);
+    m_concertRadio = new QRadioButton("Concert", transposeSection);
+    m_concertRadio->setStyleSheet(radioStyle);
+
+    radioRow->addWidget(m_writtenRadio);
+    radioRow->addWidget(m_concertRadio);
+    radioRow->addStretch();
+    transposeSectionLayout->addLayout(radioRow);
+
+    if (!m_isTransposing) {
+        sectionLabel->setStyleSheet("color: #555; font-size: 12px;");
+        m_writtenRadio->setEnabled(false);
+        m_concertRadio->setEnabled(false);
+    }
+
+    connect(m_concertRadio, &QRadioButton::toggled, [this](bool concert) {
+        if (!m_isTransposing) return;
+
+        Staff* st = m_part->staff(0);
+        Score* score = m_part->score();
+        Instrument* inst = m_part->instrument();
+
+        staff_idx_t staffIdx = st->idx();
+        track_idx_t startTrack = staffIdx * VOICES;
+        track_idx_t endTrack = startTrack + VOICES;
+
+        if (concert) {
+            // Switch to concert pitch display
+            inst->setTranspose(Interval(0, 0));
+
+            // Set tpc2 = tpc1 for all notes (renderer reads tpc2)
+            for (Segment* seg = score->firstSegment(SegmentType::ChordRest);
+                 seg; seg = seg->next1(SegmentType::ChordRest)) {
+                for (track_idx_t track = startTrack; track < endTrack; ++track) {
+                    EngravingItem* e = seg->element(track);
+                    if (!e || !e->isChord()) continue;
+                    Chord* chord = static_cast<Chord*>(e);
+                    for (Note* n : chord->notes())
+                        n->setTpc2(n->tpc1());
+                    for (Chord* g : chord->graceNotes())
+                        for (Note* n : g->notes())
+                            n->setTpc2(n->tpc1());
+                }
+            }
+
+            // Update key signatures: display concert key
+            for (Segment* seg = score->firstSegment(SegmentType::KeySig);
+                 seg; seg = seg->next1(SegmentType::KeySig)) {
+                EngravingItem* el = seg->element(startTrack);
+                if (!el || !el->isKeySig()) continue;
+                KeySig* ks = static_cast<KeySig*>(el);
+                if (ks->generated()) continue;
+                KeySigEvent kse = ks->keySigEvent();
+                kse.setKey(kse.concertKey());
+                ks->setKeySigEvent(kse);
+            }
+        } else {
+            // Switch back to written pitch display
+            inst->setTranspose(m_origTranspose);
+
+            // Recompute tpc2 from tpc1 using flipped interval
+            Interval flipped = m_origTranspose;
+            flipped.flip();
+            for (Segment* seg = score->firstSegment(SegmentType::ChordRest);
+                 seg; seg = seg->next1(SegmentType::ChordRest)) {
+                for (track_idx_t track = startTrack; track < endTrack; ++track) {
+                    EngravingItem* e = seg->element(track);
+                    if (!e || !e->isChord()) continue;
+                    Chord* chord = static_cast<Chord*>(e);
+                    for (Note* n : chord->notes())
+                        n->setTpc2(Transpose::transposeTpc(n->tpc1(), flipped, false));
+                    for (Chord* g : chord->graceNotes())
+                        for (Note* n : g->notes())
+                            n->setTpc2(Transpose::transposeTpc(n->tpc1(), flipped, false));
+                }
+            }
+
+            // Recompute key signatures: written key from concert key
+            for (Segment* seg = score->firstSegment(SegmentType::KeySig);
+                 seg; seg = seg->next1(SegmentType::KeySig)) {
+                EngravingItem* el = seg->element(startTrack);
+                if (!el || !el->isKeySig()) continue;
+                KeySig* ks = static_cast<KeySig*>(el);
+                if (ks->generated()) continue;
+                KeySigEvent kse = ks->keySigEvent();
+                kse.setKey(Transpose::transposeKey(kse.concertKey(), flipped));
+                ks->setKeySigEvent(kse);
+            }
+        }
+
+        emit pitchModeChanged();
+    });
+
+    contentLayout->addWidget(transposeSection);
 
     m_contentArea->hide();
     mainLayout->addWidget(m_contentArea);
@@ -338,6 +469,7 @@ void PartPanel::populateList()
         auto* row = new PartRow(part, name, m_scrollContent);
         connect(row, &PartRow::visibilityToggled, this, &PartPanel::relayout);
         connect(row, &PartRow::clefChanged, this, &PartPanel::relayout);
+        connect(row, &PartRow::pitchModeChanged, this, &PartPanel::relayout);
         m_rowsLayout->addWidget(row);
         m_rows.push_back(row);
     }

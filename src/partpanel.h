@@ -5,10 +5,13 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QComboBox>
+#include <QRadioButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QScrollArea>
 #include <vector>
+
+#include "engraving/dom/interval.h"
 
 namespace mu::engraving {
 class Score;
@@ -34,6 +37,7 @@ public:
 signals:
     void visibilityToggled();
     void clefChanged();
+    void pitchModeChanged();
 
 private:
     void updateEyeIcon();
@@ -45,6 +49,10 @@ private:
     QToolButton* m_arrowButton = nullptr;
     QWidget* m_contentArea = nullptr;
     QComboBox* m_clefCombo = nullptr;
+    QRadioButton* m_writtenRadio = nullptr;
+    QRadioButton* m_concertRadio = nullptr;
+    mu::engraving::Interval m_origTranspose;
+    bool m_isTransposing = false;
     bool m_expanded = false;
 };
 

@@ -11,6 +11,8 @@
 #include "engraving/dom/chord.h"
 #include "engraving/dom/keysig.h"
 #include "engraving/dom/instrument.h"
+#include "engraving/dom/keylist.h"
+#include "engraving/dom/factory.h"
 #include "engraving/editing/transpose.h"
 #include "engraving/rendering/iscorerenderer.h"
 #include "engraving/types/fraction.h"
@@ -20,6 +22,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QMouseEvent>
+#include <QResizeEvent>
 
 using namespace mu::engraving;
 using namespace mu::engraving::rendering;
@@ -68,6 +71,19 @@ static QIcon makeEyeIcon(bool visible)
     px.setDevicePixelRatio(2);
     return QIcon(px);
 }
+
+// ---------------------------------------------------------------------------
+// Radio button style (shared)
+// ---------------------------------------------------------------------------
+
+static const char* radioStyleStr =
+    "QRadioButton { color: #ccc; font-size: 11px; spacing: 4px; }"
+    "QRadioButton::indicator { width: 9px; height: 9px; }"
+    "QRadioButton::indicator::unchecked { border: 1px solid #888; border-radius: 5px; background: transparent; }"
+    "QRadioButton::indicator::checked { border: 1px solid #4a9eff; border-radius: 5px; background: #4a9eff; }"
+    "QRadioButton:disabled { color: #555; }"
+    "QRadioButton::indicator:disabled { border-color: #444; background: transparent; }"
+    "QRadioButton::indicator::checked:disabled { border-color: #555; background: #555; }";
 
 // ---------------------------------------------------------------------------
 // PartRow
@@ -173,23 +189,7 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     connect(m_clefCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             [this](int index) {
         auto newClef = static_cast<ClefType>(m_clefCombo->itemData(index).toInt());
-        Staff* st = m_part->staff(0);
-        st->clefList().setClef(0, ClefTypeList(newClef, newClef));
-
-        // Update the Clef element in the HeaderClef segment of the first measure
-        Score* score = m_part->score();
-        Measure* m = score->firstMeasure();
-        if (m) {
-            Segment* seg = m->first(SegmentType::HeaderClef);
-            if (seg) {
-                track_idx_t track = st->idx() * VOICES;
-                EngravingItem* el = seg->element(track);
-                if (el && el->isClef()) {
-                    static_cast<Clef*>(el)->setClefType(ClefTypeList(newClef, newClef));
-                }
-            }
-        }
-
+        applyClefInternal(static_cast<int>(newClef));
         emit clefChanged();
     });
 
@@ -210,27 +210,19 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     transposeSectionLayout->setContentsMargins(0, 0, 0, 0);
     transposeSectionLayout->setSpacing(4);
 
-    auto* sectionLabel = new QLabel("Transposing instrument", transposeSection);
+    auto* sectionLabel = new QLabel("Transposing Instrument", transposeSection);
     sectionLabel->setStyleSheet("color: #ccc; font-size: 12px;");
     transposeSectionLayout->addWidget(sectionLabel);
 
     auto* radioRow = new QHBoxLayout();
     radioRow->setContentsMargins(12, 0, 0, 0);
     radioRow->setSpacing(12);
-    QString radioStyle =
-        "QRadioButton { color: #ccc; font-size: 11px; spacing: 4px; }"
-        "QRadioButton::indicator { width: 9px; height: 9px; }"
-        "QRadioButton::indicator::unchecked { border: 1px solid #888; border-radius: 5px; background: transparent; }"
-        "QRadioButton::indicator::checked { border: 1px solid #4a9eff; border-radius: 5px; background: #4a9eff; }"
-        "QRadioButton:disabled { color: #555; }"
-        "QRadioButton::indicator:disabled { border-color: #444; background: transparent; }"
-        "QRadioButton::indicator::checked:disabled { border-color: #555; background: #555; }";
 
     m_writtenRadio = new QRadioButton("Written", transposeSection);
-    m_writtenRadio->setStyleSheet(radioStyle);
+    m_writtenRadio->setStyleSheet(radioStyleStr);
     m_writtenRadio->setChecked(true);
     m_concertRadio = new QRadioButton("Concert", transposeSection);
-    m_concertRadio->setStyleSheet(radioStyle);
+    m_concertRadio->setStyleSheet(radioStyleStr);
 
     radioRow->addWidget(m_writtenRadio);
     radioRow->addWidget(m_concertRadio);
@@ -245,79 +237,7 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
 
     connect(m_concertRadio, &QRadioButton::toggled, [this](bool concert) {
         if (!m_isTransposing) return;
-
-        Staff* st = m_part->staff(0);
-        Score* score = m_part->score();
-        Instrument* inst = m_part->instrument();
-
-        staff_idx_t staffIdx = st->idx();
-        track_idx_t startTrack = staffIdx * VOICES;
-        track_idx_t endTrack = startTrack + VOICES;
-
-        if (concert) {
-            // Switch to concert pitch display
-            inst->setTranspose(Interval(0, 0));
-
-            // Set tpc2 = tpc1 for all notes (renderer reads tpc2)
-            for (Segment* seg = score->firstSegment(SegmentType::ChordRest);
-                 seg; seg = seg->next1(SegmentType::ChordRest)) {
-                for (track_idx_t track = startTrack; track < endTrack; ++track) {
-                    EngravingItem* e = seg->element(track);
-                    if (!e || !e->isChord()) continue;
-                    Chord* chord = static_cast<Chord*>(e);
-                    for (Note* n : chord->notes())
-                        n->setTpc2(n->tpc1());
-                    for (Chord* g : chord->graceNotes())
-                        for (Note* n : g->notes())
-                            n->setTpc2(n->tpc1());
-                }
-            }
-
-            // Update key signatures: display concert key
-            for (Segment* seg = score->firstSegment(SegmentType::KeySig);
-                 seg; seg = seg->next1(SegmentType::KeySig)) {
-                EngravingItem* el = seg->element(startTrack);
-                if (!el || !el->isKeySig()) continue;
-                KeySig* ks = static_cast<KeySig*>(el);
-                if (ks->generated()) continue;
-                KeySigEvent kse = ks->keySigEvent();
-                kse.setKey(kse.concertKey());
-                ks->setKeySigEvent(kse);
-            }
-        } else {
-            // Switch back to written pitch display
-            inst->setTranspose(m_origTranspose);
-
-            // Recompute tpc2 from tpc1 using flipped interval
-            Interval flipped = m_origTranspose;
-            flipped.flip();
-            for (Segment* seg = score->firstSegment(SegmentType::ChordRest);
-                 seg; seg = seg->next1(SegmentType::ChordRest)) {
-                for (track_idx_t track = startTrack; track < endTrack; ++track) {
-                    EngravingItem* e = seg->element(track);
-                    if (!e || !e->isChord()) continue;
-                    Chord* chord = static_cast<Chord*>(e);
-                    for (Note* n : chord->notes())
-                        n->setTpc2(Transpose::transposeTpc(n->tpc1(), flipped, false));
-                    for (Chord* g : chord->graceNotes())
-                        for (Note* n : g->notes())
-                            n->setTpc2(Transpose::transposeTpc(n->tpc1(), flipped, false));
-                }
-            }
-
-            // Recompute key signatures: written key from concert key
-            for (Segment* seg = score->firstSegment(SegmentType::KeySig);
-                 seg; seg = seg->next1(SegmentType::KeySig)) {
-                EngravingItem* el = seg->element(startTrack);
-                if (!el || !el->isKeySig()) continue;
-                KeySig* ks = static_cast<KeySig*>(el);
-                if (ks->generated()) continue;
-                KeySigEvent kse = ks->keySigEvent();
-                kse.setKey(Transpose::transposeKey(kse.concertKey(), flipped));
-                ks->setKeySigEvent(kse);
-            }
-        }
-
+        applyPitchMode(concert);
         emit pitchModeChanged();
     });
 
@@ -330,6 +250,200 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     if (!m_part->show()) {
         m_nameLabel->setStyleSheet("color: #666; font-size: 12px;");
     }
+}
+
+void PartRow::applyPitchMode(bool concert)
+{
+    if (!m_isTransposing) return;
+    if (concert == m_inConcertPitch) return;
+    m_inConcertPitch = concert;
+
+    Staff* st = m_part->staff(0);
+    Score* score = m_part->score();
+    Instrument* inst = m_part->instrument();
+
+    staff_idx_t staffIdx = st->idx();
+    track_idx_t startTrack = staffIdx * VOICES;
+    track_idx_t endTrack = startTrack + VOICES;
+
+    if (concert) {
+        inst->setTranspose(Interval(0, 0));
+
+        for (Segment* seg = score->firstSegment(SegmentType::ChordRest);
+             seg; seg = seg->next1(SegmentType::ChordRest)) {
+            for (track_idx_t track = startTrack; track < endTrack; ++track) {
+                EngravingItem* e = seg->element(track);
+                if (!e || !e->isChord()) continue;
+                Chord* chord = static_cast<Chord*>(e);
+                for (Note* n : chord->notes())
+                    n->setTpc2(n->tpc1());
+                for (Chord* g : chord->graceNotes())
+                    for (Note* n : g->notes())
+                        n->setTpc2(n->tpc1());
+            }
+        }
+    } else {
+        inst->setTranspose(m_origTranspose);
+
+        Interval flipped = m_origTranspose;
+        flipped.flip();
+        for (Segment* seg = score->firstSegment(SegmentType::ChordRest);
+             seg; seg = seg->next1(SegmentType::ChordRest)) {
+            for (track_idx_t track = startTrack; track < endTrack; ++track) {
+                EngravingItem* e = seg->element(track);
+                if (!e || !e->isChord()) continue;
+                Chord* chord = static_cast<Chord*>(e);
+                for (Note* n : chord->notes())
+                    n->setTpc2(Transpose::transposeTpc(n->tpc1(), flipped, false));
+                for (Chord* g : chord->graceNotes())
+                    for (Note* n : g->notes())
+                        n->setTpc2(Transpose::transposeTpc(n->tpc1(), flipped, false));
+            }
+        }
+    }
+
+    // --- Update key signature ---
+    // concert mode: written->concert = transpose UP by orig interval
+    // written mode: concert->written = transpose DOWN (flipped)
+    Interval keyInterval = m_origTranspose;
+    if (!concert) keyInterval.flip();
+
+    // Update existing entries in the KeyList
+    KeyList* kl = st->keyList();
+    bool hadEntries = !kl->empty();
+    for (auto& [tick, kse] : *kl) {
+        Key newKey = Transpose::transposeKey(kse.key(), keyInterval);
+        kse.setKey(newKey);
+    }
+
+    // If KeyList was empty (C major default), insert a transposed entry
+    if (!hadEntries) {
+        KeySigEvent kse;
+        Key newKey = Transpose::transposeKey(Key::C, keyInterval);
+        kse.setConcertKey(newKey);
+        kl->setKey(0, kse);
+    }
+
+    // Update or create the visual KeySig element at tick 0
+    Measure* firstMeasure = score->firstMeasure();
+    if (firstMeasure) {
+        Segment* keySeg = firstMeasure->getSegmentR(SegmentType::KeySig, Fraction(0, 1));
+        if (keySeg) {
+            EngravingItem* el = keySeg->element(startTrack);
+            KeySig* ks = nullptr;
+            if (el && el->isKeySig()) {
+                ks = static_cast<KeySig*>(el);
+            } else {
+                ks = Factory::createKeySig(keySeg);
+                ks->setTrack(startTrack);
+                keySeg->add(ks);
+            }
+            KeySigEvent targetKse = st->keySigEvent(Fraction(0, 1));
+            ks->setKeySigEvent(targetKse);
+        }
+    }
+
+    // Update radio UI without re-triggering
+    if (m_concertRadio) {
+        m_concertRadio->blockSignals(true);
+        m_writtenRadio->blockSignals(true);
+        m_concertRadio->setChecked(concert);
+        m_writtenRadio->setChecked(!concert);
+        m_concertRadio->blockSignals(false);
+        m_writtenRadio->blockSignals(false);
+    }
+}
+
+void PartRow::setPitchControlEnabled(bool enabled)
+{
+    if (!m_isTransposing) return;
+    if (m_writtenRadio) m_writtenRadio->setEnabled(enabled);
+    if (m_concertRadio) m_concertRadio->setEnabled(enabled);
+}
+
+void PartRow::setClefControlEnabled(bool enabled)
+{
+    if (m_clefCombo) m_clefCombo->setEnabled(enabled);
+}
+
+void PartRow::applyClefInternal(int clefType)
+{
+    auto newClef = static_cast<ClefType>(clefType);
+    Staff* st = m_part->staff(0);
+    st->clefList().setClef(0, ClefTypeList(newClef, newClef));
+
+    Score* score = m_part->score();
+    Measure* m = score->firstMeasure();
+    if (m) {
+        Segment* seg = m->first(SegmentType::HeaderClef);
+        if (seg) {
+            track_idx_t track = st->idx() * VOICES;
+            EngravingItem* el = seg->element(track);
+            if (el && el->isClef()) {
+                static_cast<Clef*>(el)->setClefType(ClefTypeList(newClef, newClef));
+            }
+        }
+    }
+
+    // Update combo without triggering signal
+    if (m_clefCombo) {
+        m_clefCombo->blockSignals(true);
+        for (int i = 0; i < m_clefCombo->count(); ++i) {
+            if (m_clefCombo->itemData(i).toInt() == clefType) {
+                m_clefCombo->setCurrentIndex(i);
+                break;
+            }
+        }
+        m_clefCombo->blockSignals(false);
+    }
+}
+
+int PartRow::computeBestClef() const
+{
+    Staff* st = m_part->staff(0);
+    Score* score = m_part->score();
+    staff_idx_t staffIdx = st->idx();
+    track_idx_t startTrack = staffIdx * VOICES;
+    track_idx_t endTrack = startTrack + VOICES;
+
+    int highCount = 0, lowCount = 0;
+    for (Segment* seg = score->firstSegment(SegmentType::ChordRest);
+         seg; seg = seg->next1(SegmentType::ChordRest)) {
+        for (track_idx_t track = startTrack; track < endTrack; ++track) {
+            EngravingItem* e = seg->element(track);
+            if (!e || !e->isChord()) continue;
+            Chord* chord = static_cast<Chord*>(e);
+            for (Note* n : chord->notes()) {
+                if (n->pitch() >= 60)
+                    ++highCount;
+                else
+                    ++lowCount;
+            }
+        }
+    }
+
+    return (highCount >= lowCount)
+        ? static_cast<int>(ClefType::G)
+        : static_cast<int>(ClefType::F);
+}
+
+void PartRow::applySimplifiedClef()
+{
+    // Store original clef if not already stored
+    if (m_origClefInt < 0) {
+        Staff* st = m_part->staff(0);
+        m_origClefInt = static_cast<int>(st->clef(Fraction(0, 1)));
+    }
+
+    int best = computeBestClef();
+    applyClefInternal(best);
+}
+
+void PartRow::restoreOriginalClef()
+{
+    if (m_origClefInt < 0) return;
+    applyClefInternal(m_origClefInt);
+    m_origClefInt = -1;
 }
 
 void PartRow::setPartVisible(bool visible)
@@ -396,7 +510,94 @@ PartPanel::PartPanel(QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 4, 12, 10);
 
-    // Buttons
+    // --- Global settings ---
+
+    // Transposing instruments
+    auto* pitchSection = new QWidget(this);
+    auto* pitchLayout = new QVBoxLayout(pitchSection);
+    pitchLayout->setContentsMargins(0, 0, 0, 0);
+    pitchLayout->setSpacing(2);
+
+    auto* pitchLabel = new QLabel("Transposing Instruments", pitchSection);
+    pitchLabel->setStyleSheet("color: #ccc; font-size: 12px;");
+    pitchLayout->addWidget(pitchLabel);
+
+    m_transposingListLabel = new QLabel(pitchSection);
+    m_transposingListLabel->setStyleSheet("color: #888; font-size: 9px; padding-left: 1px;");
+    m_transposingListLabel->setTextFormat(Qt::PlainText);
+    m_transposingListLabel->hide();
+    pitchLayout->addWidget(m_transposingListLabel);
+
+    auto* pitchRadioRow = new QHBoxLayout();
+    pitchRadioRow->setContentsMargins(12, 0, 0, 0);
+    pitchRadioRow->setSpacing(10);
+
+    m_globalPitchWritten = new QRadioButton("Written", pitchSection);
+    m_globalPitchWritten->setStyleSheet(radioStyleStr);
+    m_globalPitchConcert = new QRadioButton("Concert", pitchSection);
+    m_globalPitchConcert->setStyleSheet(radioStyleStr);
+    m_globalPitchPerPart = new QRadioButton("Per Part", pitchSection);
+    m_globalPitchPerPart->setStyleSheet(radioStyleStr);
+    m_globalPitchWritten->setChecked(true);
+
+    pitchRadioRow->addWidget(m_globalPitchWritten);
+    pitchRadioRow->addWidget(m_globalPitchConcert);
+    pitchRadioRow->addWidget(m_globalPitchPerPart);
+    pitchRadioRow->addStretch();
+    pitchLayout->addLayout(pitchRadioRow);
+
+    layout->addWidget(pitchSection);
+
+    // Clefs
+    auto* clefSection = new QWidget(this);
+    auto* clefLayout = new QVBoxLayout(clefSection);
+    clefLayout->setContentsMargins(0, 4, 0, 0);
+    clefLayout->setSpacing(2);
+
+    auto* clefLabel = new QLabel("Clefs", clefSection);
+    clefLabel->setStyleSheet("color: #ccc; font-size: 12px;");
+    clefLayout->addWidget(clefLabel);
+
+    auto* clefRadioRow = new QHBoxLayout();
+    clefRadioRow->setContentsMargins(12, 0, 0, 0);
+    clefRadioRow->setSpacing(10);
+
+    m_globalClefWritten = new QRadioButton("Written", clefSection);
+    m_globalClefWritten->setStyleSheet(radioStyleStr);
+    m_globalClefSimplified = new QRadioButton("Treble && Bass", clefSection);
+    m_globalClefSimplified->setStyleSheet(radioStyleStr);
+    m_globalClefPerPart = new QRadioButton("Per Part", clefSection);
+    m_globalClefPerPart->setStyleSheet(radioStyleStr);
+    m_globalClefWritten->setChecked(true);
+
+    clefRadioRow->addWidget(m_globalClefWritten);
+    clefRadioRow->addWidget(m_globalClefSimplified);
+    clefRadioRow->addWidget(m_globalClefPerPart);
+    clefRadioRow->addStretch();
+    clefLayout->addLayout(clefRadioRow);
+
+    layout->addWidget(clefSection);
+
+    // Connect global settings
+    auto pitchChanged = [this](bool checked) {
+        if (!checked) return;
+        applyGlobalSettings();
+        relayout();
+    };
+    connect(m_globalPitchWritten, &QRadioButton::toggled, pitchChanged);
+    connect(m_globalPitchConcert, &QRadioButton::toggled, pitchChanged);
+    connect(m_globalPitchPerPart, &QRadioButton::toggled, pitchChanged);
+
+    auto clefChanged = [this](bool checked) {
+        if (!checked) return;
+        applyGlobalSettings();
+        relayout();
+    };
+    connect(m_globalClefWritten, &QRadioButton::toggled, clefChanged);
+    connect(m_globalClefSimplified, &QRadioButton::toggled, clefChanged);
+    connect(m_globalClefPerPart, &QRadioButton::toggled, clefChanged);
+
+    // --- Buttons ---
     auto* btnLayout = new QHBoxLayout();
     auto* btnAll = new QPushButton("Show All", this);
     auto* btnSolo = new QPushButton("Solo", this);
@@ -496,6 +697,49 @@ void PartPanel::populateList()
     }
 
     m_rowsLayout->addStretch();
+
+    // Update transposing instruments list label
+    QStringList transposingNames;
+    for (auto* row : m_rows) {
+        if (row->isTransposing()) {
+            transposingNames << row->part()->partName().toQString();
+        }
+    }
+    m_transposingFullText = transposingNames.join(", ");
+    updateTransposingLabel();
+
+    // Apply current global settings to new rows
+    applyGlobalSettings();
+}
+
+void PartPanel::applyGlobalSettings()
+{
+    bool perPart = m_globalPitchPerPart->isChecked();
+    bool concert = m_globalPitchConcert->isChecked();
+    bool simplified = m_globalClefSimplified->isChecked();
+
+    for (auto* row : m_rows) {
+        // Pitch mode
+        if (perPart) {
+            row->setPitchControlEnabled(true);
+        } else {
+            row->applyPitchMode(concert);
+            row->setPitchControlEnabled(false);
+        }
+
+        // Clef mode
+        bool clefPerPart = m_globalClefPerPart->isChecked();
+        if (clefPerPart) {
+            row->setClefControlEnabled(true);
+        } else if (simplified) {
+            row->applySimplifiedClef();
+            row->setClefControlEnabled(false);
+        } else {
+            // Written
+            row->restoreOriginalClef();
+            row->setClefControlEnabled(false);
+        }
+    }
 }
 
 void PartPanel::showSoloPart()
@@ -552,6 +796,34 @@ void PartPanel::relayout()
 
     m_renderer->layoutScore(m_score, Fraction(0, 1), Fraction(-1, 1));
     emit partsChanged();
+}
+
+void PartPanel::updateTransposingLabel()
+{
+    bool hasTransposing = !m_transposingFullText.isEmpty();
+    m_globalPitchWritten->setEnabled(hasTransposing);
+    m_globalPitchConcert->setEnabled(hasTransposing);
+    m_globalPitchPerPart->setEnabled(hasTransposing);
+
+    if (!hasTransposing) {
+        m_transposingListLabel->setText("No transposing instruments.");
+        m_transposingListLabel->setToolTip(QString());
+        m_transposingListLabel->show();
+        return;
+    }
+    m_transposingListLabel->setToolTip(m_transposingFullText);
+    QFontMetrics fm(m_transposingListLabel->font());
+    int availWidth = width() - 36; // layout margins + label padding
+    if (availWidth < 60) availWidth = 160;
+    QString elided = fm.elidedText(m_transposingFullText, Qt::ElideRight, availWidth);
+    m_transposingListLabel->setText(elided);
+    m_transposingListLabel->show();
+}
+
+void PartPanel::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    updateTransposingLabel();
 }
 
 } // namespace scoretracker

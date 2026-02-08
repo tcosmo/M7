@@ -1,0 +1,2 @@
+- Document how transposing instruments are spotted (musicxml field)
+- Document how Treble & Bass clef option works

@@ -354,6 +354,10 @@ void App::setupToolbar()
         setSidebarVisible(on);
     });
 
+    auto* sidebarSpacer = new QWidget();
+    sidebarSpacer->setFixedWidth(2);
+    m_toolbar->addWidget(sidebarSpacer);
+
     connect(m_audioPlayer, &AudioPlayer::playbackStarted, [this]() {
         m_playPauseAction->setText("Pause");
     });

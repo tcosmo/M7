@@ -34,6 +34,13 @@ public:
     void setPartVisible(bool visible);
     bool isPartVisible() const;
     mu::engraving::Part* part() const { return m_part; }
+    bool isTransposing() const { return m_isTransposing; }
+
+    void applyPitchMode(bool concert);
+    void setPitchControlEnabled(bool enabled);
+    void applySimplifiedClef();
+    void restoreOriginalClef();
+    void setClefControlEnabled(bool enabled);
 
 signals:
     void visibilityToggled();
@@ -46,6 +53,8 @@ protected:
 private:
     void updateEyeIcon();
     void toggleExpand();
+    void applyClefInternal(int clefType);
+    int computeBestClef() const;
 
     mu::engraving::Part* m_part = nullptr;
     QToolButton* m_eyeButton = nullptr;
@@ -57,6 +66,8 @@ private:
     QRadioButton* m_concertRadio = nullptr;
     mu::engraving::Interval m_origTranspose;
     bool m_isTransposing = false;
+    bool m_inConcertPitch = false;
+    int m_origClefInt = -1;
     bool m_expanded = false;
 };
 
@@ -82,6 +93,9 @@ private:
     void populateList();
     void relayout();
     void updateRow(int index, bool visible);
+    void applyGlobalSettings();
+    void updateTransposingLabel();
+    void resizeEvent(QResizeEvent* event) override;
 
     mu::engraving::Score* m_score = nullptr;
     mu::engraving::rendering::IScoreRenderer* m_renderer = nullptr;
@@ -90,6 +104,15 @@ private:
     QVBoxLayout* m_rowsLayout = nullptr;
     std::vector<PartRow*> m_rows;
     std::vector<mu::engraving::Part*> m_parts;
+
+    QLabel* m_transposingListLabel = nullptr;
+    QString m_transposingFullText;
+    QRadioButton* m_globalPitchWritten = nullptr;
+    QRadioButton* m_globalPitchConcert = nullptr;
+    QRadioButton* m_globalPitchPerPart = nullptr;
+    QRadioButton* m_globalClefWritten = nullptr;
+    QRadioButton* m_globalClefSimplified = nullptr;
+    QRadioButton* m_globalClefPerPart = nullptr;
 };
 
 } // namespace scoretracker

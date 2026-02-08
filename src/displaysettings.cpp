@@ -68,7 +68,11 @@ void DisplaySettings::load()
     }
 
     QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
-    QJsonObject obj = doc.object();
+    QJsonObject root = doc.object();
+
+    // Support both old flat format and new nested "display" key
+    QJsonObject obj = root.contains("display") ? root["display"].toObject() : root;
+
     int mode = obj.value("layoutMode").toInt(2); // default Continuous Vertical
     bool show = obj.value("showTitleFrame").toBool(false);
     qDebug() << "DisplaySettings: loaded settings.json from" << path
@@ -79,14 +83,28 @@ void DisplaySettings::load()
 
 void DisplaySettings::save()
 {
-    QJsonObject obj;
-    obj["layoutMode"] = m_layoutModeCombo->currentIndex();
-    obj["showTitleFrame"] = m_showTitleCheckbox->isChecked();
-
     QString path = settingsPath();
+
+    // Read existing file to preserve other sections
+    QJsonObject root;
+    QFile readFile(path);
+    if (readFile.open(QIODevice::ReadOnly)) {
+        root = QJsonDocument::fromJson(readFile.readAll()).object();
+        readFile.close();
+    }
+
+    // Remove old flat keys if migrating
+    root.remove("layoutMode");
+    root.remove("showTitleFrame");
+
+    QJsonObject displayObj;
+    displayObj["layoutMode"] = m_layoutModeCombo->currentIndex();
+    displayObj["showTitleFrame"] = m_showTitleCheckbox->isChecked();
+    root["display"] = displayObj;
+
     QFile file(path);
     if (file.open(QIODevice::WriteOnly)) {
-        file.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+        file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
         qDebug() << "DisplaySettings: saved settings.json to" << path
                  << "- layoutMode:" << m_layoutModeCombo->currentIndex()
                  << "showTitleFrame:" << m_showTitleCheckbox->isChecked();

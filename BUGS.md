@@ -6,3 +6,7 @@
   - Start app with system in light mode then switch system to dark mode: ![Sidebar bug 2](BUGS_images/screenshot2.png)
 
 - Scrollbar in light mode is not visible
+
+## Settings.json
+
+- make settings use words instead of numbers, e.g. "layoutMode": 2 to "layoutMode": "continuous_vertical"

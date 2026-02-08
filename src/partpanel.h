@@ -38,12 +38,20 @@ public:
 
     void applyPitchMode(bool concert);
     void setPitchControlEnabled(bool enabled);
-    void applySimplifiedClef();
-    void restoreOriginalClef();
     void setClefControlEnabled(bool enabled);
+    void setOctaveControlEnabled(bool enabled);
+    void applyOriginalClef();
+    void reapplyPerPartClef();
+
+    QString partName() const;
+    int clefComboValue() const;
+    int octaveComboValue() const;
+    int xmlClefInt() const { return m_xmlClefInt; }
+    void setClefFromSettings(int clef, int octave);
 
 signals:
     void visibilityToggled();
+    void soloRequested();
     void clefChanged();
     void pitchModeChanged();
 
@@ -54,7 +62,7 @@ private:
     void updateEyeIcon();
     void toggleExpand();
     void applyClefInternal(int clefType);
-    int computeBestClef() const;
+    void updateOctaveCombo();
 
     mu::engraving::Part* m_part = nullptr;
     QToolButton* m_eyeButton = nullptr;
@@ -62,12 +70,13 @@ private:
     QToolButton* m_arrowButton = nullptr;
     QWidget* m_contentArea = nullptr;
     QComboBox* m_clefCombo = nullptr;
+    QComboBox* m_octaveCombo = nullptr;
     QRadioButton* m_writtenRadio = nullptr;
     QRadioButton* m_concertRadio = nullptr;
     mu::engraving::Interval m_origTranspose;
     bool m_isTransposing = false;
     bool m_inConcertPitch = false;
-    int m_origClefInt = -1;
+    int m_xmlClefInt = -1;
     bool m_expanded = false;
 };
 
@@ -80,6 +89,7 @@ public:
 
     void setScore(mu::engraving::Score* score);
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
+    void setScoreFileName(const QString& fileName);
     int desiredHeight() const;
 
 signals:
@@ -95,8 +105,11 @@ private:
     void updateRow(int index, bool visible);
     void applyGlobalSettings();
     void updateTransposingLabel();
+    void loadSettings();
+    void saveSettings();
     void resizeEvent(QResizeEvent* event) override;
 
+    QString m_scoreFileName;
     mu::engraving::Score* m_score = nullptr;
     mu::engraving::rendering::IScoreRenderer* m_renderer = nullptr;
     QScrollArea* m_scrollArea = nullptr;
@@ -111,7 +124,6 @@ private:
     QRadioButton* m_globalPitchConcert = nullptr;
     QRadioButton* m_globalPitchPerPart = nullptr;
     QRadioButton* m_globalClefWritten = nullptr;
-    QRadioButton* m_globalClefSimplified = nullptr;
     QRadioButton* m_globalClefPerPart = nullptr;
 };
 

@@ -23,6 +23,13 @@
 #include <QPainterPath>
 #include <QMouseEvent>
 #include <QResizeEvent>
+#include <QGuiApplication>
+#include <QCoreApplication>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QDebug>
 
 using namespace mu::engraving;
 using namespace mu::engraving::rendering;
@@ -86,6 +93,81 @@ static const char* radioStyleStr =
     "QRadioButton::indicator::checked:disabled { border-color: #555; background: #555; }";
 
 // ---------------------------------------------------------------------------
+// Octave-shifted clef helpers
+// ---------------------------------------------------------------------------
+
+// Returns the base clef (strips octave shift) for G and F clef families.
+static ClefType getBaseClef(ClefType clef)
+{
+    switch (clef) {
+    case ClefType::G:
+    case ClefType::G8_VB:
+    case ClefType::G8_VA:
+    case ClefType::G15_MB:
+    case ClefType::G15_MA:
+    case ClefType::G8_VB_O:
+    case ClefType::G8_VB_P:
+    case ClefType::G8_VB_C:
+        return ClefType::G;
+    case ClefType::F:
+    case ClefType::F8_VB:
+    case ClefType::F_8VA:
+    case ClefType::F15_MB:
+    case ClefType::F_15MA:
+        return ClefType::F;
+    default:
+        return clef;
+    }
+}
+
+// Returns the octave offset encoded in an octave-shifted clef variant.
+static int getOctaveFromClef(ClefType clef)
+{
+    switch (clef) {
+    case ClefType::G8_VB:
+    case ClefType::G8_VB_O:
+    case ClefType::G8_VB_P:
+    case ClefType::G8_VB_C:
+    case ClefType::F8_VB:
+        return -1;
+    case ClefType::G8_VA:
+    case ClefType::F_8VA:
+        return 1;
+    case ClefType::G15_MB:
+    case ClefType::F15_MB:
+        return -2;
+    case ClefType::G15_MA:
+    case ClefType::F_15MA:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
+// Returns the ClefType for a given base clef and octave offset.
+// Only supports G and F families with offsets -1, 0, +1.
+static ClefType getOctaveClef(ClefType base, int octave)
+{
+    if (base == ClefType::G) {
+        if (octave == -1) return ClefType::G8_VB;
+        if (octave ==  1) return ClefType::G8_VA;
+        return ClefType::G;
+    }
+    if (base == ClefType::F) {
+        if (octave == -1) return ClefType::F8_VB;
+        if (octave ==  1) return ClefType::F_8VA;
+        return ClefType::F;
+    }
+    return base; // C clefs: no octave variants
+}
+
+// Returns true if the base clef supports octave shifting (G or F family).
+static bool clefSupportsOctave(ClefType base)
+{
+    return base == ClefType::G || base == ClefType::F;
+}
+
+// ---------------------------------------------------------------------------
 // PartRow
 // ---------------------------------------------------------------------------
 
@@ -117,6 +199,10 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     updateEyeIcon();
 
     connect(m_eyeButton, &QToolButton::clicked, [this]() {
+        if (QGuiApplication::keyboardModifiers() & Qt::ShiftModifier) {
+            emit soloRequested();
+            return;
+        }
         bool newState = !m_part->show();
         m_part->setShow(newState);
         updateEyeIcon();
@@ -179,8 +265,10 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     // Set current clef from the part's first staff
     Staff* staff = m_part->staff(0);
     ClefType currentClef = staff->clef(Fraction(0, 1));
+    m_xmlClefInt = static_cast<int>(currentClef);
+    ClefType baseClef = getBaseClef(currentClef);
     for (int i = 0; i < m_clefCombo->count(); ++i) {
-        if (m_clefCombo->itemData(i).toInt() == static_cast<int>(currentClef)) {
+        if (m_clefCombo->itemData(i).toInt() == static_cast<int>(baseClef)) {
             m_clefCombo->setCurrentIndex(i);
             break;
         }
@@ -188,8 +276,11 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
 
     connect(m_clefCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             [this](int index) {
-        auto newClef = static_cast<ClefType>(m_clefCombo->itemData(index).toInt());
-        applyClefInternal(static_cast<int>(newClef));
+        auto selectedClef = static_cast<ClefType>(m_clefCombo->itemData(index).toInt());
+        int octave = m_octaveCombo ? m_octaveCombo->currentData().toInt() : 0;
+        ClefType finalClef = getOctaveClef(selectedClef, octave);
+        applyClefInternal(static_cast<int>(finalClef));
+        updateOctaveCombo();
         emit clefChanged();
     });
 
@@ -197,6 +288,43 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     clefRow->addWidget(m_clefCombo);
     clefRow->addStretch();
     contentLayout->addLayout(clefRow);
+
+    // Octave selector row
+    auto* octaveRow = new QHBoxLayout();
+    octaveRow->setSpacing(6);
+    auto* octaveLabel = new QLabel("Octave", m_contentArea);
+    octaveLabel->setStyleSheet("color: #ccc; font-size: 11px;");
+    m_octaveCombo = new QComboBox(m_contentArea);
+    m_octaveCombo->setFixedWidth(160);
+    m_octaveCombo->addItem("Written",           0);
+    m_octaveCombo->addItem("8va (octave up)",   1);
+    m_octaveCombo->addItem("8vb (octave down)", -1);
+
+    // Set initial octave from current clef
+    int initOctave = getOctaveFromClef(currentClef);
+    for (int i = 0; i < m_octaveCombo->count(); ++i) {
+        if (m_octaveCombo->itemData(i).toInt() == initOctave) {
+            m_octaveCombo->setCurrentIndex(i);
+            break;
+        }
+    }
+
+    connect(m_octaveCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            [this](int index) {
+        int octave = m_octaveCombo->itemData(index).toInt();
+        auto baseClef = static_cast<ClefType>(m_clefCombo->currentData().toInt());
+        ClefType finalClef = getOctaveClef(baseClef, octave);
+        applyClefInternal(static_cast<int>(finalClef));
+        emit clefChanged();
+    });
+
+    octaveRow->addWidget(octaveLabel);
+    octaveRow->addWidget(m_octaveCombo);
+    octaveRow->addStretch();
+    contentLayout->addLayout(octaveRow);
+
+    // Enable/disable octave combo based on initial clef
+    updateOctaveCombo();
 
     // Transposing instrument section
     Interval transpose = m_part->instrument()->transpose();
@@ -364,6 +492,116 @@ void PartRow::setPitchControlEnabled(bool enabled)
 void PartRow::setClefControlEnabled(bool enabled)
 {
     if (m_clefCombo) m_clefCombo->setEnabled(enabled);
+    if (m_octaveCombo) {
+        if (!enabled)
+            m_octaveCombo->setEnabled(false);
+        else
+            updateOctaveCombo();
+    }
+}
+
+void PartRow::setOctaveControlEnabled(bool enabled)
+{
+    if (m_octaveCombo) {
+        if (!enabled)
+            m_octaveCombo->setEnabled(false);
+        else
+            updateOctaveCombo();
+    }
+}
+
+void PartRow::updateOctaveCombo()
+{
+    if (!m_octaveCombo || !m_clefCombo) return;
+    auto baseClef = static_cast<ClefType>(m_clefCombo->currentData().toInt());
+    bool supported = clefSupportsOctave(baseClef);
+    m_octaveCombo->setEnabled(supported);
+    if (!supported) {
+        // Reset to "Written" (0) when switching to a clef without octave support
+        m_octaveCombo->blockSignals(true);
+        for (int i = 0; i < m_octaveCombo->count(); ++i) {
+            if (m_octaveCombo->itemData(i).toInt() == 0) {
+                m_octaveCombo->setCurrentIndex(i);
+                break;
+            }
+        }
+        m_octaveCombo->blockSignals(false);
+    }
+}
+
+void PartRow::applyOriginalClef()
+{
+    if (m_xmlClefInt < 0) return;
+    // Apply the MusicXML clef to the score without touching combos
+    auto clef = static_cast<ClefType>(m_xmlClefInt);
+    Staff* st = m_part->staff(0);
+    st->clefList().setClef(0, ClefTypeList(clef, clef));
+
+    Score* score = m_part->score();
+    Measure* m = score->firstMeasure();
+    if (m) {
+        Segment* seg = m->first(SegmentType::HeaderClef);
+        if (seg) {
+            track_idx_t track = st->idx() * VOICES;
+            EngravingItem* el = seg->element(track);
+            if (el && el->isClef())
+                static_cast<Clef*>(el)->setClefType(ClefTypeList(clef, clef));
+        }
+    }
+}
+
+void PartRow::reapplyPerPartClef()
+{
+    if (!m_clefCombo) return;
+    auto base = static_cast<ClefType>(m_clefCombo->currentData().toInt());
+    int octave = m_octaveCombo ? m_octaveCombo->currentData().toInt() : 0;
+    ClefType clef = getOctaveClef(base, octave);
+    applyClefInternal(static_cast<int>(clef));
+}
+
+QString PartRow::partName() const
+{
+    return m_part->partName().toQString();
+}
+
+int PartRow::clefComboValue() const
+{
+    return m_clefCombo ? m_clefCombo->currentData().toInt() : -1;
+}
+
+int PartRow::octaveComboValue() const
+{
+    return m_octaveCombo ? m_octaveCombo->currentData().toInt() : 0;
+}
+
+void PartRow::setClefFromSettings(int clef, int octave)
+{
+    if (!m_clefCombo || !m_octaveCombo) return;
+
+    m_clefCombo->blockSignals(true);
+    for (int i = 0; i < m_clefCombo->count(); ++i) {
+        if (m_clefCombo->itemData(i).toInt() == clef) {
+            m_clefCombo->setCurrentIndex(i);
+            break;
+        }
+    }
+    m_clefCombo->blockSignals(false);
+
+    m_octaveCombo->blockSignals(true);
+    for (int i = 0; i < m_octaveCombo->count(); ++i) {
+        if (m_octaveCombo->itemData(i).toInt() == octave) {
+            m_octaveCombo->setCurrentIndex(i);
+            break;
+        }
+    }
+    m_octaveCombo->blockSignals(false);
+
+    updateOctaveCombo();
+
+    // Apply the clef to the score
+    auto baseClef = static_cast<ClefType>(clef);
+    ClefType finalClef = getOctaveClef(baseClef, octave);
+    applyClefInternal(static_cast<int>(finalClef));
 }
 
 void PartRow::applyClefInternal(int clefType)
@@ -385,66 +623,34 @@ void PartRow::applyClefInternal(int clefType)
         }
     }
 
-    // Update combo without triggering signal
+    // Update clef combo to show the base clef without triggering signal
+    ClefType base = getBaseClef(newClef);
     if (m_clefCombo) {
         m_clefCombo->blockSignals(true);
         for (int i = 0; i < m_clefCombo->count(); ++i) {
-            if (m_clefCombo->itemData(i).toInt() == clefType) {
+            if (m_clefCombo->itemData(i).toInt() == static_cast<int>(base)) {
                 m_clefCombo->setCurrentIndex(i);
                 break;
             }
         }
         m_clefCombo->blockSignals(false);
     }
-}
 
-int PartRow::computeBestClef() const
-{
-    Staff* st = m_part->staff(0);
-    Score* score = m_part->score();
-    staff_idx_t staffIdx = st->idx();
-    track_idx_t startTrack = staffIdx * VOICES;
-    track_idx_t endTrack = startTrack + VOICES;
-
-    int highCount = 0, lowCount = 0;
-    for (Segment* seg = score->firstSegment(SegmentType::ChordRest);
-         seg; seg = seg->next1(SegmentType::ChordRest)) {
-        for (track_idx_t track = startTrack; track < endTrack; ++track) {
-            EngravingItem* e = seg->element(track);
-            if (!e || !e->isChord()) continue;
-            Chord* chord = static_cast<Chord*>(e);
-            for (Note* n : chord->notes()) {
-                if (n->pitch() >= 60)
-                    ++highCount;
-                else
-                    ++lowCount;
+    // Update octave combo to reflect the octave offset
+    if (m_octaveCombo) {
+        int oct = getOctaveFromClef(newClef);
+        m_octaveCombo->blockSignals(true);
+        for (int i = 0; i < m_octaveCombo->count(); ++i) {
+            if (m_octaveCombo->itemData(i).toInt() == oct) {
+                m_octaveCombo->setCurrentIndex(i);
+                break;
             }
         }
+        m_octaveCombo->blockSignals(false);
+        updateOctaveCombo();
     }
-
-    return (highCount >= lowCount)
-        ? static_cast<int>(ClefType::G)
-        : static_cast<int>(ClefType::F);
 }
 
-void PartRow::applySimplifiedClef()
-{
-    // Store original clef if not already stored
-    if (m_origClefInt < 0) {
-        Staff* st = m_part->staff(0);
-        m_origClefInt = static_cast<int>(st->clef(Fraction(0, 1)));
-    }
-
-    int best = computeBestClef();
-    applyClefInternal(best);
-}
-
-void PartRow::restoreOriginalClef()
-{
-    if (m_origClefInt < 0) return;
-    applyClefInternal(m_origClefInt);
-    m_origClefInt = -1;
-}
 
 void PartRow::setPartVisible(bool visible)
 {
@@ -488,7 +694,12 @@ bool PartRow::eventFilter(QObject* obj, QEvent* event)
         return true;
     }
     if (event->type() == QEvent::MouseButtonRelease) {
-        toggleExpand();
+        auto* me = static_cast<QMouseEvent*>(event);
+        if (me->modifiers() & Qt::ShiftModifier) {
+            emit soloRequested();
+        } else {
+            toggleExpand();
+        }
         return true;
     }
     return QWidget::eventFilter(obj, event);
@@ -564,14 +775,11 @@ PartPanel::PartPanel(QWidget* parent)
 
     m_globalClefWritten = new QRadioButton("Written", clefSection);
     m_globalClefWritten->setStyleSheet(radioStyleStr);
-    m_globalClefSimplified = new QRadioButton("Treble && Bass", clefSection);
-    m_globalClefSimplified->setStyleSheet(radioStyleStr);
     m_globalClefPerPart = new QRadioButton("Per Part", clefSection);
     m_globalClefPerPart->setStyleSheet(radioStyleStr);
     m_globalClefWritten->setChecked(true);
 
     clefRadioRow->addWidget(m_globalClefWritten);
-    clefRadioRow->addWidget(m_globalClefSimplified);
     clefRadioRow->addWidget(m_globalClefPerPart);
     clefRadioRow->addStretch();
     clefLayout->addLayout(clefRadioRow);
@@ -594,7 +802,6 @@ PartPanel::PartPanel(QWidget* parent)
         relayout();
     };
     connect(m_globalClefWritten, &QRadioButton::toggled, clefChanged);
-    connect(m_globalClefSimplified, &QRadioButton::toggled, clefChanged);
     connect(m_globalClefPerPart, &QRadioButton::toggled, clefChanged);
 
     // --- Buttons ---
@@ -690,7 +897,13 @@ void PartPanel::populateList()
 
         auto* row = new PartRow(part, name, m_scrollContent);
         connect(row, &PartRow::visibilityToggled, this, &PartPanel::relayout);
+        connect(row, &PartRow::soloRequested, [this, row]() {
+            for (auto* r : m_rows)
+                r->setPartVisible(r == row);
+            relayout();
+        });
         connect(row, &PartRow::clefChanged, this, &PartPanel::relayout);
+        connect(row, &PartRow::clefChanged, this, &PartPanel::saveSettings);
         connect(row, &PartRow::pitchModeChanged, this, &PartPanel::relayout);
         m_rowsLayout->addWidget(row);
         m_rows.push_back(row);
@@ -716,7 +929,7 @@ void PartPanel::applyGlobalSettings()
 {
     bool perPart = m_globalPitchPerPart->isChecked();
     bool concert = m_globalPitchConcert->isChecked();
-    bool simplified = m_globalClefSimplified->isChecked();
+    bool clefPerPart = m_globalClefPerPart->isChecked();
 
     for (auto* row : m_rows) {
         // Pitch mode
@@ -728,15 +941,11 @@ void PartPanel::applyGlobalSettings()
         }
 
         // Clef mode
-        bool clefPerPart = m_globalClefPerPart->isChecked();
         if (clefPerPart) {
+            row->reapplyPerPartClef();
             row->setClefControlEnabled(true);
-        } else if (simplified) {
-            row->applySimplifiedClef();
-            row->setClefControlEnabled(false);
         } else {
-            // Written
-            row->restoreOriginalClef();
+            row->applyOriginalClef();
             row->setClefControlEnabled(false);
         }
     }
@@ -796,6 +1005,130 @@ void PartPanel::relayout()
 
     m_renderer->layoutScore(m_score, Fraction(0, 1), Fraction(-1, 1));
     emit partsChanged();
+}
+
+void PartPanel::setScoreFileName(const QString& fileName)
+{
+    m_scoreFileName = fileName;
+    loadSettings();
+}
+
+static QString settingsPath()
+{
+    return QCoreApplication::applicationDirPath() + "/settings.json";
+}
+
+void PartPanel::loadSettings()
+{
+    if (m_scoreFileName.isEmpty() || m_rows.empty()) return;
+
+    QFile file(settingsPath());
+    if (!file.open(QIODevice::ReadOnly)) return;
+
+    QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+
+    // Load default transposing instruments setting
+    QJsonObject defaults = root["defaults"].toObject();
+    QString transDefault = defaults.value("transposingInstruments").toString("concert");
+    if (transDefault == "concert" && m_globalPitchConcert) {
+        m_globalPitchConcert->setChecked(true);
+    } else if (transDefault == "written" && m_globalPitchWritten) {
+        m_globalPitchWritten->setChecked(true);
+    }
+
+    // Load per-score part settings
+    QJsonObject scores = root["scores"].toObject();
+    QJsonObject scoreObj = scores[m_scoreFileName].toObject();
+    QJsonObject partsObj = scoreObj["parts"].toObject();
+
+    if (partsObj.isEmpty()) return;
+
+    bool clefPerPart = m_globalClefPerPart->isChecked();
+
+    for (auto* row : m_rows) {
+        QString name = row->partName();
+        if (!partsObj.contains(name)) continue;
+
+        QJsonObject partSettings = partsObj[name].toObject();
+        int clef = partSettings.value("clef").toInt(-1);
+        int octave = partSettings.value("octave").toInt(0);
+        if (clef < 0) continue;
+
+        row->setClefFromSettings(clef, octave);
+    }
+
+    // If we loaded per-part clef settings, switch to Per Part mode
+    if (!clefPerPart) {
+        m_globalClefPerPart->setChecked(true);
+    }
+}
+
+void PartPanel::saveSettings()
+{
+    if (m_scoreFileName.isEmpty()) return;
+
+    QString path = settingsPath();
+
+    // Read existing file to preserve other sections
+    QJsonObject root;
+    QFile readFile(path);
+    if (readFile.open(QIODevice::ReadOnly)) {
+        root = QJsonDocument::fromJson(readFile.readAll()).object();
+        readFile.close();
+    }
+
+    // Ensure defaults section exists with transposingInstruments
+    if (!root.contains("defaults")) {
+        QJsonObject defaults;
+        defaults["transposingInstruments"] = "concert";
+        root["defaults"] = defaults;
+    }
+
+    // Build per-score parts object (only parts that differ from XML original)
+    QJsonObject partsObj;
+    for (auto* row : m_rows) {
+        int currentClef = row->clefComboValue();
+        int currentOctave = row->octaveComboValue();
+        int xmlClef = row->xmlClefInt();
+
+        // Determine what the XML original base clef and octave were
+        auto xmlClefType = static_cast<ClefType>(xmlClef);
+        int xmlBaseClef = static_cast<int>(getBaseClef(xmlClefType));
+        int xmlOctave = getOctaveFromClef(xmlClefType);
+
+        if (currentClef != xmlBaseClef || currentOctave != xmlOctave) {
+            QJsonObject partObj;
+            partObj["clef"] = currentClef;
+            partObj["octave"] = currentOctave;
+            partsObj[row->partName()] = partObj;
+        }
+    }
+
+    QJsonObject scores = root["scores"].toObject();
+    QJsonObject scoreObj = scores[m_scoreFileName].toObject();
+
+    if (partsObj.isEmpty()) {
+        scoreObj.remove("parts");
+    } else {
+        scoreObj["parts"] = partsObj;
+    }
+
+    if (scoreObj.isEmpty()) {
+        scores.remove(m_scoreFileName);
+    } else {
+        scores[m_scoreFileName] = scoreObj;
+    }
+
+    if (scores.isEmpty()) {
+        root.remove("scores");
+    } else {
+        root["scores"] = scores;
+    }
+
+    QFile file(path);
+    if (file.open(QIODevice::WriteOnly)) {
+        file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    }
 }
 
 void PartPanel::updateTransposingLabel()

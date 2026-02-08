@@ -485,6 +485,7 @@ bool App::loadScore(const QString& musicXmlPath)
 
     m_partPanel->setScore(m_score);
     m_partPanel->setRenderer(m_renderer.get());
+    m_partPanel->setScoreFileName(fi.fileName());
 
     // Size the Parts section: show all parts or cap at 60% of window
     int sectionHeaderH = 28; // CollapsibleSection header

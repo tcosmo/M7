@@ -2,6 +2,11 @@
 
 #include "engraving/dom/score.h"
 #include "engraving/dom/part.h"
+#include "engraving/dom/staff.h"
+#include "engraving/dom/clef.h"
+#include "engraving/dom/measure.h"
+#include "engraving/dom/segment.h"
+#include "engraving/dom/mscore.h"
 #include "engraving/rendering/iscorerenderer.h"
 #include "engraving/types/fraction.h"
 #include "engraving/types/types.h"
@@ -131,9 +136,59 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
 
     auto* contentLayout = new QVBoxLayout(m_contentArea);
     contentLayout->setContentsMargins(32, 6, 12, 6);
-    auto* placeholder = new QLabel("Settings coming soon...", m_contentArea);
-    placeholder->setStyleSheet("color: #888; font-size: 11px;");
-    contentLayout->addWidget(placeholder);
+
+    // Clef selector row
+    auto* clefRow = new QHBoxLayout();
+    clefRow->setSpacing(6);
+    auto* clefLabel = new QLabel("Clef", m_contentArea);
+    clefLabel->setStyleSheet("color: #ccc; font-size: 11px;");
+    m_clefCombo = new QComboBox(m_contentArea);
+    m_clefCombo->setFixedWidth(160);
+    m_clefCombo->addItem("Treble Clef",       static_cast<int>(ClefType::G));
+    m_clefCombo->addItem("Bass Clef",         static_cast<int>(ClefType::F));
+    m_clefCombo->addItem("Soprano Clef (C1)", static_cast<int>(ClefType::C1));
+    m_clefCombo->addItem("Mezzo-Soprano Clef (C2)", static_cast<int>(ClefType::C2));
+    m_clefCombo->addItem("Alto Clef (C3)",    static_cast<int>(ClefType::C3));
+    m_clefCombo->addItem("Tenor Clef (C4)",   static_cast<int>(ClefType::C4));
+    m_clefCombo->addItem("Baritone Clef (C5)",static_cast<int>(ClefType::C5));
+
+    // Set current clef from the part's first staff
+    Staff* staff = m_part->staff(0);
+    ClefType currentClef = staff->clef(Fraction(0, 1));
+    for (int i = 0; i < m_clefCombo->count(); ++i) {
+        if (m_clefCombo->itemData(i).toInt() == static_cast<int>(currentClef)) {
+            m_clefCombo->setCurrentIndex(i);
+            break;
+        }
+    }
+
+    connect(m_clefCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            [this](int index) {
+        auto newClef = static_cast<ClefType>(m_clefCombo->itemData(index).toInt());
+        Staff* st = m_part->staff(0);
+        st->clefList().setClef(0, ClefTypeList(newClef, newClef));
+
+        // Update the Clef element in the HeaderClef segment of the first measure
+        Score* score = m_part->score();
+        Measure* m = score->firstMeasure();
+        if (m) {
+            Segment* seg = m->first(SegmentType::HeaderClef);
+            if (seg) {
+                track_idx_t track = st->idx() * VOICES;
+                EngravingItem* el = seg->element(track);
+                if (el && el->isClef()) {
+                    static_cast<Clef*>(el)->setClefType(ClefTypeList(newClef, newClef));
+                }
+            }
+        }
+
+        emit clefChanged();
+    });
+
+    clefRow->addWidget(clefLabel);
+    clefRow->addWidget(m_clefCombo);
+    clefRow->addStretch();
+    contentLayout->addLayout(clefRow);
 
     m_contentArea->hide();
     mainLayout->addWidget(m_contentArea);
@@ -282,6 +337,7 @@ void PartPanel::populateList()
 
         auto* row = new PartRow(part, name, m_scrollContent);
         connect(row, &PartRow::visibilityToggled, this, &PartPanel::relayout);
+        connect(row, &PartRow::clefChanged, this, &PartPanel::relayout);
         m_rowsLayout->addWidget(row);
         m_rows.push_back(row);
     }

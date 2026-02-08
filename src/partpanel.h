@@ -4,6 +4,7 @@
 #include <QToolButton>
 #include <QLabel>
 #include <QPushButton>
+#include <QComboBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QScrollArea>
@@ -32,6 +33,7 @@ public:
 
 signals:
     void visibilityToggled();
+    void clefChanged();
 
 private:
     void updateEyeIcon();
@@ -42,6 +44,7 @@ private:
     QLabel* m_nameLabel = nullptr;
     QToolButton* m_arrowButton = nullptr;
     QWidget* m_contentArea = nullptr;
+    QComboBox* m_clefCombo = nullptr;
     bool m_expanded = false;
 };
 

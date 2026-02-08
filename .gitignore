@@ -26,3 +26,4 @@ compile_commands.json
 .specstory/
 thirdparty/musescore/
 thirdparty/musescore_a/
+thirdparty/beat-and-tempo-tracking

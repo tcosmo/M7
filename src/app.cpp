@@ -272,22 +272,26 @@ void App::setupToolbar()
     m_trackingAction = new QAction(this);
     m_trackingAction->setCheckable(true);
     m_trackingAction->setChecked(true);
-    m_trackingAction->setShortcut(QKeySequence(Qt::Key_T));
+    // shortcut is on trackingButton, not the action
 
     auto* trackingButton = new QPushButton("Tracking", this);
     trackingButton->setFlat(true);
     trackingButton->setCursor(Qt::PointingHandCursor);
+    trackingButton->setFocusPolicy(Qt::NoFocus);
+    trackingButton->setStyleSheet(
+        "QPushButton { padding: 2px 4px; }"
+        "QPushButton:pressed { background: transparent; padding: 2px 4px; }");
     trackingButton->setIconSize(QSize(8, 8));
 
     auto makeIcon = [](bool on) -> QIcon {
         int sz = 16; // render at 2x for retina
-        QPixmap px(sz + 3, sz + 3);
+        QPixmap px(sz + 7, sz + 3);
         px.fill(Qt::transparent);
         QPainter p(&px);
         p.setRenderHint(QPainter::Antialiasing);
         if (on) {
             p.setBrush(QColor("#4CAF50"));
-            p.setPen(Qt::NoPen);
+            p.setPen(QPen(QColor("#4CAF50"), 1.5));
         } else {
             p.setBrush(Qt::NoBrush);
             p.setPen(QPen(QColor("#888"), 1.5));
@@ -297,10 +301,10 @@ void App::setupToolbar()
         return QIcon(px);
     };
     trackingButton->setIcon(makeIcon(true));
+    trackingButton->setFixedSize(trackingButton->sizeHint());
 
+    trackingButton->setShortcut(QKeySequence(Qt::Key_T));
     m_toolbar->addWidget(trackingButton);
-    m_toolbar->addAction(m_trackingAction); // hidden, for shortcut
-    m_trackingAction->setVisible(false);
 
     connect(trackingButton, &QPushButton::clicked, [this]() {
         m_trackingAction->toggle();

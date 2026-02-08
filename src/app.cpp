@@ -108,7 +108,7 @@ void App::setupUI()
     m_sidebarWidget->setFocusPolicy(Qt::ClickFocus);
 
     auto* sidebarLayout = new QVBoxLayout(m_sidebarWidget);
-    sidebarLayout->setContentsMargins(0, 0, 0, 0);
+    sidebarLayout->setContentsMargins(2, 0, 0, 0);
 
     m_sidebarSplitter = new QSplitter(Qt::Vertical);
     m_sidebarSplitter->setChildrenCollapsible(false);

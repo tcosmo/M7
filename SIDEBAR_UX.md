@@ -33,6 +33,11 @@
 - Content padding: 12px horizontal, 4px top, 10px bottom.
 - Section header has 8px bottom padding for spacing before content.
 
+### Score scrollbar
+- Background matches the sidebar (`palette(window)`).
+- Handle is a subtle rounded oval: `rgba(255,255,255,0.15)`, `border-radius: 4px`, brighter on hover (`0.25`).
+- No arrow buttons. Width: 14px, handle margin: 2px vertical / 3px horizontal.
+
 ### Part list focus
 - Clicking outside the part list (anywhere on sidebar or score) unfocuses it — selection dims to inactive style but is not cleared.
 - PartPanel and sidebar widget accept click focus (`Qt::ClickFocus`).

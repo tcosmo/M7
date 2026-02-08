@@ -20,7 +20,7 @@
 - The score auto-fits on window resize (`ScoreWidget::resizeEvent` calls `zoomToFit`).
 
 ### Sections (CollapsibleSection with QSplitter)
-- **Parts** (index 0): height = min(desired content height, 60% of window). Resizable via splitter.
+- **Parts** (index 0): height = min(desired content height, 60% of window). Desired height = sum of row heights + list frame (4px) + buttons (40px) + margins/padding (30px). Should be generous enough to avoid a scrollbar inside the list when all parts fit. Resizable via splitter.
 - **Score Display** (index 1): fixed height based on content `sizeHint`. Never stretches.
 - **Spacer** (index 2): absorbs remaining space. Its splitter handle is hidden.
 - Splitter handle width: 12px. Last handle (before spacer) is hidden.

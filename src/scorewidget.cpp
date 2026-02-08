@@ -398,12 +398,18 @@ void ScoreWidget::ensureCursorVisible()
     int vpW = viewport()->width();
     int margin = 40; // pixels of breathing room
 
-    // Vertical: scroll if cursor is outside the visible area
+    // Vertical: keep cursor in the upper portion of the viewport.
+    // Trigger zone: scroll when cursor passes 40% from top.
+    // Target: place cursor at 25% from top, giving headroom before next trigger.
     int scrollY = verticalScrollBar()->value();
-    if (cr.top() < scrollY + margin) {
+    int triggerY = vpH / 4;
+    int targetY = vpH / 6;
+    int cursorInVP = cr.top() - scrollY;
+
+    if (cursorInVP < margin) {
         verticalScrollBar()->setValue(cr.top() - margin);
-    } else if (cr.bottom() > scrollY + vpH - margin) {
-        verticalScrollBar()->setValue(cr.bottom() - vpH + margin);
+    } else if (cursorInVP > triggerY) {
+        verticalScrollBar()->setValue(cr.top() - targetY);
     }
 
     // Horizontal: scroll if cursor is outside the visible area

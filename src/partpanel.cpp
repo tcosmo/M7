@@ -63,8 +63,8 @@ int PartPanel::desiredHeight() const
     for (int i = 0; i < m_listWidget->count(); ++i) {
         totalRowH += m_listWidget->sizeHintForRow(i);
     }
-    // rows + list frame + buttons + layout margins
-    return totalRowH + 4 + 40 + 16;
+    // rows + list frame + buttons + layout margins/padding
+    return totalRowH + 4 + 40 + 30;
 }
 
 void PartPanel::populateList()

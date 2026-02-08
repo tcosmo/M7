@@ -113,7 +113,9 @@ void App::setupUI()
     m_sidebarSplitter->addWidget(new CollapsibleSection("Parts", m_partPanel));
 
     m_displaySettings = new DisplaySettings();
-    m_sidebarSplitter->addWidget(new CollapsibleSection("Score Display", m_displaySettings));
+    auto* displaySection = new CollapsibleSection("Score Display", m_displaySettings);
+    displaySection->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    m_sidebarSplitter->addWidget(displaySection);
 
     // Spacer absorbs extra space at the bottom
     auto* spacer = new QWidget();
@@ -199,6 +201,7 @@ bool App::eventFilter(QObject* obj, QEvent* event)
         }
         if (event->type() == QEvent::MouseButtonRelease) {
             m_sidebarDragging = false;
+            m_scoreWidget->zoomToFit();
             return true;
         }
     }
@@ -423,7 +426,7 @@ bool App::loadScore(const QString& musicXmlPath)
     int desiredPartsHeight = sectionHeaderH + m_partPanel->desiredHeight();
     int maxPartsHeight = height() * 6 / 10;
     int partsHeight = std::min(desiredPartsHeight, maxPartsHeight);
-    int displayHeight = 120;
+    int displayHeight = m_sidebarSplitter->widget(1)->sizeHint().height();
     int remaining = height() - partsHeight - displayHeight;
     if (remaining < 0) remaining = 0;
     m_sidebarSplitter->setSizes({partsHeight, displayHeight, remaining});

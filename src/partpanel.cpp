@@ -16,7 +16,7 @@ PartPanel::PartPanel(QWidget* parent)
     : QWidget(parent)
 {
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(4, 4, 4, 4);
+    layout->setContentsMargins(12, 4, 12, 4);
 
     // Buttons
     auto* btnLayout = new QHBoxLayout();

@@ -75,7 +75,7 @@ private:
     std::shared_ptr<mu::engraving::rendering::IScoreRenderer> m_renderer;
 
     bool m_sliderDragging = false;
-    int m_sidebarWidth = 250;
+    int m_sidebarWidth = 300;
     bool m_sidebarDragging = false;
     int m_dragStartX = 0;
     int m_dragStartWidth = 0;

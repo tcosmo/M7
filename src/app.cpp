@@ -184,7 +184,7 @@ bool App::eventFilter(QObject* obj, QEvent* event)
             auto* me = static_cast<QMouseEvent*>(event);
             int dx = me->globalPosition().toPoint().x() - m_dragStartX;
             int newWidth = m_dragStartWidth - dx;
-            static const int MIN_WIDTH = 200;
+            static const int MIN_WIDTH = 280;
             static const int MAX_WIDTH = 500;
             static const int COLLAPSE_THRESHOLD = 120;
             int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();

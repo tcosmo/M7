@@ -19,6 +19,7 @@
 
 #include <QPainter>
 #include <QPainterPath>
+#include <QMouseEvent>
 
 using namespace mu::engraving;
 using namespace mu::engraving::rendering;
@@ -122,13 +123,14 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
         "QToolButton:focus { outline: none; }"
     );
 
-    connect(m_arrowButton, &QToolButton::clicked, [this]() {
-        toggleExpand();
-    });
-
     hLayout->addWidget(m_eyeButton);
     hLayout->addWidget(m_nameLabel);
     hLayout->addWidget(m_arrowButton);
+
+    header->installEventFilter(this);
+    m_nameLabel->installEventFilter(this);
+    m_arrowButton->installEventFilter(this);
+    header->setCursor(Qt::PointingHandCursor);
 
     mainLayout->addWidget(header);
 
@@ -357,6 +359,15 @@ void PartRow::toggleExpand()
     m_expanded = !m_expanded;
     m_contentArea->setVisible(m_expanded);
     m_arrowButton->setArrowType(m_expanded ? Qt::DownArrow : Qt::RightArrow);
+}
+
+bool PartRow::eventFilter(QObject* obj, QEvent* event)
+{
+    if (event->type() == QEvent::MouseButtonRelease) {
+        toggleExpand();
+        return true;
+    }
+    return QWidget::eventFilter(obj, event);
 }
 
 // ---------------------------------------------------------------------------

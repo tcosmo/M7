@@ -9,6 +9,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QScrollArea>
+#include <QEvent>
 #include <vector>
 
 #include "engraving/dom/interval.h"
@@ -38,6 +39,9 @@ signals:
     void visibilityToggled();
     void clefChanged();
     void pitchModeChanged();
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override;
 
 private:
     void updateEyeIcon();

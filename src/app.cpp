@@ -243,13 +243,16 @@ void App::setupToolbar()
     m_playPauseAction = m_toolbar->addAction("Play");
     m_playPauseAction->setShortcut(QKeySequence(Qt::Key_Space));
     connect(m_playPauseAction, &QAction::triggered, this, &App::togglePlayPause);
+    m_toolbar->widgetForAction(m_playPauseAction)->setCursor(Qt::PointingHandCursor);
 
     m_stopAction = m_toolbar->addAction("Stop");
     connect(m_stopAction, &QAction::triggered, m_audioPlayer, &AudioPlayer::stop);
+    m_toolbar->widgetForAction(m_stopAction)->setCursor(Qt::PointingHandCursor);
 
     m_toolbar->addSeparator();
 
     m_seekSlider = new QSlider(Qt::Horizontal, this);
+    m_seekSlider->setCursor(Qt::PointingHandCursor);
     m_seekSlider->setRange(0, 1000);
     m_seekSlider->setMinimumWidth(300);
     connect(m_seekSlider, &QSlider::sliderPressed, [this]() { m_sliderDragging = true; });
@@ -273,6 +276,7 @@ void App::setupToolbar()
 
     auto* trackingButton = new QPushButton("Tracking", this);
     trackingButton->setFlat(true);
+    trackingButton->setCursor(Qt::PointingHandCursor);
     trackingButton->setIconSize(QSize(8, 8));
 
     auto makeIcon = [](bool on) -> QIcon {
@@ -313,6 +317,7 @@ void App::setupToolbar()
     auto* zoomOutAction = m_toolbar->addAction("-");
     zoomOutAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus));
     connect(zoomOutAction, &QAction::triggered, m_scoreWidget, &ScoreWidget::zoomOut);
+    m_toolbar->widgetForAction(zoomOutAction)->setCursor(Qt::PointingHandCursor);
 
     m_zoomLabel = new QLabel("150%", this);
     m_zoomLabel->setMinimumWidth(50);
@@ -322,9 +327,11 @@ void App::setupToolbar()
     auto* zoomInAction = m_toolbar->addAction("+");
     zoomInAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Equal));
     connect(zoomInAction, &QAction::triggered, m_scoreWidget, &ScoreWidget::zoomIn);
+    m_toolbar->widgetForAction(zoomInAction)->setCursor(Qt::PointingHandCursor);
 
     auto* fitButton = new QPushButton("Fit", this);
     fitButton->setFlat(true);
+    fitButton->setCursor(Qt::PointingHandCursor);
     fitButton->setStyleSheet("QPushButton:pressed { background-color: rgba(255,255,255,0.1); }");
     fitButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
     m_toolbar->addWidget(fitButton);
@@ -340,6 +347,9 @@ void App::setupToolbar()
     m_sidebarAction->setCheckable(true);
     m_sidebarAction->setChecked(true);
     m_sidebarAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_B));
+    auto* sidebarWidget = m_toolbar->widgetForAction(m_sidebarAction);
+    sidebarWidget->setCursor(Qt::PointingHandCursor);
+    sidebarWidget->setStyleSheet("font-size: 12px;");
     connect(m_sidebarAction, &QAction::toggled, [this](bool on) {
         setSidebarVisible(on);
     });

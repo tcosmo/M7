@@ -25,7 +25,7 @@ public:
         // Header — transparent so it inherits sidebar background
         auto* header = new QWidget(this);
         auto* headerLayout = new QHBoxLayout(header);
-        headerLayout->setContentsMargins(4, 4, 4, 4);
+        headerLayout->setContentsMargins(4, 4, 4, 8);
 
         m_arrow = new QToolButton(header);
         m_arrow->setArrowType(Qt::DownArrow);
@@ -46,9 +46,14 @@ public:
 
         layout->addWidget(header);
 
-        // Content
-        m_content->setParent(this);
-        layout->addWidget(m_content);
+        // Content — wrapped with horizontal margin so dark bg is inset from sidebar edges
+        auto* contentWrapper = new QWidget(this);
+        auto* wrapperLayout = new QHBoxLayout(contentWrapper);
+        wrapperLayout->setContentsMargins(8, 0, 8, 0);
+        wrapperLayout->setSpacing(0);
+        m_content->setParent(contentWrapper);
+        wrapperLayout->addWidget(m_content);
+        layout->addWidget(contentWrapper);
 
         connect(m_arrow, &QToolButton::clicked, this, &CollapsibleSection::toggle);
     }

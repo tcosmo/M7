@@ -15,6 +15,12 @@ namespace scoretracker {
 PartPanel::PartPanel(QWidget* parent)
     : QWidget(parent)
 {
+    setAutoFillBackground(true);
+    QPalette pal = palette();
+    pal.setColor(QPalette::Window, QColor(37, 37, 37));
+    pal.setColor(QPalette::Base, QColor(37, 37, 37));
+    setPalette(pal);
+
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 4, 12, 4);
 
@@ -35,6 +41,9 @@ PartPanel::PartPanel(QWidget* parent)
     layout->addWidget(m_listWidget);
 
     connect(m_listWidget, &QListWidget::itemChanged, this, &PartPanel::onItemChanged);
+
+    // Allow clicking empty areas to steal focus from the list
+    setFocusPolicy(Qt::ClickFocus);
 }
 
 void PartPanel::setScore(Score* score)

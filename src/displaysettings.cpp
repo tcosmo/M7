@@ -14,6 +14,12 @@ namespace scoretracker {
 DisplaySettings::DisplaySettings(QWidget* parent)
     : QWidget(parent)
 {
+    setAutoFillBackground(true);
+    QPalette pal = palette();
+    pal.setColor(QPalette::Window, QColor(37, 37, 37));
+    pal.setColor(QPalette::Base, QColor(37, 37, 37));
+    setPalette(pal);
+
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 4, 12, 4);
 

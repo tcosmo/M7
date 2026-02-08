@@ -102,6 +102,7 @@ void App::setupUI()
     // Sidebar overlays the score on the right edge
     m_sidebarWidget = new QWidget(this);
     m_sidebarWidget->setAutoFillBackground(true);
+    m_sidebarWidget->setFocusPolicy(Qt::ClickFocus);
 
     auto* sidebarLayout = new QVBoxLayout(m_sidebarWidget);
     sidebarLayout->setContentsMargins(0, 0, 0, 0);
@@ -125,6 +126,14 @@ void App::setupUI()
     m_sidebarSplitter->setStretchFactor(0, 0);
     m_sidebarSplitter->setStretchFactor(1, 0);
     m_sidebarSplitter->setStretchFactor(2, 1);
+
+    m_sidebarSplitter->setHandleWidth(12);
+
+    // Hide the last handle (between Score Display and spacer)
+    if (auto* lastHandle = m_sidebarSplitter->handle(2)) {
+        lastHandle->setDisabled(true);
+        lastHandle->setFixedHeight(0);
+    }
 
     sidebarLayout->addWidget(m_sidebarSplitter);
 

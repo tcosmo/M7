@@ -357,12 +357,22 @@ void PartRow::updateEyeIcon()
 void PartRow::toggleExpand()
 {
     m_expanded = !m_expanded;
-    m_contentArea->setVisible(m_expanded);
-    m_arrowButton->setArrowType(m_expanded ? Qt::DownArrow : Qt::RightArrow);
+    if (auto* scrollArea = qobject_cast<QScrollArea*>(parentWidget()->parentWidget())) {
+        scrollArea->setUpdatesEnabled(false);
+        m_contentArea->setVisible(m_expanded);
+        m_arrowButton->setArrowType(m_expanded ? Qt::DownArrow : Qt::RightArrow);
+        scrollArea->setUpdatesEnabled(true);
+    } else {
+        m_contentArea->setVisible(m_expanded);
+        m_arrowButton->setArrowType(m_expanded ? Qt::DownArrow : Qt::RightArrow);
+    }
 }
 
 bool PartRow::eventFilter(QObject* obj, QEvent* event)
 {
+    if (event->type() == QEvent::MouseButtonPress) {
+        return true;
+    }
     if (event->type() == QEvent::MouseButtonRelease) {
         toggleExpand();
         return true;

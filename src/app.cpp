@@ -72,6 +72,7 @@ App::App(QWidget* parent)
 
     connect(m_partPanel, &PartPanel::partsChanged, [this]() {
         m_scoreWidget->setScore(m_score); // refresh
+        m_syncTimer->refresh();
     });
 
     // Bidirectional sync: sidebar checkbox <-> toolbar tracking button

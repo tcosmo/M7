@@ -37,6 +37,7 @@ void SyncTimer::setBeatTimes(const std::vector<double>& beatTimes, int beatsPerM
 
 void SyncTimer::setTime(double seconds)
 {
+    m_lastTime = seconds;
     if (!m_score || m_measureStarts.empty()) return;
 
     int measureIndex = findMeasureIndex(seconds);
@@ -44,6 +45,11 @@ void SyncTimer::setTime(double seconds)
     muse::RectF rect = resolveCursorRect(measureIndex, seconds, pageIndex);
     m_lastMeasureIndex = measureIndex;
     emit cursorRectChanged(rect, pageIndex);
+}
+
+void SyncTimer::refresh()
+{
+    setTime(m_lastTime);
 }
 
 int SyncTimer::findMeasureIndex(double seconds) const

@@ -24,6 +24,7 @@ public:
 
 public slots:
     void setTime(double seconds);
+    void refresh();
 
 signals:
     void cursorRectChanged(const muse::RectF& rect, int pageIndex);
@@ -37,6 +38,7 @@ private:
     std::vector<double> m_beatTimes;
     int m_beatsPerMeasure = 3;
     int m_lastMeasureIndex = -1;
+    double m_lastTime = 0.0;
 };
 
 } // namespace scoretracker

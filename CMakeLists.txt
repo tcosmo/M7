@@ -137,6 +137,8 @@ add_executable(scoretracker
     src/collapsiblesection.h
     src/displaysettings.h
     src/displaysettings.cpp
+    src/trackingsettings.h
+    src/trackingsettings.cpp
     src/beatdata.h
 )
 

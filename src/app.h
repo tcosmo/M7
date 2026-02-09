@@ -23,6 +23,7 @@ class AudioPlayer;
 class SyncTimer;
 class PartPanel;
 class DisplaySettings;
+class TrackingSettings;
 
 class App : public QMainWindow
 {
@@ -61,6 +62,7 @@ private:
     QSplitter* m_sidebarSplitter = nullptr;
     PartPanel* m_partPanel = nullptr;
     DisplaySettings* m_displaySettings = nullptr;
+    TrackingSettings* m_trackingSettings = nullptr;
     QToolBar* m_toolbar = nullptr;
     QAction* m_playPauseAction = nullptr;
     QAction* m_stopAction = nullptr;

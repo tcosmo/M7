@@ -67,6 +67,11 @@ public:
     void setOverlayWidth(int width);
     void applyTheme();
 
+    void setAutoScrollEnabled(bool enabled);
+    void setAutoScrollTrigger(double trigger);
+    void setAutoScrollTarget(double target);
+    void setShowTriggerLine(bool show);
+
 signals:
     void zoomChanged(double zoom);
 
@@ -75,6 +80,7 @@ public slots:
 
 protected:
     bool event(QEvent* event) override;
+    bool eventFilter(QObject* obj, QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
 
 private:
@@ -83,6 +89,10 @@ private:
 
     ScoreCanvas* m_canvas = nullptr;
     int m_overlayWidth = 0;
+    bool m_autoScroll = true;
+    double m_scrollTrigger = 0.60;
+    double m_scrollTarget = 0.0;
+    bool m_showTriggerLine = false;
 };
 
 } // namespace scoretracker

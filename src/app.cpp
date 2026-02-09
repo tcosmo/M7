@@ -4,6 +4,7 @@
 #include "synctimer.h"
 #include "partpanel.h"
 #include "displaysettings.h"
+#include "trackingsettings.h"
 #include "collapsiblesection.h"
 #include "theme.h"
 #include "beatdata.h"
@@ -73,10 +74,23 @@ App::App(QWidget* parent)
         m_scoreWidget->setScore(m_score); // refresh
     });
 
+    connect(m_trackingSettings, &TrackingSettings::settingChanged, [this]() {
+        m_scoreWidget->setAutoScrollEnabled(m_trackingSettings->autoScrollEnabled());
+        m_scoreWidget->setShowTriggerLine(m_trackingSettings->showTriggerLine());
+        double trigger = m_trackingSettings->triggerPoint() / 100.0;
+        double scrollAmt = m_trackingSettings->scrollAmount() / 100.0;
+        m_scoreWidget->setAutoScrollTrigger(trigger);
+        m_scoreWidget->setAutoScrollTarget(trigger * (1.0 - scrollAmt));
+    });
+
     connect(m_displaySettings, &DisplaySettings::settingChanged, [this]() {
         if (!m_score || !m_renderer) return;
         m_score->setLayoutMode(comboIndexToLayoutMode(m_displaySettings->layoutMode()));
-        m_score->setShowVBox(m_displaySettings->showTitleFrame());
+        bool showTitle = m_displaySettings->showTitleFrame();
+        m_score->setShowVBox(showTitle);
+        double topMargin = showTitle ? 0.39 : 0.10;
+        m_score->style().set(Sid::pageOddTopMargin, topMargin);
+        m_score->style().set(Sid::pageEvenTopMargin, topMargin);
         m_renderer->layoutScore(m_score, Fraction(0, 1), Fraction(-1, 1));
         m_scoreWidget->setScore(m_score); // refresh
         m_scoreWidget->scrollToTop();
@@ -85,6 +99,16 @@ App::App(QWidget* parent)
     // Set up beat data
     m_syncTimer->setMeasureStarts(MAGNIFICAT_MEASURE_STARTS);
     m_syncTimer->setBeatTimes(MAGNIFICAT_BEAT_TIMES, BEATS_PER_MEASURE);
+
+    // Apply initial tracking settings
+    {
+        double trigger = m_trackingSettings->triggerPoint() / 100.0;
+        double scrollAmt = m_trackingSettings->scrollAmount() / 100.0;
+        m_scoreWidget->setAutoScrollEnabled(m_trackingSettings->autoScrollEnabled());
+        m_scoreWidget->setShowTriggerLine(m_trackingSettings->showTriggerLine());
+        m_scoreWidget->setAutoScrollTrigger(trigger);
+        m_scoreWidget->setAutoScrollTarget(trigger * (1.0 - scrollAmt));
+    }
 
     // Set initial overlay width and position sidebar
     int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
@@ -117,6 +141,11 @@ void App::setupUI()
     m_partPanel = new PartPanel();
     m_sidebarSplitter->addWidget(new CollapsibleSection("Parts", m_partPanel));
 
+    m_trackingSettings = new TrackingSettings();
+    auto* trackingSection = new CollapsibleSection("Tracking", m_trackingSettings);
+    trackingSection->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    m_sidebarSplitter->addWidget(trackingSection);
+
     m_displaySettings = new DisplaySettings();
     auto* displaySection = new CollapsibleSection("Score Display", m_displaySettings);
     displaySection->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -129,12 +158,13 @@ void App::setupUI()
 
     m_sidebarSplitter->setStretchFactor(0, 0);
     m_sidebarSplitter->setStretchFactor(1, 0);
-    m_sidebarSplitter->setStretchFactor(2, 1);
+    m_sidebarSplitter->setStretchFactor(2, 0);
+    m_sidebarSplitter->setStretchFactor(3, 1);
 
     m_sidebarSplitter->setHandleWidth(12);
 
-    // Hide the last handle (between Score Display and spacer)
-    if (auto* lastHandle = m_sidebarSplitter->handle(2)) {
+    // Hide the last handle (between Tracking and spacer)
+    if (auto* lastHandle = m_sidebarSplitter->handle(3)) {
         lastHandle->setDisabled(true);
         lastHandle->setFixedHeight(0);
     }
@@ -443,7 +473,13 @@ bool App::loadScore(const QString& musicXmlPath)
 
     // Apply display settings before layout
     m_score->setLayoutMode(comboIndexToLayoutMode(m_displaySettings->layoutMode()));
-    m_score->setShowVBox(m_displaySettings->showTitleFrame());
+    bool showTitle = m_displaySettings->showTitleFrame();
+    m_score->setShowVBox(showTitle);
+    {
+        double topMargin = showTitle ? 0.39 : 0.10;
+        m_score->style().set(Sid::pageOddTopMargin, topMargin);
+        m_score->style().set(Sid::pageEvenTopMargin, topMargin);
+    }
 
     // Layout the score
     m_renderer->layoutScore(m_score, Fraction(0, 1), Fraction(-1, 1));
@@ -480,10 +516,11 @@ bool App::loadScore(const QString& musicXmlPath)
     int desiredPartsHeight = sectionHeaderH + m_partPanel->desiredHeight();
     int maxPartsHeight = height() * 6 / 10;
     int partsHeight = std::min(desiredPartsHeight, maxPartsHeight);
-    int displayHeight = m_sidebarSplitter->widget(1)->sizeHint().height();
-    int remaining = height() - partsHeight - displayHeight;
+    int trackingHeight = m_sidebarSplitter->widget(1)->sizeHint().height();
+    int displayHeight = m_sidebarSplitter->widget(2)->sizeHint().height();
+    int remaining = height() - partsHeight - trackingHeight - displayHeight;
     if (remaining < 0) remaining = 0;
-    m_sidebarSplitter->setSizes({partsHeight, displayHeight, remaining});
+    m_sidebarSplitter->setSizes({partsHeight, trackingHeight, displayHeight, remaining});
 
     setWindowTitle(QString("ScoreTracker - %1").arg(fi.fileName()));
 
@@ -590,6 +627,7 @@ void App::changeEvent(QEvent* event)
         updateTrackingIcon();
         if (m_partPanel) m_partPanel->applyTheme();
         if (m_displaySettings) m_displaySettings->applyTheme();
+        if (m_trackingSettings) m_trackingSettings->applyTheme();
         if (m_scoreWidget) m_scoreWidget->applyTheme();
     }
     QMainWindow::changeEvent(event);

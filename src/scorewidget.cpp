@@ -285,6 +285,7 @@ ScoreWidget::ScoreWidget(QWidget* parent)
     // Match scrollbar to sidebar style
     verticalScrollBar()->setStyleSheet(Theme::scrollBarStyleStr());
 
+    viewport()->installEventFilter(this);
     grabGesture(Qt::PinchGesture);
     m_canvas->setZoom(ZOOM_DEFAULT);
 }
@@ -374,6 +375,21 @@ bool ScoreWidget::event(QEvent* event)
     return QScrollArea::event(event);
 }
 
+bool ScoreWidget::eventFilter(QObject* obj, QEvent* event)
+{
+    if (obj == viewport() && event->type() == QEvent::Paint && m_showTriggerLine) {
+        // Let the viewport paint first
+        QScrollArea::eventFilter(obj, event);
+        // Then draw the trigger line on top
+        int y = static_cast<int>(viewport()->height() * m_scrollTrigger);
+        QPainter p(viewport());
+        p.setPen(QPen(QColor(255, 0, 0, 160), 1, Qt::DashLine));
+        p.drawLine(0, y, viewport()->width(), y);
+        return true;
+    }
+    return QScrollArea::eventFilter(obj, event);
+}
+
 void ScoreWidget::setCursorRect(const muse::RectF& rect, int pageIndex)
 {
     m_canvas->setCursorRect(rect, pageIndex);
@@ -389,8 +405,32 @@ void ScoreWidget::resizeEvent(QResizeEvent* event)
     zoomToFit();
 }
 
+void ScoreWidget::setAutoScrollEnabled(bool enabled)
+{
+    m_autoScroll = enabled;
+}
+
+void ScoreWidget::setAutoScrollTrigger(double trigger)
+{
+    m_scrollTrigger = trigger;
+    if (m_showTriggerLine) viewport()->update();
+}
+
+void ScoreWidget::setAutoScrollTarget(double target)
+{
+    m_scrollTarget = target;
+}
+
+void ScoreWidget::setShowTriggerLine(bool show)
+{
+    m_showTriggerLine = show;
+    viewport()->update();
+}
+
 void ScoreWidget::ensureCursorVisible()
 {
+    if (!m_autoScroll) return;
+
     QRect cr = m_canvas->cursorWidgetRect();
     if (cr.isNull()) return;
 
@@ -399,11 +439,9 @@ void ScoreWidget::ensureCursorVisible()
     int margin = 40; // pixels of breathing room
 
     // Vertical: keep cursor in the upper portion of the viewport.
-    // Trigger zone: scroll when cursor passes 40% from top.
-    // Target: place cursor at 25% from top, giving headroom before next trigger.
     int scrollY = verticalScrollBar()->value();
-    int triggerY = vpH / 4;
-    int targetY = vpH / 6;
+    int triggerY = static_cast<int>(vpH * m_scrollTrigger);
+    int targetY = static_cast<int>(vpH * m_scrollTarget);
     int cursorInVP = cr.top() - scrollY;
 
     if (cursorInVP < margin) {

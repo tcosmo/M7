@@ -85,10 +85,11 @@ App::App(QWidget* parent)
     connect(m_trackingSettings, &TrackingSettings::settingChanged, [this]() {
         m_scoreWidget->setAutoScrollEnabled(m_trackingSettings->autoScrollEnabled());
         m_scoreWidget->setShowTriggerLine(m_trackingSettings->showTriggerLine());
-        double trigger = m_trackingSettings->triggerPoint() / 100.0;
+        double trigger = m_trackingSettings->triggerLine() / 100.0;
         double scrollAmt = m_trackingSettings->scrollAmount() / 100.0;
         m_scoreWidget->setAutoScrollTrigger(trigger);
         m_scoreWidget->setAutoScrollTarget(trigger * (1.0 - scrollAmt));
+        m_scoreWidget->setCursorAnchor(m_trackingSettings->cursorAnchor());
     });
 
     connect(m_displaySettings, &DisplaySettings::settingChanged, [this]() {
@@ -110,12 +111,13 @@ App::App(QWidget* parent)
 
     // Apply initial tracking settings
     {
-        double trigger = m_trackingSettings->triggerPoint() / 100.0;
+        double trigger = m_trackingSettings->triggerLine() / 100.0;
         double scrollAmt = m_trackingSettings->scrollAmount() / 100.0;
         m_scoreWidget->setAutoScrollEnabled(m_trackingSettings->autoScrollEnabled());
         m_scoreWidget->setShowTriggerLine(m_trackingSettings->showTriggerLine());
         m_scoreWidget->setAutoScrollTrigger(trigger);
         m_scoreWidget->setAutoScrollTarget(trigger * (1.0 - scrollAmt));
+        m_scoreWidget->setCursorAnchor(m_trackingSettings->cursorAnchor());
     }
 
     // Set initial overlay width and position sidebar

@@ -84,6 +84,7 @@ public:
     void setAutoScrollTrigger(double trigger);
     void setAutoScrollTarget(double target);
     void setShowTriggerLine(bool show);
+    void setCursorAnchor(int anchor); // 0=Top, 1=Center, 2=Bottom
 
 signals:
     void zoomChanged(double zoom);
@@ -105,6 +106,7 @@ private:
     bool m_autoScroll = true;
     double m_scrollTrigger = 0.60;
     double m_scrollTarget = 0.0;
+    int m_cursorAnchor = 1; // 0=Top, 1=Center, 2=Bottom
 };
 
 } // namespace scoretracker

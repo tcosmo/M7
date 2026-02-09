@@ -447,6 +447,11 @@ void ScoreWidget::setShowTriggerLine(bool show)
     m_triggerOverlay->setVisible(show);
 }
 
+void ScoreWidget::setCursorAnchor(int anchor)
+{
+    m_cursorAnchor = anchor;
+}
+
 void ScoreWidget::ensureCursorVisible()
 {
     if (!m_autoScroll) return;
@@ -458,11 +463,19 @@ void ScoreWidget::ensureCursorVisible()
     int vpW = viewport()->width();
     int margin = 40; // pixels of breathing room
 
+    // Pick cursor reference point based on anchor setting
+    int cursorRef;
+    switch (m_cursorAnchor) {
+    case 0:  cursorRef = cr.top(); break;
+    case 2:  cursorRef = cr.bottom(); break;
+    default: cursorRef = cr.top() + cr.height() / 2; break;
+    }
+
     // Vertical: keep cursor in the upper portion of the viewport.
     int scrollY = verticalScrollBar()->value();
     int triggerY = static_cast<int>(vpH * m_scrollTrigger);
     int targetY = static_cast<int>(vpH * m_scrollTarget);
-    int cursorInVP = cr.top() - scrollY;
+    int cursorInVP = cursorRef - scrollY;
 
     if (cursorInVP < margin) {
         verticalScrollBar()->setValue(cr.top() - margin);

@@ -33,16 +33,23 @@ TrackingSettings::TrackingSettings(QWidget* parent)
     layout->addWidget(m_showTriggerCheckbox);
 
     layout->addWidget(new QLabel("Trigger line", this));
-    m_triggerPointSpin = new QSpinBox(this);
-    m_triggerPointSpin->setRange(5, 95);
-    m_triggerPointSpin->setSuffix("%");
-    layout->addWidget(m_triggerPointSpin);
+    m_triggerLineSpin = new QSpinBox(this);
+    m_triggerLineSpin->setRange(5, 95);
+    m_triggerLineSpin->setSuffix("%");
+    layout->addWidget(m_triggerLineSpin);
 
     layout->addWidget(new QLabel("Scroll amount", this));
     m_scrollAmountSpin = new QSpinBox(this);
     m_scrollAmountSpin->setRange(10, 100);
     m_scrollAmountSpin->setSuffix("%");
     layout->addWidget(m_scrollAmountSpin);
+
+    layout->addWidget(new QLabel("Cursor anchor", this));
+    m_cursorAnchorCombo = new QComboBox(this);
+    m_cursorAnchorCombo->addItem("Top");
+    m_cursorAnchorCombo->addItem("Center");
+    m_cursorAnchorCombo->addItem("Bottom");
+    layout->addWidget(m_cursorAnchorCombo);
 
     load();
 
@@ -51,8 +58,9 @@ TrackingSettings::TrackingSettings(QWidget* parent)
         bool autoScroll = m_autoScrollCheckbox->isChecked();
         m_autoScrollCheckbox->setEnabled(tracking);
         m_showTriggerCheckbox->setEnabled(tracking && autoScroll);
-        m_triggerPointSpin->setEnabled(tracking && autoScroll);
+        m_triggerLineSpin->setEnabled(tracking && autoScroll);
         m_scrollAmountSpin->setEnabled(tracking && autoScroll);
+        m_cursorAnchorCombo->setEnabled(tracking && autoScroll);
     };
     updateEnabled();
 
@@ -71,12 +79,17 @@ TrackingSettings::TrackingSettings(QWidget* parent)
         emit settingChanged();
     });
 
-    connect(m_triggerPointSpin, &QSpinBox::valueChanged, this, [this]() {
+    connect(m_triggerLineSpin, &QSpinBox::valueChanged, this, [this]() {
         save();
         emit settingChanged();
     });
 
     connect(m_scrollAmountSpin, &QSpinBox::valueChanged, this, [this]() {
+        save();
+        emit settingChanged();
+    });
+
+    connect(m_cursorAnchorCombo, &QComboBox::currentIndexChanged, this, [this]() {
         save();
         emit settingChanged();
     });
@@ -102,14 +115,19 @@ bool TrackingSettings::showTriggerLine() const
     return m_showTriggerCheckbox->isChecked();
 }
 
-int TrackingSettings::triggerPoint() const
+int TrackingSettings::triggerLine() const
 {
-    return m_triggerPointSpin->value();
+    return m_triggerLineSpin->value();
 }
 
 int TrackingSettings::scrollAmount() const
 {
     return m_scrollAmountSpin->value();
+}
+
+int TrackingSettings::cursorAnchor() const
+{
+    return m_cursorAnchorCombo->currentIndex();
 }
 
 void TrackingSettings::load()
@@ -120,8 +138,9 @@ void TrackingSettings::load()
         m_trackingCheckbox->setChecked(true);
         m_autoScrollCheckbox->setChecked(true);
         m_showTriggerCheckbox->setChecked(false);
-        m_triggerPointSpin->setValue(60);
+        m_triggerLineSpin->setValue(60);
         m_scrollAmountSpin->setValue(88);
+        m_cursorAnchorCombo->setCurrentIndex(1); // Center
         return;
     }
 
@@ -132,8 +151,11 @@ void TrackingSettings::load()
     m_trackingCheckbox->setChecked(true);
     m_autoScrollCheckbox->setChecked(obj.value("autoScroll").toBool(true));
     m_showTriggerCheckbox->setChecked(false);
-    m_triggerPointSpin->setValue(obj.value("triggerPoint").toInt(60));
+    int triggerVal = obj.contains("triggerLine") ? obj.value("triggerLine").toInt(60)
+                                                   : obj.value("triggerPoint").toInt(60);
+    m_triggerLineSpin->setValue(triggerVal);
     m_scrollAmountSpin->setValue(obj.value("scrollAmount").toInt(88));
+    m_cursorAnchorCombo->setCurrentIndex(obj.value("cursorAnchor").toInt(1));
 }
 
 void TrackingSettings::save()
@@ -149,8 +171,9 @@ void TrackingSettings::save()
 
     QJsonObject trackingObj;
     trackingObj["autoScroll"] = m_autoScrollCheckbox->isChecked();
-    trackingObj["triggerPoint"] = m_triggerPointSpin->value();
+    trackingObj["triggerLine"] = m_triggerLineSpin->value();
     trackingObj["scrollAmount"] = m_scrollAmountSpin->value();
+    trackingObj["cursorAnchor"] = m_cursorAnchorCombo->currentIndex();
     root["tracking"] = trackingObj;
 
     QFile file(path);

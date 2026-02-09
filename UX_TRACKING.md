@@ -18,7 +18,7 @@ Displays a red dashed horizontal line across the score at the trigger line posit
 ### Trigger line (5–95%, default 60%)
 How far down the viewport the cursor is allowed to drift before auto-scroll fires. For example, at 60% the view scrolls once the cursor passes 60% of the way down the visible area.
 
-Persisted in `settings.json` under `tracking.triggerPoint`.
+Persisted in `settings.json` under `tracking.triggerLine`.
 
 ### Scroll amount (10–100%, default 88%)
 How much of the space above the cursor gets scrolled away when auto-scroll fires.
@@ -30,6 +30,11 @@ How much of the space above the cursor gets scrolled away when auto-scroll fires
 Formula used: `targetY = viewportHeight * triggerPoint * (1 - scrollAmount)`
 
 Persisted in `settings.json` under `tracking.scrollAmount`.
+
+### Cursor anchor (combo: Top / Center / Bottom, default Center)
+Which part of the cursor rectangle is compared against the trigger line. For example, with "Center" the auto-scroll fires when the vertical midpoint of the cursor crosses the trigger line. "Top" uses the top edge, "Bottom" uses the bottom edge.
+
+Persisted in `settings.json` under `tracking.cursorAnchor` (0=Top, 1=Center, 2=Bottom).
 
 ## Enable/disable hierarchy
 
@@ -48,8 +53,9 @@ Settings are stored in `settings.json` (next to the binary) under the `"tracking
 {
   "tracking": {
     "autoScroll": true,
-    "triggerPoint": 60,
-    "scrollAmount": 88
+    "triggerLine": 60,
+    "scrollAmount": 88,
+    "cursorAnchor": 1
   }
 }
 ```

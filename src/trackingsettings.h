@@ -2,6 +2,7 @@
 
 #include <QWidget>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QSpinBox>
 
 namespace scoretracker {
@@ -17,8 +18,9 @@ public:
     void setTrackingEnabled(bool on);
     bool autoScrollEnabled() const;
     bool showTriggerLine() const;
-    int triggerPoint() const;   // 5–95 %
+    int triggerLine() const;    // 5–95 %
     int scrollAmount() const;   // 10–100 %
+    int cursorAnchor() const;   // 0=Top, 1=Center, 2=Bottom
     void applyTheme();
 
 signals:
@@ -33,8 +35,9 @@ private:
     QCheckBox* m_trackingCheckbox = nullptr;
     QCheckBox* m_autoScrollCheckbox = nullptr;
     QCheckBox* m_showTriggerCheckbox = nullptr;
-    QSpinBox*  m_triggerPointSpin   = nullptr;
+    QSpinBox*  m_triggerLineSpin     = nullptr;
     QSpinBox*  m_scrollAmountSpin   = nullptr;
+    QComboBox* m_cursorAnchorCombo  = nullptr;
 };
 
 } // namespace scoretracker

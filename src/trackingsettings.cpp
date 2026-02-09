@@ -29,10 +29,10 @@ TrackingSettings::TrackingSettings(QWidget* parent)
 
     m_autoScrollCheckbox = new QCheckBox("Auto-scroll", this);
     layout->addWidget(m_autoScrollCheckbox);
-    m_showTriggerCheckbox = new QCheckBox("Show trigger point", this);
+    m_showTriggerCheckbox = new QCheckBox("Show trigger line", this);
     layout->addWidget(m_showTriggerCheckbox);
 
-    layout->addWidget(new QLabel("Trigger point", this));
+    layout->addWidget(new QLabel("Trigger line", this));
     m_triggerPointSpin = new QSpinBox(this);
     m_triggerPointSpin->setRange(5, 95);
     m_triggerPointSpin->setSuffix("%");
@@ -121,7 +121,7 @@ void TrackingSettings::load()
         m_autoScrollCheckbox->setChecked(true);
         m_showTriggerCheckbox->setChecked(false);
         m_triggerPointSpin->setValue(60);
-        m_scrollAmountSpin->setValue(100);
+        m_scrollAmountSpin->setValue(88);
         return;
     }
 
@@ -133,7 +133,7 @@ void TrackingSettings::load()
     m_autoScrollCheckbox->setChecked(obj.value("autoScroll").toBool(true));
     m_showTriggerCheckbox->setChecked(false);
     m_triggerPointSpin->setValue(obj.value("triggerPoint").toInt(60));
-    m_scrollAmountSpin->setValue(obj.value("scrollAmount").toInt(100));
+    m_scrollAmountSpin->setValue(obj.value("scrollAmount").toInt(88));
 }
 
 void TrackingSettings::save()

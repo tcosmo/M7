@@ -12,15 +12,15 @@ When on, the viewport automatically scrolls to keep the cursor visible. When off
 
 Persisted in `settings.json` under `tracking.autoScroll`.
 
-### Show trigger point (checkbox)
-Displays a red dashed horizontal line across the score at the trigger point position. Useful for tuning the two parameters below. This is a temporary visual aid — not persisted across restarts.
+### Show trigger line (checkbox)
+Displays a red dashed horizontal line across the score at the trigger line position. Useful for tuning the two parameters below. This is a temporary visual aid — not persisted across restarts.
 
-### Trigger point (5–95%, default 60%)
+### Trigger line (5–95%, default 60%)
 How far down the viewport the cursor is allowed to drift before auto-scroll fires. For example, at 60% the view scrolls once the cursor passes 60% of the way down the visible area.
 
 Persisted in `settings.json` under `tracking.triggerPoint`.
 
-### Scroll amount (10–100%, default 100%)
+### Scroll amount (10–100%, default 88%)
 How much of the space above the cursor gets scrolled away when auto-scroll fires.
 
 - **100%** = cursor jumps to the very top of the viewport
@@ -49,9 +49,9 @@ Settings are stored in `settings.json` (next to the binary) under the `"tracking
   "tracking": {
     "autoScroll": true,
     "triggerPoint": 60,
-    "scrollAmount": 100
+    "scrollAmount": 88
   }
 }
 ```
 
-`Tracking` and `Show trigger point` are transient — always reset to on/off respectively on launch.
+`Tracking` and `Show trigger line` are transient — always reset to on/off respectively on launch.

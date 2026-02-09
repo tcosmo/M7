@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include <QToolBar>
 #include <QAction>
+#include <QPushButton>
 #include <QSlider>
 #include <QLabel>
 #include <QSplitter>
@@ -42,6 +43,7 @@ private slots:
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
+    void changeEvent(QEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
 
 private:
@@ -49,6 +51,7 @@ private:
     void setupUI();
     void setSidebarVisible(bool visible);
     void repositionSidebar();
+    void updateTrackingIcon();
     QString formatTime(double seconds) const;
 
     // UI
@@ -63,6 +66,7 @@ private:
     QAction* m_stopAction = nullptr;
     QAction* m_trackingAction = nullptr;
     QAction* m_sidebarAction = nullptr;
+    QPushButton* m_trackingButton = nullptr;
     QSlider* m_seekSlider = nullptr;
     QLabel* m_timeLabel = nullptr;
     QLabel* m_zoomLabel = nullptr;

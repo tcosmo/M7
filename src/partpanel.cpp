@@ -1,4 +1,5 @@
 #include "partpanel.h"
+#include "theme.h"
 
 #include "engraving/dom/score.h"
 #include "engraving/dom/part.h"
@@ -49,7 +50,7 @@ static QIcon makeEyeIcon(bool visible)
     QPainter p(&px);
     p.setRenderHint(QPainter::Antialiasing);
 
-    QColor col = visible ? Qt::white : QColor("#666");
+    QColor col = visible ? Theme::iconVisible() : Theme::iconHidden();
 
     // Eye shape: two arcs forming an almond
     QPainterPath path;
@@ -79,19 +80,6 @@ static QIcon makeEyeIcon(bool visible)
     px.setDevicePixelRatio(2);
     return QIcon(px);
 }
-
-// ---------------------------------------------------------------------------
-// Radio button style (shared)
-// ---------------------------------------------------------------------------
-
-static const char* radioStyleStr =
-    "QRadioButton { color: #ccc; font-size: 11px; spacing: 4px; }"
-    "QRadioButton::indicator { width: 9px; height: 9px; }"
-    "QRadioButton::indicator::unchecked { border: 1px solid #888; border-radius: 5px; background: transparent; }"
-    "QRadioButton::indicator::checked { border: 1px solid #4a9eff; border-radius: 5px; background: #4a9eff; }"
-    "QRadioButton:disabled { color: #555; }"
-    "QRadioButton::indicator:disabled { border-color: #444; background: transparent; }"
-    "QRadioButton::indicator::checked:disabled { border-color: #555; background: #555; }";
 
 // ---------------------------------------------------------------------------
 // Octave-shifted clef helpers
@@ -181,11 +169,12 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     mainLayout->setSpacing(0);
 
     // --- Header row ---
-    auto* header = new QWidget(this);
+    m_header = new QWidget(this);
+    auto* header = m_header;
     header->setFixedHeight(28);
     header->setAutoFillBackground(true);
     QPalette hpal = header->palette();
-    hpal.setColor(QPalette::Window, QColor(37, 37, 37));
+    hpal.setColor(QPalette::Window, Theme::panelBg());
     header->setPalette(hpal);
 
     auto* hLayout = new QHBoxLayout(header);
@@ -212,7 +201,7 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
 
     // Name label
     m_nameLabel = new QLabel(name, header);
-    m_nameLabel->setStyleSheet("color: white; font-size: 12px;");
+    m_nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textPrimary().name()));
     m_nameLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     // Arrow button
@@ -221,9 +210,9 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     m_arrowButton->setAutoRaise(true);
     m_arrowButton->setArrowType(Qt::RightArrow);
     m_arrowButton->setStyleSheet(
-        "QToolButton { color: #aaa; border: none; background: transparent; }"
-        "QToolButton:pressed { color: #aaa; }"
-        "QToolButton:focus { outline: none; }"
+        QString("QToolButton { color: %1; border: none; background: transparent; }"
+                "QToolButton:pressed { color: %1; }"
+                "QToolButton:focus { outline: none; }").arg(Theme::arrowColor().name())
     );
 
     hLayout->addWidget(m_eyeButton);
@@ -241,7 +230,7 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     m_contentArea = new QWidget(this);
     m_contentArea->setAutoFillBackground(true);
     QPalette cpal = m_contentArea->palette();
-    cpal.setColor(QPalette::Window, QColor(42, 42, 42));
+    cpal.setColor(QPalette::Window, Theme::contentBg());
     m_contentArea->setPalette(cpal);
 
     auto* contentLayout = new QVBoxLayout(m_contentArea);
@@ -251,8 +240,9 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     // Clef selector row
     auto* clefRow = new QHBoxLayout();
     clefRow->setSpacing(6);
-    auto* clefLabel = new QLabel("Clef", m_contentArea);
-    clefLabel->setStyleSheet("color: #ccc; font-size: 11px;");
+    m_clefLabel = new QLabel("Clef", m_contentArea);
+    auto* clefLabel = m_clefLabel;
+    clefLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name()));
     m_clefCombo = new QComboBox(m_contentArea);
     m_clefCombo->setFixedWidth(160);
     m_clefCombo->addItem("Treble Clef",       static_cast<int>(ClefType::G));
@@ -293,8 +283,9 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     // Octave selector row
     auto* octaveRow = new QHBoxLayout();
     octaveRow->setSpacing(6);
-    auto* octaveLabel = new QLabel("Octave", m_contentArea);
-    octaveLabel->setStyleSheet("color: #ccc; font-size: 11px;");
+    m_octaveLabel = new QLabel("Octave", m_contentArea);
+    auto* octaveLabel = m_octaveLabel;
+    octaveLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name()));
     m_octaveCombo = new QComboBox(m_contentArea);
     m_octaveCombo->setFixedWidth(160);
     m_octaveCombo->addItem("Written",           0);
@@ -339,8 +330,9 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     transposeSectionLayout->setContentsMargins(0, 0, 0, 0);
     transposeSectionLayout->setSpacing(4);
 
-    auto* sectionLabel = new QLabel("Transposing Instrument", transposeSection);
-    sectionLabel->setStyleSheet("color: #ccc; font-size: 12px;");
+    m_sectionLabel = new QLabel("Transposing Instrument", transposeSection);
+    auto* sectionLabel = m_sectionLabel;
+    sectionLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textSecondary().name()));
     transposeSectionLayout->addWidget(sectionLabel);
 
     auto* radioRow = new QHBoxLayout();
@@ -348,10 +340,10 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     radioRow->setSpacing(12);
 
     m_writtenRadio = new QRadioButton("Written", transposeSection);
-    m_writtenRadio->setStyleSheet(radioStyleStr);
+    m_writtenRadio->setStyleSheet(Theme::radioStyleStr());
     m_writtenRadio->setChecked(true);
     m_concertRadio = new QRadioButton("Concert", transposeSection);
-    m_concertRadio->setStyleSheet(radioStyleStr);
+    m_concertRadio->setStyleSheet(Theme::radioStyleStr());
 
     radioRow->addWidget(m_writtenRadio);
     radioRow->addWidget(m_concertRadio);
@@ -359,7 +351,7 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     transposeSectionLayout->addLayout(radioRow);
 
     if (!m_isTransposing) {
-        sectionLabel->setStyleSheet("color: #555; font-size: 12px;");
+        sectionLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textDisabled().name()));
         m_writtenRadio->setEnabled(false);
         m_concertRadio->setEnabled(false);
     }
@@ -377,7 +369,7 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
 
     // Update label color based on initial visibility
     if (!m_part->show()) {
-        m_nameLabel->setStyleSheet("color: #666; font-size: 12px;");
+        m_nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textHidden().name()));
     }
 }
 
@@ -670,8 +662,9 @@ void PartRow::updateEyeIcon()
     m_eyeButton->setIcon(makeEyeIcon(vis));
     if (m_nameLabel) {
         m_nameLabel->setStyleSheet(
-            vis ? "color: white; font-size: 12px;"
-                : "color: #666; font-size: 12px;");
+            QString("color: %1; font-size: 12px;")
+                .arg(vis ? Theme::textPrimary().name()
+                         : Theme::textHidden().name()));
     }
 }
 
@@ -706,6 +699,52 @@ bool PartRow::eventFilter(QObject* obj, QEvent* event)
     return QWidget::eventFilter(obj, event);
 }
 
+void PartRow::applyTheme()
+{
+    // Header background
+    if (m_header) {
+        QPalette hpal = m_header->palette();
+        hpal.setColor(QPalette::Window, Theme::panelBg());
+        m_header->setPalette(hpal);
+    }
+
+    // Content area background
+    if (m_contentArea) {
+        QPalette cpal = m_contentArea->palette();
+        cpal.setColor(QPalette::Window, Theme::contentBg());
+        m_contentArea->setPalette(cpal);
+    }
+
+    // Eye icon + name label color
+    updateEyeIcon();
+
+    // Arrow button
+    if (m_arrowButton) {
+        m_arrowButton->setStyleSheet(
+            QString("QToolButton { color: %1; border: none; background: transparent; }"
+                    "QToolButton:pressed { color: %1; }"
+                    "QToolButton:focus { outline: none; }").arg(Theme::arrowColor().name()));
+    }
+
+    // Labels
+    QString secStyle = QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name());
+    if (m_clefLabel) m_clefLabel->setStyleSheet(secStyle);
+    if (m_octaveLabel) m_octaveLabel->setStyleSheet(secStyle);
+
+    // Transpose section label
+    if (m_sectionLabel) {
+        m_sectionLabel->setStyleSheet(
+            QString("color: %1; font-size: 12px;")
+                .arg(m_isTransposing ? Theme::textSecondary().name()
+                                     : Theme::textDisabled().name()));
+    }
+
+    // Radio buttons
+    QString radioStyle = Theme::radioStyleStr();
+    if (m_writtenRadio) m_writtenRadio->setStyleSheet(radioStyle);
+    if (m_concertRadio) m_concertRadio->setStyleSheet(radioStyle);
+}
+
 // ---------------------------------------------------------------------------
 // PartPanel
 // ---------------------------------------------------------------------------
@@ -715,8 +754,8 @@ PartPanel::PartPanel(QWidget* parent)
 {
     setAutoFillBackground(true);
     QPalette pal = palette();
-    pal.setColor(QPalette::Window, QColor(37, 37, 37));
-    pal.setColor(QPalette::Base, QColor(37, 37, 37));
+    pal.setColor(QPalette::Window, Theme::panelBg());
+    pal.setColor(QPalette::Base, Theme::panelBg());
     setPalette(pal);
 
     auto* layout = new QVBoxLayout(this);
@@ -730,12 +769,12 @@ PartPanel::PartPanel(QWidget* parent)
     pitchLayout->setContentsMargins(0, 0, 0, 0);
     pitchLayout->setSpacing(2);
 
-    auto* pitchLabel = new QLabel("Transposing Instruments", pitchSection);
-    pitchLabel->setStyleSheet("color: #ccc; font-size: 12px;");
-    pitchLayout->addWidget(pitchLabel);
+    m_pitchLabel = new QLabel("Transposing Instruments", pitchSection);
+    m_pitchLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textSecondary().name()));
+    pitchLayout->addWidget(m_pitchLabel);
 
     m_transposingListLabel = new QLabel(pitchSection);
-    m_transposingListLabel->setStyleSheet("color: #888; font-size: 9px; padding-left: 1px;");
+    m_transposingListLabel->setStyleSheet(QString("color: %1; font-size: 9px; padding-left: 1px;").arg(Theme::textHint().name()));
     m_transposingListLabel->setTextFormat(Qt::PlainText);
     m_transposingListLabel->hide();
     pitchLayout->addWidget(m_transposingListLabel);
@@ -745,11 +784,11 @@ PartPanel::PartPanel(QWidget* parent)
     pitchRadioRow->setSpacing(10);
 
     m_globalPitchWritten = new QRadioButton("Written", pitchSection);
-    m_globalPitchWritten->setStyleSheet(radioStyleStr);
+    m_globalPitchWritten->setStyleSheet(Theme::radioStyleStr());
     m_globalPitchConcert = new QRadioButton("Concert", pitchSection);
-    m_globalPitchConcert->setStyleSheet(radioStyleStr);
+    m_globalPitchConcert->setStyleSheet(Theme::radioStyleStr());
     m_globalPitchPerPart = new QRadioButton("Per Part", pitchSection);
-    m_globalPitchPerPart->setStyleSheet(radioStyleStr);
+    m_globalPitchPerPart->setStyleSheet(Theme::radioStyleStr());
     m_globalPitchWritten->setChecked(true);
 
     pitchRadioRow->addWidget(m_globalPitchWritten);
@@ -766,18 +805,18 @@ PartPanel::PartPanel(QWidget* parent)
     clefLayout->setContentsMargins(0, 4, 0, 0);
     clefLayout->setSpacing(2);
 
-    auto* clefLabel = new QLabel("Clefs", clefSection);
-    clefLabel->setStyleSheet("color: #ccc; font-size: 12px;");
-    clefLayout->addWidget(clefLabel);
+    m_clefSectionLabel = new QLabel("Clefs", clefSection);
+    m_clefSectionLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textSecondary().name()));
+    clefLayout->addWidget(m_clefSectionLabel);
 
     auto* clefRadioRow = new QHBoxLayout();
     clefRadioRow->setContentsMargins(12, 0, 0, 0);
     clefRadioRow->setSpacing(10);
 
     m_globalClefWritten = new QRadioButton("Written", clefSection);
-    m_globalClefWritten->setStyleSheet(radioStyleStr);
+    m_globalClefWritten->setStyleSheet(Theme::radioStyleStr());
     m_globalClefPerPart = new QRadioButton("Per Part", clefSection);
-    m_globalClefPerPart->setStyleSheet(radioStyleStr);
+    m_globalClefPerPart->setStyleSheet(Theme::radioStyleStr());
     m_globalClefWritten->setChecked(true);
 
     clefRadioRow->addWidget(m_globalClefWritten);
@@ -822,13 +861,7 @@ PartPanel::PartPanel(QWidget* parent)
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_scrollArea->setStyleSheet(
-        "QScrollBar:vertical { background: palette(window); border: none; width: 14px; }"
-        "QScrollBar::handle:vertical { background: rgba(255,255,255,0.15); border-radius: 4px; min-height: 30px; margin: 2px 3px; }"
-        "QScrollBar::handle:vertical:hover { background: rgba(255,255,255,0.25); }"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }"
-    );
+    m_scrollArea->setStyleSheet(Theme::scrollBarStyleStr());
 
     m_scrollContent = new QWidget();
     m_rowsLayout = new QVBoxLayout(m_scrollContent);
@@ -1169,6 +1202,35 @@ void PartPanel::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
     updateTransposingLabel();
+}
+
+void PartPanel::applyTheme()
+{
+    QPalette pal = palette();
+    pal.setColor(QPalette::Window, Theme::panelBg());
+    pal.setColor(QPalette::Base, Theme::panelBg());
+    setPalette(pal);
+
+    if (m_pitchLabel)
+        m_pitchLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textSecondary().name()));
+    if (m_transposingListLabel)
+        m_transposingListLabel->setStyleSheet(QString("color: %1; font-size: 9px; padding-left: 1px;").arg(Theme::textHint().name()));
+    if (m_clefSectionLabel)
+        m_clefSectionLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textSecondary().name()));
+
+    QString radioStyle = Theme::radioStyleStr();
+    if (m_globalPitchWritten) m_globalPitchWritten->setStyleSheet(radioStyle);
+    if (m_globalPitchConcert) m_globalPitchConcert->setStyleSheet(radioStyle);
+    if (m_globalPitchPerPart) m_globalPitchPerPart->setStyleSheet(radioStyle);
+    if (m_globalClefWritten) m_globalClefWritten->setStyleSheet(radioStyle);
+    if (m_globalClefPerPart) m_globalClefPerPart->setStyleSheet(radioStyle);
+
+    if (m_scrollArea)
+        m_scrollArea->setStyleSheet(Theme::scrollBarStyleStr());
+
+    // Propagate to all part rows
+    for (auto* row : m_rows)
+        row->applyTheme();
 }
 
 } // namespace scoretracker

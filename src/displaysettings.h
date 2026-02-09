@@ -15,6 +15,7 @@ public:
 
     bool showTitleFrame() const;
     int layoutMode() const; // 0=Page, 1=Continuous Horizontal, 2=Continuous Vertical
+    void applyTheme();
 
 signals:
     void settingChanged();

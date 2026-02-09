@@ -1,4 +1,5 @@
 #include "displaysettings.h"
+#include "theme.h"
 
 #include <QVBoxLayout>
 #include <QLabel>
@@ -16,8 +17,8 @@ DisplaySettings::DisplaySettings(QWidget* parent)
 {
     setAutoFillBackground(true);
     QPalette pal = palette();
-    pal.setColor(QPalette::Window, QColor(37, 37, 37));
-    pal.setColor(QPalette::Base, QColor(37, 37, 37));
+    pal.setColor(QPalette::Window, Theme::panelBg());
+    pal.setColor(QPalette::Base, Theme::panelBg());
     setPalette(pal);
 
     auto* layout = new QVBoxLayout(this);
@@ -111,6 +112,14 @@ void DisplaySettings::save()
     } else {
         qWarning() << "DisplaySettings: failed to save settings.json to" << path;
     }
+}
+
+void DisplaySettings::applyTheme()
+{
+    QPalette pal = palette();
+    pal.setColor(QPalette::Window, Theme::panelBg());
+    pal.setColor(QPalette::Base, Theme::panelBg());
+    setPalette(pal);
 }
 
 QString DisplaySettings::settingsPath() const

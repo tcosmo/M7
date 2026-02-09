@@ -48,6 +48,7 @@ public:
     int octaveComboValue() const;
     int xmlClefInt() const { return m_xmlClefInt; }
     void setClefFromSettings(int clef, int octave);
+    void applyTheme();
 
 signals:
     void visibilityToggled();
@@ -65,10 +66,14 @@ private:
     void updateOctaveCombo();
 
     mu::engraving::Part* m_part = nullptr;
+    QWidget* m_header = nullptr;
     QToolButton* m_eyeButton = nullptr;
     QLabel* m_nameLabel = nullptr;
     QToolButton* m_arrowButton = nullptr;
     QWidget* m_contentArea = nullptr;
+    QLabel* m_clefLabel = nullptr;
+    QLabel* m_octaveLabel = nullptr;
+    QLabel* m_sectionLabel = nullptr;
     QComboBox* m_clefCombo = nullptr;
     QComboBox* m_octaveCombo = nullptr;
     QRadioButton* m_writtenRadio = nullptr;
@@ -92,6 +97,7 @@ public:
     void setScoreFileName(const QString& fileName);
     void showOnlyParts(const QList<int>& partNumbers);
     int desiredHeight() const;
+    void applyTheme();
 
 signals:
     void partsChanged();
@@ -119,8 +125,10 @@ private:
     std::vector<PartRow*> m_rows;
     std::vector<mu::engraving::Part*> m_parts;
 
+    QLabel* m_pitchLabel = nullptr;
     QLabel* m_transposingListLabel = nullptr;
     QString m_transposingFullText;
+    QLabel* m_clefSectionLabel = nullptr;
     QRadioButton* m_globalPitchWritten = nullptr;
     QRadioButton* m_globalPitchConcert = nullptr;
     QRadioButton* m_globalPitchPerPart = nullptr;

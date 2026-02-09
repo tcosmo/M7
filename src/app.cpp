@@ -5,6 +5,7 @@
 #include "partpanel.h"
 #include "displaysettings.h"
 #include "collapsiblesection.h"
+#include "theme.h"
 #include "beatdata.h"
 
 #include "modularity/ioc.h"
@@ -274,43 +275,26 @@ void App::setupToolbar()
     m_trackingAction->setChecked(true);
     // shortcut is on trackingButton, not the action
 
-    auto* trackingButton = new QPushButton("Tracking", this);
-    trackingButton->setFlat(true);
-    trackingButton->setCursor(Qt::PointingHandCursor);
-    trackingButton->setFocusPolicy(Qt::NoFocus);
-    trackingButton->setStyleSheet(
+    m_trackingButton = new QPushButton("Tracking", this);
+    m_trackingButton->setFlat(true);
+    m_trackingButton->setCursor(Qt::PointingHandCursor);
+    m_trackingButton->setFocusPolicy(Qt::NoFocus);
+    m_trackingButton->setStyleSheet(
         "QPushButton { padding: 2px 4px; }"
         "QPushButton:pressed { background: transparent; padding: 2px 4px; }");
-    trackingButton->setIconSize(QSize(8, 8));
+    m_trackingButton->setIconSize(QSize(8, 8));
 
-    auto makeIcon = [](bool on) -> QIcon {
-        int sz = 16; // render at 2x for retina
-        QPixmap px(sz + 7, sz + 3);
-        px.fill(Qt::transparent);
-        QPainter p(&px);
-        p.setRenderHint(QPainter::Antialiasing);
-        if (on) {
-            p.setBrush(QColor("#4CAF50"));
-            p.setPen(QPen(QColor("#4CAF50"), 1.5));
-        } else {
-            p.setBrush(Qt::NoBrush);
-            p.setPen(QPen(QColor("#888"), 1.5));
-        }
-        p.drawEllipse(QRectF(2, 3, sz - 2, sz - 2));
-        px.setDevicePixelRatio(2);
-        return QIcon(px);
-    };
-    trackingButton->setIcon(makeIcon(true));
-    trackingButton->setFixedSize(trackingButton->sizeHint());
+    updateTrackingIcon();
+    m_trackingButton->setFixedSize(m_trackingButton->sizeHint());
 
-    trackingButton->setShortcut(QKeySequence(Qt::Key_T));
-    m_toolbar->addWidget(trackingButton);
+    m_trackingButton->setShortcut(QKeySequence(Qt::Key_T));
+    m_toolbar->addWidget(m_trackingButton);
 
-    connect(trackingButton, &QPushButton::clicked, [this]() {
+    connect(m_trackingButton, &QPushButton::clicked, [this]() {
         m_trackingAction->toggle();
     });
-    connect(m_trackingAction, &QAction::toggled, [this, trackingButton, makeIcon](bool on) {
-        trackingButton->setIcon(makeIcon(on));
+    connect(m_trackingAction, &QAction::toggled, [this](bool on) {
+        updateTrackingIcon();
         if (!on) {
             m_scoreWidget->setCursorRect(muse::RectF(), -1);
         }
@@ -575,6 +559,39 @@ QString App::formatTime(double seconds) const
     int mins = totalSecs / 60;
     int secs = totalSecs % 60;
     return QString("%1:%2").arg(mins).arg(secs, 2, 10, QChar('0'));
+}
+
+void App::updateTrackingIcon()
+{
+    if (!m_trackingButton || !m_trackingAction) return;
+    bool on = m_trackingAction->isChecked();
+    int sz = 16; // render at 2x for retina
+    QPixmap px(sz + 7, sz + 3);
+    px.fill(Qt::transparent);
+    QPainter p(&px);
+    p.setRenderHint(QPainter::Antialiasing);
+    if (on) {
+        p.setBrush(QColor("#4CAF50"));
+        p.setPen(QPen(QColor("#4CAF50"), 1.5));
+    } else {
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(Theme::textHint(), 1.5));
+    }
+    p.drawEllipse(QRectF(2, 3, sz - 2, sz - 2));
+    px.setDevicePixelRatio(2);
+    m_trackingButton->setIcon(QIcon(px));
+}
+
+void App::changeEvent(QEvent* event)
+{
+    if (event->type() == QEvent::ApplicationPaletteChange
+        || event->type() == QEvent::PaletteChange
+        || event->type() == QEvent::ThemeChange) {
+        updateTrackingIcon();
+        if (m_partPanel) m_partPanel->applyTheme();
+        if (m_displaySettings) m_displaySettings->applyTheme();
+    }
+    QMainWindow::changeEvent(event);
 }
 
 } // namespace scoretracker

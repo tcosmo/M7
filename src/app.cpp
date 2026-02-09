@@ -74,6 +74,14 @@ App::App(QWidget* parent)
         m_scoreWidget->setScore(m_score); // refresh
     });
 
+    // Bidirectional sync: sidebar checkbox <-> toolbar tracking button
+    connect(m_trackingSettings, &TrackingSettings::trackingToggled, [this](bool on) {
+        m_trackingAction->setChecked(on);
+    });
+    connect(m_trackingAction, &QAction::toggled, [this](bool on) {
+        m_trackingSettings->setTrackingEnabled(on);
+    });
+
     connect(m_trackingSettings, &TrackingSettings::settingChanged, [this]() {
         m_scoreWidget->setAutoScrollEnabled(m_trackingSettings->autoScrollEnabled());
         m_scoreWidget->setShowTriggerLine(m_trackingSettings->showTriggerLine());

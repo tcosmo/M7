@@ -24,13 +24,13 @@ TrackingSettings::TrackingSettings(QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 4, 12, 10);
 
-    auto* checkboxRow = new QHBoxLayout();
+    m_trackingCheckbox = new QCheckBox("Tracking", this);
+    layout->addWidget(m_trackingCheckbox);
+
     m_autoScrollCheckbox = new QCheckBox("Auto-scroll", this);
-    checkboxRow->addWidget(m_autoScrollCheckbox);
+    layout->addWidget(m_autoScrollCheckbox);
     m_showTriggerCheckbox = new QCheckBox("Show trigger point", this);
-    checkboxRow->addWidget(m_showTriggerCheckbox);
-    checkboxRow->addStretch();
-    layout->addLayout(checkboxRow);
+    layout->addWidget(m_showTriggerCheckbox);
 
     layout->addWidget(new QLabel("Trigger point", this));
     m_triggerPointSpin = new QSpinBox(this);
@@ -47,11 +47,19 @@ TrackingSettings::TrackingSettings(QWidget* parent)
     load();
 
     auto updateEnabled = [this]() {
-        bool on = m_autoScrollCheckbox->isChecked();
-        m_triggerPointSpin->setEnabled(on);
-        m_scrollAmountSpin->setEnabled(on);
+        bool tracking = m_trackingCheckbox->isChecked();
+        bool autoScroll = m_autoScrollCheckbox->isChecked();
+        m_autoScrollCheckbox->setEnabled(tracking);
+        m_showTriggerCheckbox->setEnabled(tracking && autoScroll);
+        m_triggerPointSpin->setEnabled(tracking && autoScroll);
+        m_scrollAmountSpin->setEnabled(tracking && autoScroll);
     };
     updateEnabled();
+
+    connect(m_trackingCheckbox, &QCheckBox::toggled, this, [this, updateEnabled](bool on) {
+        updateEnabled();
+        emit trackingToggled(on);
+    });
 
     connect(m_autoScrollCheckbox, &QCheckBox::toggled, this, [this, updateEnabled]() {
         updateEnabled();
@@ -60,7 +68,6 @@ TrackingSettings::TrackingSettings(QWidget* parent)
     });
 
     connect(m_showTriggerCheckbox, &QCheckBox::toggled, this, [this]() {
-        save();
         emit settingChanged();
     });
 
@@ -73,6 +80,16 @@ TrackingSettings::TrackingSettings(QWidget* parent)
         save();
         emit settingChanged();
     });
+}
+
+bool TrackingSettings::trackingEnabled() const
+{
+    return m_trackingCheckbox->isChecked();
+}
+
+void TrackingSettings::setTrackingEnabled(bool on)
+{
+    m_trackingCheckbox->setChecked(on);
 }
 
 bool TrackingSettings::autoScrollEnabled() const
@@ -100,6 +117,7 @@ void TrackingSettings::load()
     QString path = settingsPath();
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
+        m_trackingCheckbox->setChecked(true);
         m_autoScrollCheckbox->setChecked(true);
         m_showTriggerCheckbox->setChecked(false);
         m_triggerPointSpin->setValue(60);
@@ -111,8 +129,9 @@ void TrackingSettings::load()
     QJsonObject root = doc.object();
     QJsonObject obj = root.contains("tracking") ? root["tracking"].toObject() : QJsonObject();
 
+    m_trackingCheckbox->setChecked(true);
     m_autoScrollCheckbox->setChecked(obj.value("autoScroll").toBool(true));
-    m_showTriggerCheckbox->setChecked(obj.value("showTriggerLine").toBool(false));
+    m_showTriggerCheckbox->setChecked(false);
     m_triggerPointSpin->setValue(obj.value("triggerPoint").toInt(60));
     m_scrollAmountSpin->setValue(obj.value("scrollAmount").toInt(100));
 }
@@ -130,7 +149,6 @@ void TrackingSettings::save()
 
     QJsonObject trackingObj;
     trackingObj["autoScroll"] = m_autoScrollCheckbox->isChecked();
-    trackingObj["showTriggerLine"] = m_showTriggerCheckbox->isChecked();
     trackingObj["triggerPoint"] = m_triggerPointSpin->value();
     trackingObj["scrollAmount"] = m_scrollAmountSpin->value();
     root["tracking"] = trackingObj;

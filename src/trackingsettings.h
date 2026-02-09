@@ -13,6 +13,8 @@ class TrackingSettings : public QWidget
 public:
     explicit TrackingSettings(QWidget* parent = nullptr);
 
+    bool trackingEnabled() const;
+    void setTrackingEnabled(bool on);
     bool autoScrollEnabled() const;
     bool showTriggerLine() const;
     int triggerPoint() const;   // 5–95 %
@@ -20,6 +22,7 @@ public:
     void applyTheme();
 
 signals:
+    void trackingToggled(bool on);
     void settingChanged();
 
 private:
@@ -27,6 +30,7 @@ private:
     void save();
     QString settingsPath() const;
 
+    QCheckBox* m_trackingCheckbox = nullptr;
     QCheckBox* m_autoScrollCheckbox = nullptr;
     QCheckBox* m_showTriggerCheckbox = nullptr;
     QSpinBox*  m_triggerPointSpin   = nullptr;

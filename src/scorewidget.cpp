@@ -261,6 +261,39 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
     }
 }
 
+// --- TriggerLineOverlay ---
+
+TriggerLineOverlay::TriggerLineOverlay(QWidget* parent)
+    : QWidget(parent)
+{
+    setAttribute(Qt::WA_TransparentForMouseEvents);
+    setAttribute(Qt::WA_TranslucentBackground);
+    hide();
+}
+
+void TriggerLineOverlay::setTriggerFraction(double fraction)
+{
+    m_fraction = fraction;
+    if (isVisible()) update();
+}
+
+void TriggerLineOverlay::setVisible(bool visible)
+{
+    QWidget::setVisible(visible);
+    if (visible) {
+        raise();
+        update();
+    }
+}
+
+void TriggerLineOverlay::paintEvent(QPaintEvent*)
+{
+    int y = static_cast<int>(height() * m_fraction);
+    QPainter p(this);
+    p.setPen(QPen(QColor(255, 0, 0, 160), 1, Qt::DashLine));
+    p.drawLine(0, y, width(), y);
+}
+
 // --- ScoreWidget ---
 
 static constexpr double ZOOM_MIN = 0.5;
@@ -285,7 +318,8 @@ ScoreWidget::ScoreWidget(QWidget* parent)
     // Match scrollbar to sidebar style
     verticalScrollBar()->setStyleSheet(Theme::scrollBarStyleStr());
 
-    viewport()->installEventFilter(this);
+    m_triggerOverlay = new TriggerLineOverlay(this);
+
     grabGesture(Qt::PinchGesture);
     m_canvas->setZoom(ZOOM_DEFAULT);
 }
@@ -375,21 +409,6 @@ bool ScoreWidget::event(QEvent* event)
     return QScrollArea::event(event);
 }
 
-bool ScoreWidget::eventFilter(QObject* obj, QEvent* event)
-{
-    if (obj == viewport() && event->type() == QEvent::Paint && m_showTriggerLine) {
-        // Let the viewport paint first
-        QScrollArea::eventFilter(obj, event);
-        // Then draw the trigger line on top
-        int y = static_cast<int>(viewport()->height() * m_scrollTrigger);
-        QPainter p(viewport());
-        p.setPen(QPen(QColor(255, 0, 0, 160), 1, Qt::DashLine));
-        p.drawLine(0, y, viewport()->width(), y);
-        return true;
-    }
-    return QScrollArea::eventFilter(obj, event);
-}
-
 void ScoreWidget::setCursorRect(const muse::RectF& rect, int pageIndex)
 {
     m_canvas->setCursorRect(rect, pageIndex);
@@ -402,6 +421,8 @@ void ScoreWidget::setCursorRect(const muse::RectF& rect, int pageIndex)
 void ScoreWidget::resizeEvent(QResizeEvent* event)
 {
     QScrollArea::resizeEvent(event);
+    m_triggerOverlay->setGeometry(viewport()->geometry());
+    m_triggerOverlay->raise();
     zoomToFit();
 }
 
@@ -413,7 +434,7 @@ void ScoreWidget::setAutoScrollEnabled(bool enabled)
 void ScoreWidget::setAutoScrollTrigger(double trigger)
 {
     m_scrollTrigger = trigger;
-    if (m_showTriggerLine) viewport()->update();
+    m_triggerOverlay->setTriggerFraction(trigger);
 }
 
 void ScoreWidget::setAutoScrollTarget(double target)
@@ -423,8 +444,7 @@ void ScoreWidget::setAutoScrollTarget(double target)
 
 void ScoreWidget::setShowTriggerLine(bool show)
 {
-    m_showTriggerLine = show;
-    viewport()->update();
+    m_triggerOverlay->setVisible(show);
 }
 
 void ScoreWidget::ensureCursorVisible()

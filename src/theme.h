@@ -77,8 +77,8 @@ struct Theme {
                    "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }";
         }
         return "QScrollBar:vertical { background: palette(window); border: none; width: 14px; }"
-               "QScrollBar::handle:vertical { background: rgba(0,0,0,0.15); border-radius: 4px; min-height: 30px; margin: 2px 3px; }"
-               "QScrollBar::handle:vertical:hover { background: rgba(0,0,0,0.25); }"
+               "QScrollBar::handle:vertical { background: rgba(0,0,0,0.14); border-radius: 4px; min-height: 30px; margin: 2px 3px; }"
+               "QScrollBar::handle:vertical:hover { background: rgba(0,0,0,0.24); }"
                "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
                "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }";
     }

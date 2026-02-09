@@ -65,6 +65,7 @@ public:
     void zoomToFit();
     void scrollToTop();
     void setOverlayWidth(int width);
+    void applyTheme();
 
 signals:
     void zoomChanged(double zoom);

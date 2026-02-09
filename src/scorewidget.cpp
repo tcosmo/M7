@@ -1,4 +1,5 @@
 #include "scorewidget.h"
+#include "theme.h"
 
 #include <QPainter>
 #include <QPaintEvent>
@@ -282,13 +283,7 @@ ScoreWidget::ScoreWidget(QWidget* parent)
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     // Match scrollbar to sidebar style
-    verticalScrollBar()->setStyleSheet(
-        "QScrollBar:vertical { background: palette(window); border: none; width: 14px; }"
-        "QScrollBar::handle:vertical { background: rgba(255,255,255,0.15); border-radius: 4px; min-height: 30px; margin: 2px 3px; }"
-        "QScrollBar::handle:vertical:hover { background: rgba(255,255,255,0.25); }"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }"
-    );
+    verticalScrollBar()->setStyleSheet(Theme::scrollBarStyleStr());
 
     grabGesture(Qt::PinchGesture);
     m_canvas->setZoom(ZOOM_DEFAULT);
@@ -342,6 +337,11 @@ void ScoreWidget::zoomToFit()
 void ScoreWidget::setOverlayWidth(int width)
 {
     m_overlayWidth = width;
+}
+
+void ScoreWidget::applyTheme()
+{
+    verticalScrollBar()->setStyleSheet(Theme::scrollBarStyleStr());
 }
 
 void ScoreWidget::scrollToTop()

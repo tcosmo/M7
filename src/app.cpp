@@ -590,6 +590,7 @@ void App::changeEvent(QEvent* event)
         updateTrackingIcon();
         if (m_partPanel) m_partPanel->applyTheme();
         if (m_displaySettings) m_displaySettings->applyTheme();
+        if (m_scoreWidget) m_scoreWidget->applyTheme();
     }
     QMainWindow::changeEvent(event);
 }

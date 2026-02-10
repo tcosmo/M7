@@ -51,6 +51,12 @@ void YTBridge::onAutoplayBlocked()
     emit autoplayBlocked();
 }
 
+void YTBridge::onPlaybackRateChange(double rate)
+{
+    qDebug() << "YT: playback rate changed to" << rate;
+    emit playbackRateChanged(rate);
+}
+
 // --- YouTubePlayer ---
 
 YouTubePlayer::YouTubePlayer(QObject* parent)
@@ -139,10 +145,19 @@ YouTubePlayer::YouTubePlayer(QObject* parent)
         qWarning() << "YT: autoplay blocked — user must click video to start";
     });
 
+    // Playback rate changes (from YouTube's own controls or JS)
+    connect(m_bridge, &YTBridge::playbackRateChanged, this, [this](double rate) {
+        m_playbackRate = rate;
+        // Re-sync local clock so the new rate applies from now
+        m_syncPosition = m_currentTime;
+        m_elapsed.restart();
+        emit playbackRateChanged(rate);
+    });
+
     // Local timer: smooth position updates at ~60fps
     m_localTimer.setInterval(16);
     connect(&m_localTimer, &QTimer::timeout, this, [this]() {
-        double pos = m_syncPosition + m_elapsed.elapsed() / 1000.0;
+        double pos = m_syncPosition + m_elapsed.elapsed() / 1000.0 * m_playbackRate;
         if (m_duration > 0 && pos > m_duration) pos = m_duration;
         m_currentTime = pos;
         emit positionChanged(pos);
@@ -208,6 +223,14 @@ void YouTubePlayer::seekTo(double seconds)
     m_elapsed.restart();
     m_view->page()->runJavaScript(
         QString("ytSeek(%1);").arg(seconds, 0, 'f', 3));
+}
+
+void YouTubePlayer::setPlaybackRate(double rate)
+{
+    if (!m_ready) return;
+    qDebug() << "YT: setPlaybackRate(" << rate << ")";
+    m_view->page()->runJavaScript(
+        QString("player.setPlaybackRate(%1);").arg(rate, 0, 'f', 2));
 }
 
 QString YouTubePlayer::extractVideoId(const QString& url)
@@ -301,6 +324,10 @@ function onYouTubeIframeAPIReady() {
             onAutoplayBlocked: function() {
                 console.log('YT-JS: autoplay blocked by browser');
                 if (bridge) bridge.onAutoplayBlocked();
+            },
+            onPlaybackRateChange: function(e) {
+                console.log('YT-JS: playback rate changed to ' + e.data);
+                if (bridge) bridge.onPlaybackRateChange(e.data);
             }
         }
     });

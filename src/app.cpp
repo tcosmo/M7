@@ -803,8 +803,39 @@ void App::loadYouTube(const QString& url)
     auto* videoWidget = m_youtubePlayer->videoWidget();
     videoWidget->setFixedSize(200, 200);
 
+    // Speed selector combo box
+    m_speedCombo = new QComboBox();
+    const QList<double> rates = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0};
+    for (double r : rates)
+        m_speedCombo->addItem(QString("%1x").arg(r), r);
+    m_speedCombo->setCurrentIndex(rates.indexOf(1.0));
+
+    connect(m_speedCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [this](int idx) {
+        double rate = m_speedCombo->itemData(idx).toDouble();
+        m_youtubePlayer->setPlaybackRate(rate);
+    });
+    connect(m_youtubePlayer, &YouTubePlayer::playbackRateChanged,
+            this, [this](double rate) {
+        int idx = m_speedCombo->findData(rate);
+        if (idx >= 0)
+            m_speedCombo->setCurrentIndex(idx);
+    });
+
+    // Wrapper: video on top, speed combo below
+    auto* wrapper = new QWidget();
+    auto* layout = new QVBoxLayout(wrapper);
+    layout->setContentsMargins(0, 0, 0, 4);
+    layout->setSpacing(0);
+    layout->addWidget(videoWidget, 0, Qt::AlignTop);
+    auto* speedLabel = new QLabel("Playback Speed");
+    speedLabel->setContentsMargins(6, 4, 6, 2);
+    layout->addWidget(speedLabel);
+    layout->addWidget(m_speedCombo);
+    layout->addStretch();
+
     auto* dock = new QDockWidget("Video", this);
-    dock->setWidget(videoWidget);
+    dock->setWidget(wrapper);
     dock->setFeatures(QDockWidget::NoDockWidgetFeatures);
     dock->setFixedWidth(200);
     dock->setAutoFillBackground(true);

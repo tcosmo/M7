@@ -37,6 +37,7 @@ public slots:
     void onTimeUpdate(double seconds);
     void onError(int code);
     void onAutoplayBlocked();
+    void onPlaybackRateChange(double rate);
 
 signals:
     void videoReady(double duration);
@@ -46,6 +47,7 @@ signals:
     void positionChanged(double seconds);
     void errorOccurred(int code);
     void autoplayBlocked();
+    void playbackRateChanged(double rate);
 };
 
 class YouTubePlayer : public QObject
@@ -61,10 +63,12 @@ public:
     void pause();
     void stop();
     void seekTo(double seconds);
+    void setPlaybackRate(double rate);
 
     double currentTime() const { return m_currentTime; }
     double duration() const { return m_duration; }
     bool isPlaying() const { return m_playing; }
+    double playbackRate() const { return m_playbackRate; }
 
     QWidget* videoWidget() const { return m_view; }
 
@@ -74,6 +78,7 @@ signals:
     void playbackPaused();
     void playbackStopped();
     void videoReady(double duration);
+    void playbackRateChanged(double rate);
 
 private:
     static QString extractVideoId(const QString& url);
@@ -85,6 +90,7 @@ private:
 
     double m_currentTime = 0.0;
     double m_duration = 0.0;
+    double m_playbackRate = 1.0;
     bool m_playing = false;
     bool m_ready = false;
     bool m_pendingPlay = false;

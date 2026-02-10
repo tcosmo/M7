@@ -8,7 +8,6 @@
 #include <QLabel>
 #include <QSplitter>
 #include <QDockWidget>
-#include <QComboBox>
 #include <memory>
 
 namespace mu::engraving {
@@ -90,7 +89,7 @@ private:
     // Backend
     AudioPlayer* m_audioPlayer = nullptr;
     YouTubePlayer* m_youtubePlayer = nullptr;
-    QComboBox* m_speedCombo = nullptr;
+    QPushButton* m_speedButton = nullptr;
     bool m_useYouTube = false;
     SyncTimer* m_syncTimer = nullptr;
 

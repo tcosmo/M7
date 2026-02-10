@@ -12,6 +12,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QMenu>
 
 #include "modularity/ioc.h"
 
@@ -344,6 +345,25 @@ void App::setupToolbar()
     m_timeLabel = new QLabel("0:00 / 0:00", this);
     m_timeLabel->setMinimumWidth(120);
     m_toolbar->addWidget(m_timeLabel);
+
+    m_toolbar->addSeparator();
+
+    // Speed button (enabled later when YouTube player is ready)
+    m_speedButton = new QPushButton("Speed: 1x", this);
+    m_speedButton->setFlat(true);
+    m_speedButton->setCursor(Qt::PointingHandCursor);
+    m_speedButton->setFocusPolicy(Qt::NoFocus);
+    m_speedButton->setStyleSheet(
+        "QPushButton { padding: 2px 4px; }"
+        "QPushButton:pressed { background: transparent; padding: 2px 4px; }");
+    m_speedButton->setEnabled(false);
+    auto* speedMenu = new QMenu(m_speedButton);
+    for (double r : {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0}) {
+        auto* action = speedMenu->addAction(QString("%1x").arg(r));
+        action->setData(r);
+    }
+    m_speedButton->setMenu(speedMenu);
+    m_toolbar->addWidget(m_speedButton);
 
     m_toolbar->addSeparator();
 
@@ -803,39 +823,8 @@ void App::loadYouTube(const QString& url)
     auto* videoWidget = m_youtubePlayer->videoWidget();
     videoWidget->setFixedSize(200, 200);
 
-    // Speed selector combo box
-    m_speedCombo = new QComboBox();
-    const QList<double> rates = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0};
-    for (double r : rates)
-        m_speedCombo->addItem(QString("%1x").arg(r), r);
-    m_speedCombo->setCurrentIndex(rates.indexOf(1.0));
-
-    connect(m_speedCombo, qOverload<int>(&QComboBox::currentIndexChanged),
-            this, [this](int idx) {
-        double rate = m_speedCombo->itemData(idx).toDouble();
-        m_youtubePlayer->setPlaybackRate(rate);
-    });
-    connect(m_youtubePlayer, &YouTubePlayer::playbackRateChanged,
-            this, [this](double rate) {
-        int idx = m_speedCombo->findData(rate);
-        if (idx >= 0)
-            m_speedCombo->setCurrentIndex(idx);
-    });
-
-    // Wrapper: speed combo on top, video below
-    auto* wrapper = new QWidget();
-    auto* layout = new QVBoxLayout(wrapper);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    auto* speedLabel = new QLabel("Playback Speed");
-    speedLabel->setContentsMargins(6, 4, 6, 2);
-    layout->addWidget(speedLabel);
-    layout->addWidget(m_speedCombo);
-    layout->addWidget(videoWidget);
-    layout->addStretch(1);
-
     auto* dock = new QDockWidget("Video", this);
-    dock->setWidget(wrapper);
+    dock->setWidget(videoWidget);
     dock->setFeatures(QDockWidget::NoDockWidgetFeatures);
     dock->setFixedWidth(200);
     dock->setAutoFillBackground(true);
@@ -843,6 +832,18 @@ void App::loadYouTube(const QString& url)
     dockPal.setColor(QPalette::Window, Theme::panelBg());
     dock->setPalette(dockPal);
     addDockWidget(Qt::LeftDockWidgetArea, dock);
+
+    // Enable speed button and wire it to the YouTube player
+    connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this]() {
+        m_speedButton->setEnabled(true);
+    });
+    connect(m_speedButton->menu(), &QMenu::triggered, this, [this](QAction* action) {
+        m_youtubePlayer->setPlaybackRate(action->data().toDouble());
+    });
+    connect(m_youtubePlayer, &YouTubePlayer::playbackRateChanged,
+            this, [this](double rate) {
+        m_speedButton->setText(QString("Speed: %1x").arg(rate));
+    });
 
     m_youtubePlayer->load(url);
 }

@@ -822,17 +822,17 @@ void App::loadYouTube(const QString& url)
             m_speedCombo->setCurrentIndex(idx);
     });
 
-    // Wrapper: video on top, speed combo below
+    // Wrapper: speed combo on top, video below
     auto* wrapper = new QWidget();
     auto* layout = new QVBoxLayout(wrapper);
-    layout->setContentsMargins(0, 0, 0, 4);
+    layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
-    layout->addWidget(videoWidget, 0, Qt::AlignTop);
     auto* speedLabel = new QLabel("Playback Speed");
     speedLabel->setContentsMargins(6, 4, 6, 2);
     layout->addWidget(speedLabel);
     layout->addWidget(m_speedCombo);
-    layout->addStretch();
+    layout->addWidget(videoWidget);
+    layout->addStretch(1);
 
     auto* dock = new QDockWidget("Video", this);
     dock->setWidget(wrapper);

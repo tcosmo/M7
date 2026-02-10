@@ -25,7 +25,7 @@ set(CMAKE_MODULE_PATH
 include(SetupBuildEnvironment)
 include(GetPlatformInfo)
 
-find_package(Qt6 6.3 REQUIRED COMPONENTS Core Gui Widgets Svg Quick)
+find_package(Qt6 6.3 REQUIRED COMPONENTS Core Gui Widgets Svg Quick WebEngineWidgets WebChannel)
 qt_standard_project_setup()
 
 include(MuseCreateModule)
@@ -140,6 +140,8 @@ add_executable(scoretracker
     src/trackingsettings.h
     src/trackingsettings.cpp
     src/beatdata.h
+    src/youtubeplayer.h
+    src/youtubeplayer.cpp
 )
 
 set_target_properties(engraving PROPERTIES COMPILE_FLAGS "-fPIC")
@@ -171,6 +173,8 @@ target_link_libraries(scoretracker
     Qt6::Gui
     Qt6::Widgets
     Qt6::Svg
+    Qt6::WebEngineWidgets
+    Qt6::WebChannel
     "-framework CoreAudio"
     "-framework AudioToolbox"
     "-framework CoreFoundation"

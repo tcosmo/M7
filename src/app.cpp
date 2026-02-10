@@ -1,6 +1,7 @@
 #include "app.h"
 #include "scorewidget.h"
 #include "audioplayer.h"
+#include "youtubeplayer.h"
 #include "synctimer.h"
 #include "partpanel.h"
 #include "displaysettings.h"
@@ -124,8 +125,8 @@ App::App(QWidget* parent)
         if (!tracking && autoScroll) {
             m_scoreWidget->setCursorVisible(false);
             // Feed current position to sync timer so cursor position is computed
-            if (m_audioPlayer->duration() > 0) {
-                m_syncTimer->setTime(m_audioPlayer->currentTime());
+            if (playerDuration() > 0) {
+                m_syncTimer->setTime(playerCurrentTime());
             }
         } else if (!tracking && !autoScroll) {
             m_scoreWidget->setCursorRect(muse::RectF(), -1);
@@ -323,7 +324,7 @@ void App::setupToolbar()
     m_toolbar->widgetForAction(m_playPauseAction)->setCursor(Qt::PointingHandCursor);
 
     m_stopAction = m_toolbar->addAction("Stop");
-    connect(m_stopAction, &QAction::triggered, m_audioPlayer, &AudioPlayer::stop);
+    connect(m_stopAction, &QAction::triggered, this, [this]() { playerStop(); });
     m_toolbar->widgetForAction(m_stopAction)->setCursor(Qt::PointingHandCursor);
 
     m_toolbar->addSeparator();
@@ -625,28 +626,28 @@ bool App::loadAudio(const QString& audioPath)
         return false;
     }
 
-    m_seekSlider->setRange(0, static_cast<int>(m_audioPlayer->duration() * 10));
-    m_timeLabel->setText(QString("0:00 / %1").arg(formatTime(m_audioPlayer->duration())));
+    m_seekSlider->setRange(0, static_cast<int>(playerDuration() * 10));
+    m_timeLabel->setText(QString("0:00 / %1").arg(formatTime(playerDuration())));
 
     return true;
 }
 
 void App::togglePlayPause()
 {
-    qDebug() << "togglePlayPause called, isPlaying:" << m_audioPlayer->isPlaying()
-             << "duration:" << m_audioPlayer->duration();
-    if (m_audioPlayer->isPlaying()) {
-        m_audioPlayer->pause();
+    qDebug() << "togglePlayPause called, isPlaying:" << playerIsPlaying()
+             << "duration:" << playerDuration();
+    if (playerIsPlaying()) {
+        playerPause();
     } else {
-        m_audioPlayer->play();
+        playerPlay();
     }
 }
 
 void App::onSeekSliderMoved(int value)
 {
-    double duration = m_audioPlayer->duration();
+    double duration = playerDuration();
     double seconds = (static_cast<double>(value) / m_seekSlider->maximum()) * duration;
-    m_audioPlayer->seekTo(seconds);
+    playerSeekTo(seconds);
     m_syncTimer->setTime(seconds);
 }
 
@@ -654,7 +655,7 @@ void App::onPositionChanged(double seconds)
 {
     // Update slider position
     if (!m_sliderDragging) {
-        double duration = m_audioPlayer->duration();
+        double duration = playerDuration();
         if (duration > 0) {
             int sliderVal = static_cast<int>((seconds / duration) * m_seekSlider->maximum());
             m_seekSlider->blockSignals(true);
@@ -666,7 +667,7 @@ void App::onPositionChanged(double seconds)
     // Update time label
     m_timeLabel->setText(QString("%1 / %2")
         .arg(formatTime(seconds))
-        .arg(formatTime(m_audioPlayer->duration())));
+        .arg(formatTime(playerDuration())));
 
     // Update sync timer -> cursor if tracking is on, or auto-scroll without tracking
     if (m_trackingAction->isChecked() || m_trackingSettings->autoScrollEnabled()) {
@@ -715,6 +716,104 @@ void App::changeEvent(QEvent* event)
         if (m_scoreWidget) m_scoreWidget->applyTheme();
     }
     QMainWindow::changeEvent(event);
+}
+
+// --- Player dispatch helpers ---
+
+void App::playerPlay()
+{
+    if (m_useYouTube && m_youtubePlayer)
+        m_youtubePlayer->play();
+    else
+        m_audioPlayer->play();
+}
+
+void App::playerPause()
+{
+    if (m_useYouTube && m_youtubePlayer)
+        m_youtubePlayer->pause();
+    else
+        m_audioPlayer->pause();
+}
+
+void App::playerStop()
+{
+    if (m_useYouTube && m_youtubePlayer)
+        m_youtubePlayer->stop();
+    else
+        m_audioPlayer->stop();
+}
+
+void App::playerSeekTo(double seconds)
+{
+    if (m_useYouTube && m_youtubePlayer)
+        m_youtubePlayer->seekTo(seconds);
+    else
+        m_audioPlayer->seekTo(seconds);
+}
+
+double App::playerCurrentTime() const
+{
+    if (m_useYouTube && m_youtubePlayer)
+        return m_youtubePlayer->currentTime();
+    return m_audioPlayer->currentTime();
+}
+
+double App::playerDuration() const
+{
+    if (m_useYouTube && m_youtubePlayer)
+        return m_youtubePlayer->duration();
+    return m_audioPlayer->duration();
+}
+
+bool App::playerIsPlaying() const
+{
+    if (m_useYouTube && m_youtubePlayer)
+        return m_youtubePlayer->isPlaying();
+    return m_audioPlayer->isPlaying();
+}
+
+void App::loadYouTube(const QString& url)
+{
+    m_useYouTube = true;
+    m_youtubePlayer = new YouTubePlayer(this);
+
+    // Connect position updates
+    connect(m_youtubePlayer, &YouTubePlayer::positionChanged,
+            this, &App::onPositionChanged);
+
+    // Connect playback state to toolbar
+    connect(m_youtubePlayer, &YouTubePlayer::playbackStarted, [this]() {
+        m_playPauseAction->setText("Pause");
+    });
+    connect(m_youtubePlayer, &YouTubePlayer::playbackPaused, [this]() {
+        m_playPauseAction->setText("Play");
+    });
+    connect(m_youtubePlayer, &YouTubePlayer::playbackStopped, [this]() {
+        m_playPauseAction->setText("Play");
+    });
+
+    // When video is ready, set up seek slider
+    connect(m_youtubePlayer, &YouTubePlayer::videoReady, [this](double duration) {
+        m_seekSlider->setRange(0, static_cast<int>(duration * 10));
+        m_timeLabel->setText(QString("0:00 / %1").arg(formatTime(duration)));
+    });
+
+    // Fixed left-side dock for video — 200x200 minimum per YouTube API TOS
+    auto* videoWidget = m_youtubePlayer->videoWidget();
+    videoWidget->setFixedSize(200, 200);
+
+    auto* dock = new QDockWidget("Video", this);
+    dock->setWidget(videoWidget);
+    dock->setFeatures(QDockWidget::NoDockWidgetFeatures);
+    dock->setFixedWidth(200);
+    dock->setAutoFillBackground(true);
+    QPalette dockPal = dock->palette();
+    dockPal.setColor(QPalette::Window, Theme::panelBg());
+    dock->setPalette(dockPal);
+    addDockWidget(Qt::LeftDockWidgetArea, dock);
+
+    m_youtubePlayer->load(url);
 }
 
 } // namespace scoretracker

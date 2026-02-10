@@ -109,6 +109,7 @@ int main(int argc, char* argv[])
     // Parse arguments
     QString musicXmlPath;
     QString audioPath;
+    QString youtubeUrl;
     QString beatDataPath;
     QList<int> visibleParts;
 
@@ -122,6 +123,8 @@ int main(int argc, char* argv[])
             }
         } else if (args[i] == "--beats" && i + 1 < args.size()) {
             beatDataPath = args[++i];
+        } else if (args[i] == "--youtube" && i + 1 < args.size()) {
+            youtubeUrl = args[++i];
         } else if (musicXmlPath.isEmpty()) {
             musicXmlPath = args[i];
         } else if (audioPath.isEmpty()) {
@@ -130,9 +133,10 @@ int main(int argc, char* argv[])
     }
 
     if (musicXmlPath.isEmpty()) {
-        qWarning() << "Usage: scoretracker <musicxml-file> [audio-file] [--beats beatdata.json] [--parts 1,4,5]";
+        qWarning() << "Usage: scoretracker <musicxml-file> [audio-file] [--youtube url] [--beats beatdata.json] [--parts 1,4,5]";
         qWarning() << "  musicxml-file: Path to MusicXML score (.musicxml, .xml, .mxl)";
         qWarning() << "  audio-file:    Path to audio recording (.m4a, .mp3, .wav)";
+        qWarning() << "  --youtube:     YouTube video URL (mutually exclusive with audio-file)";
         qWarning() << "  --beats:       Path to beat data JSON file";
         qWarning() << "  --parts:       Comma-separated 1-based part numbers to show";
         return 1;
@@ -199,7 +203,9 @@ int main(int argc, char* argv[])
         app.setVisibleParts(visibleParts);
     }
 
-    if (!audioPath.isEmpty()) {
+    if (!youtubeUrl.isEmpty()) {
+        app.loadYouTube(youtubeUrl);
+    } else if (!audioPath.isEmpty()) {
         if (!app.loadAudio(audioPath)) {
             qWarning() << "Failed to load audio:" << audioPath;
             // Continue without audio

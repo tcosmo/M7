@@ -7,6 +7,7 @@
 #include <QSlider>
 #include <QLabel>
 #include <QSplitter>
+#include <QDockWidget>
 #include <memory>
 
 namespace mu::engraving {
@@ -20,6 +21,7 @@ namespace scoretracker {
 
 class ScoreWidget;
 class AudioPlayer;
+class YouTubePlayer;
 class SyncTimer;
 class PartPanel;
 class DisplaySettings;
@@ -36,6 +38,7 @@ public:
     bool loadScore(const QString& musicXmlPath);
     bool loadAudio(const QString& audioPath);
     bool loadBeatData(const QString& jsonPath);
+    void loadYouTube(const QString& url);
     void setVisibleParts(const QList<int>& partNumbers);
 
 private slots:
@@ -55,6 +58,15 @@ private:
     void repositionSidebar();
     void updateTrackingIcon();
     QString formatTime(double seconds) const;
+
+    // Player dispatch helpers (route to active player)
+    void playerPlay();
+    void playerPause();
+    void playerStop();
+    void playerSeekTo(double seconds);
+    double playerCurrentTime() const;
+    double playerDuration() const;
+    bool playerIsPlaying() const;
 
     // UI
     ScoreWidget* m_scoreWidget = nullptr;
@@ -76,6 +88,8 @@ private:
 
     // Backend
     AudioPlayer* m_audioPlayer = nullptr;
+    YouTubePlayer* m_youtubePlayer = nullptr;
+    bool m_useYouTube = false;
     SyncTimer* m_syncTimer = nullptr;
 
     // Score

@@ -60,6 +60,12 @@ void ScoreCanvas::setCursorRect(const muse::RectF& rect, int pageIndex)
     update();
 }
 
+void ScoreCanvas::setCursorVisible(bool visible)
+{
+    m_cursorVisible = visible;
+    update();
+}
+
 void ScoreCanvas::setZoom(double zoom)
 {
     m_zoom = zoom;
@@ -248,7 +254,7 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
     painter.endDraw();
 
     // Draw cursor overlay (using raw QPainter after Painter is done)
-    if (!m_cursorRect.isNull()) {
+    if (!m_cursorRect.isNull() && m_cursorVisible) {
         QColor cursorColor(50, 100, 255, 120);
         // qp state is already scaled, but endDraw may have reset it
         // Use a fresh QPainter approach
@@ -450,6 +456,11 @@ void ScoreWidget::setShowTriggerLine(bool show)
 void ScoreWidget::setCursorAnchor(int anchor)
 {
     m_cursorAnchor = anchor;
+}
+
+void ScoreWidget::setCursorVisible(bool visible)
+{
+    m_canvas->setCursorVisible(visible);
 }
 
 void ScoreWidget::ensureCursorVisible()

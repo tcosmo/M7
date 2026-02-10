@@ -33,6 +33,7 @@ public:
     QRect cursorWidgetRect() const;
     QRect pageWidgetRect(int pageIndex) const;
     int cursorPageIndex() const { return m_cursorPageIndex; }
+    void setCursorVisible(bool visible);
     double maxPageWidthScore() const;
 
 protected:
@@ -47,6 +48,7 @@ private:
     muse::RectF m_cursorRect;
     int m_cursorPageIndex = 0;
     double m_zoom = 1.0;
+    bool m_cursorVisible = true;
 };
 
 class TriggerLineOverlay : public QWidget
@@ -55,7 +57,7 @@ class TriggerLineOverlay : public QWidget
 public:
     explicit TriggerLineOverlay(QWidget* parent = nullptr);
     void setTriggerFraction(double fraction);
-    void setVisible(bool visible);
+    void setVisible(bool visible) override;
 protected:
     void paintEvent(QPaintEvent* event) override;
 private:
@@ -85,6 +87,7 @@ public:
     void setAutoScrollTarget(double target);
     void setShowTriggerLine(bool show);
     void setCursorAnchor(int anchor); // 0=Top, 1=Center, 2=Bottom
+    void setCursorVisible(bool visible);
 
 signals:
     void zoomChanged(double zoom);

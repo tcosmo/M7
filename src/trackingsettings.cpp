@@ -54,13 +54,11 @@ TrackingSettings::TrackingSettings(QWidget* parent)
     load();
 
     auto updateEnabled = [this]() {
-        bool tracking = m_trackingCheckbox->isChecked();
         bool autoScroll = m_autoScrollCheckbox->isChecked();
-        m_autoScrollCheckbox->setEnabled(tracking);
-        m_showTriggerCheckbox->setEnabled(tracking && autoScroll);
-        m_triggerLineSpin->setEnabled(tracking && autoScroll);
-        m_scrollAmountSpin->setEnabled(tracking && autoScroll);
-        m_cursorAnchorCombo->setEnabled(tracking && autoScroll);
+        m_showTriggerCheckbox->setEnabled(autoScroll);
+        m_triggerLineSpin->setEnabled(autoScroll);
+        m_scrollAmountSpin->setEnabled(autoScroll);
+        m_cursorAnchorCombo->setEnabled(autoScroll);
     };
     updateEnabled();
 
@@ -108,6 +106,11 @@ void TrackingSettings::setTrackingEnabled(bool on)
 bool TrackingSettings::autoScrollEnabled() const
 {
     return m_autoScrollCheckbox->isChecked();
+}
+
+void TrackingSettings::setAutoScrollEnabled(bool on)
+{
+    m_autoScrollCheckbox->setChecked(on);
 }
 
 bool TrackingSettings::showTriggerLine() const

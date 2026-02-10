@@ -17,6 +17,7 @@ public:
     bool trackingEnabled() const;
     void setTrackingEnabled(bool on);
     bool autoScrollEnabled() const;
+    void setAutoScrollEnabled(bool on);
     bool showTriggerLine() const;
     int triggerLine() const;    // 5–95 %
     int scrollAmount() const;   // 10–100 %

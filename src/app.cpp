@@ -81,16 +81,52 @@ App::App(QWidget* parent)
     });
     connect(m_trackingAction, &QAction::toggled, [this](bool on) {
         m_trackingSettings->setTrackingEnabled(on);
+        if (!on) {
+            // Hide cursor visually
+            m_scoreWidget->setCursorVisible(false);
+            if (!m_userForcedAutoScroll) {
+                // Programmatically untick auto-scroll without saving
+                m_trackingSettings->blockSignals(true);
+                m_trackingSettings->setAutoScrollEnabled(false);
+                m_trackingSettings->blockSignals(false);
+                m_scoreWidget->setAutoScrollEnabled(false);
+                m_scoreWidget->setCursorRect(muse::RectF(), -1);
+            }
+        } else {
+            m_scoreWidget->setCursorVisible(true);
+        }
     });
 
     connect(m_trackingSettings, &TrackingSettings::settingChanged, [this]() {
-        m_scoreWidget->setAutoScrollEnabled(m_trackingSettings->autoScrollEnabled());
+        bool autoScroll = m_trackingSettings->autoScrollEnabled();
+        bool tracking = m_trackingSettings->trackingEnabled();
+
+        // Track user forcing auto-scroll while tracking is off
+        if (!tracking && autoScroll) {
+            m_userForcedAutoScroll = true;
+        }
+        if (!autoScroll) {
+            m_userForcedAutoScroll = false;
+        }
+
+        m_scoreWidget->setAutoScrollEnabled(autoScroll);
         m_scoreWidget->setShowTriggerLine(m_trackingSettings->showTriggerLine());
         double trigger = m_trackingSettings->triggerLine() / 100.0;
         double scrollAmt = m_trackingSettings->scrollAmount() / 100.0;
         m_scoreWidget->setAutoScrollTrigger(trigger);
         m_scoreWidget->setAutoScrollTarget(trigger * (1.0 - scrollAmt));
         m_scoreWidget->setCursorAnchor(m_trackingSettings->cursorAnchor());
+
+        // When auto-scroll enabled without tracking, use invisible cursor
+        if (!tracking && autoScroll) {
+            m_scoreWidget->setCursorVisible(false);
+            // Feed current position to sync timer so cursor position is computed
+            if (m_audioPlayer->duration() > 0) {
+                m_syncTimer->setTime(m_audioPlayer->currentTime());
+            }
+        } else if (!tracking && !autoScroll) {
+            m_scoreWidget->setCursorRect(muse::RectF(), -1);
+        }
     });
 
     connect(m_displaySettings, &DisplaySettings::settingChanged, [this]() {
@@ -595,8 +631,8 @@ void App::onPositionChanged(double seconds)
         .arg(formatTime(seconds))
         .arg(formatTime(m_audioPlayer->duration())));
 
-    // Update sync timer -> cursor (only if tracking is on)
-    if (m_trackingAction->isChecked()) {
+    // Update sync timer -> cursor if tracking is on, or auto-scroll without tracking
+    if (m_trackingAction->isChecked() || m_trackingSettings->autoScrollEnabled()) {
         m_syncTimer->setTime(seconds);
     }
 }

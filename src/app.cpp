@@ -823,14 +823,15 @@ void App::loadYouTube(const QString& url)
     auto* videoWidget = m_youtubePlayer->videoWidget();
     videoWidget->setFixedSize(200, 200);
 
+    QPalette videoPal = videoWidget->palette();
+    videoPal.setColor(QPalette::Window, Qt::black);
+    videoWidget->setPalette(videoPal);
+    videoWidget->setAutoFillBackground(true);
+
     auto* dock = new QDockWidget("Video", this);
     dock->setWidget(videoWidget);
     dock->setFeatures(QDockWidget::NoDockWidgetFeatures);
     dock->setFixedWidth(200);
-    dock->setAutoFillBackground(true);
-    QPalette dockPal = dock->palette();
-    dockPal.setColor(QPalette::Window, Theme::panelBg());
-    dock->setPalette(dockPal);
     addDockWidget(Qt::LeftDockWidgetArea, dock);
 
     // Enable speed button and wire it to the YouTube player

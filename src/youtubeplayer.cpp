@@ -178,7 +178,7 @@ void YouTubePlayer::load(const QString& url)
     }
 
     qDebug() << "Loading YouTube video:" << videoId;
-    QString bg = Theme::panelBg().name(); // e.g. "#252525" or "#e8e8e8"
+    QString bg = QStringLiteral("#000000");
     QString html = buildHtml(videoId, bg);
     m_view->setHtml(html, QUrl(QStringLiteral("https://localhost")));
 }

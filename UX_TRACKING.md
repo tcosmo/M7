@@ -5,10 +5,12 @@ The **Tracking** sidebar section controls cursor tracking and auto-scroll behavi
 ## Controls
 
 ### Tracking (checkbox)
-Mirrors the toolbar Tracking button (and keyboard shortcut `T`). When off, the cursor is hidden and all settings below are disabled.
+Mirrors the toolbar Tracking button (and keyboard shortcut `T`). When off, the cursor is hidden and auto-scroll is unticked by default.
 
 ### Auto-scroll (checkbox)
 When on, the viewport automatically scrolls to keep the cursor visible. When off, the cursor still moves through the score but the view stays put.
+
+Auto-scroll can be enabled independently of tracking. When auto-scroll is on but tracking is off, an invisible cursor is used — the cursor position is still computed and drives scrolling, but nothing is drawn on the score. This is a transient override: by default, turning tracking off unticks auto-scroll. However, if the user manually ticks auto-scroll while tracking is off, it stays on for the rest of the session (until the user unticks it).
 
 Persisted in `settings.json` under `tracking.autoScroll`.
 
@@ -39,11 +41,11 @@ Persisted in `settings.json` under `tracking.cursorAnchor` (0=Top, 1=Center, 2=B
 ## Enable/disable hierarchy
 
 ```
-Tracking off  →  everything disabled
-Tracking on   →  Auto-scroll enabled
-                  Auto-scroll off  →  spinboxes + show trigger disabled
-                  Auto-scroll on   →  all controls enabled
+Auto-scroll off  →  spinboxes + show trigger + cursor anchor disabled
+Auto-scroll on   →  all controls enabled
 ```
+
+Auto-scroll is always interactable regardless of tracking state. When tracking is turned off, auto-scroll is unticked automatically unless the user has previously forced it on during the session.
 
 ## Persistence
 
@@ -60,4 +62,4 @@ Settings are stored in `settings.json` (next to the binary) under the `"tracking
 }
 ```
 
-`Tracking` and `Show trigger line` are transient — always reset to on/off respectively on launch.
+`Tracking`, `Show trigger line`, and the "auto-scroll without tracking" override are transient — always reset on launch.

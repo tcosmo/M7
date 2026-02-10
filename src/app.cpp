@@ -7,7 +7,10 @@
 #include "trackingsettings.h"
 #include "collapsiblesection.h"
 #include "theme.h"
-#include "beatdata.h"
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 
 #include "modularity/ioc.h"
 
@@ -141,10 +144,6 @@ App::App(QWidget* parent)
         m_scoreWidget->setScore(m_score); // refresh
         m_scoreWidget->scrollToTop();
     });
-
-    // Set up beat data
-    m_syncTimer->setMeasureStarts(MAGNIFICAT_MEASURE_STARTS);
-    m_syncTimer->setBeatTimes(MAGNIFICAT_BEAT_TIMES, BEATS_PER_MEASURE);
 
     // Apply initial tracking settings
     {
@@ -580,6 +579,44 @@ bool App::loadScore(const QString& musicXmlPath)
 void App::setVisibleParts(const QList<int>& partNumbers)
 {
     m_partPanel->showOnlyParts(partNumbers);
+}
+
+bool App::loadBeatData(const QString& jsonPath)
+{
+    QFile file(jsonPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning() << "Failed to open beat data file:" << jsonPath;
+        return false;
+    }
+
+    QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    if (!doc.isObject()) {
+        qWarning() << "Invalid beat data JSON:" << jsonPath;
+        return false;
+    }
+
+    QJsonObject obj = doc.object();
+    int beatsPerMeasure = obj.value("beats_per_measure").toInt(3);
+
+    QJsonArray arr = obj.value("beat_times").toArray();
+    std::vector<double> beatTimes;
+    beatTimes.reserve(arr.size());
+    for (const auto& v : arr) {
+        beatTimes.push_back(v.toDouble());
+    }
+
+    // Compute measure starts from beat times
+    std::vector<double> measureStarts;
+    for (size_t i = 0; i < beatTimes.size(); i += beatsPerMeasure) {
+        measureStarts.push_back(beatTimes[i]);
+    }
+
+    m_syncTimer->setBeatTimes(beatTimes, beatsPerMeasure);
+    m_syncTimer->setMeasureStarts(measureStarts);
+
+    qDebug() << "Loaded beat data:" << beatTimes.size() << "beats,"
+             << measureStarts.size() << "measures, beats_per_measure:" << beatsPerMeasure;
+    return true;
 }
 
 bool App::loadAudio(const QString& audioPath)

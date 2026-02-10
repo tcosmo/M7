@@ -35,6 +35,7 @@ public:
 
     bool loadScore(const QString& musicXmlPath);
     bool loadAudio(const QString& audioPath);
+    bool loadBeatData(const QString& jsonPath);
     void setVisibleParts(const QList<int>& partNumbers);
 
 private slots:

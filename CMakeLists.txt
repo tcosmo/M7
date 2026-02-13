@@ -142,6 +142,10 @@ add_executable(scoretracker
     src/beatdata.h
     src/youtubeplayer.h
     src/youtubeplayer.cpp
+    src/syncmode.h
+    src/syncmode.cpp
+    src/syncpanel.h
+    src/syncpanel.cpp
 )
 
 qt_add_resources(scoretracker "icons"

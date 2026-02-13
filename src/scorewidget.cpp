@@ -1,9 +1,11 @@
 #include "scorewidget.h"
+#include "syncmode.h"
 #include "theme.h"
 
 #include <QPainter>
 #include <QPaintEvent>
 #include <QResizeEvent>
+#include <QMouseEvent>
 #include <QScrollBar>
 #include <QGestureEvent>
 #include <QPinchGesture>
@@ -15,6 +17,11 @@
 #include "engraving/rendering/paintoptions.h"
 #include "engraving/dom/score.h"
 #include "engraving/dom/page.h"
+#include "engraving/dom/measure.h"
+#include "engraving/dom/segment.h"
+#include "engraving/dom/system.h"
+#include "engraving/dom/staff.h"
+#include "engraving/dom/mscore.h"
 
 using namespace mu::engraving;
 using namespace mu::engraving::rendering;
@@ -265,7 +272,172 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
             cursorColor
         );
     }
+
+    // Draw sync dots
+    if (m_syncMode && m_syncMode->isActive()) {
+        QPainter dotPainter(this);
+        paintSyncDots(dotPainter);
+    }
 }
+
+void ScoreCanvas::setSyncMode(scoretracker::SyncMode* syncMode)
+{
+    m_syncMode = syncMode;
+    update();
+}
+
+void ScoreCanvas::paintSyncDots(QPainter& painter)
+{
+    if (!m_score || !m_syncMode) return;
+
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    m_dotInfos.clear();
+
+    int syncStaff = m_syncMode->syncStaffIdx();
+    if (syncStaff < 0) return;
+
+    double s = scale();
+    double spatium = m_score->style().spatium();
+    const auto& beats = m_syncMode->beats();
+    const auto& bpmVec = m_syncMode->beatsPerMeasure();
+    int nextUnsynced = m_syncMode->nextUnsyncedBeat();
+
+    // Dot placed below the 5-line staff: top + 4sp (staff height) + 2sp (padding)
+    const double dotYOffset = 6.0 * spatium;
+    const double radius = 5.0;
+
+    int beatIdx = 0;
+    int measureIdx = 0;
+    const auto& pages = m_score->pages();
+
+    for (Measure* measure = m_score->firstMeasure();
+         measure && beatIdx < static_cast<int>(beats.size());
+         measure = measure->nextMeasure(), ++measureIdx) {
+
+        int bpm = (measureIdx < static_cast<int>(bpmVec.size())) ? bpmVec[measureIdx] : 0;
+        for (int b = 0; b < bpm && beatIdx < static_cast<int>(beats.size()); ++b, ++beatIdx) {
+            Fraction beatTick = measure->tick() + Fraction(b, 4);
+            Segment* seg = measure->findSegment(SegmentType::ChordRest, beatTick);
+            if (!seg) continue;
+
+            const System* system = seg->system();
+            if (!system || !system->page()) continue;
+
+            // Get segment x in canvas coords, convert to page-relative
+            double canvasX = seg->canvasPos().x();
+            const Page* page = system->page();
+            int pageIndex = page->no();
+            double pageX = page->pos().x();
+            double pageY = page->pos().y();
+
+            // Y position: below the sync staff
+            double staffY = system->staffCanvasYpage(syncStaff);
+            double dotY = staffY + dotYOffset - pageY;
+            double dotX = canvasX - pageX;
+
+            // Map to render coordinates (same as mapToRenderCoords)
+            double yOffsetScore = PAGE_GAP / (2.0 * s);
+            for (int pi = 0; pi < pageIndex; ++pi) {
+                muse::RectF bbox = pages[pi]->ldata()->bbox();
+                yOffsetScore += bbox.height() + PAGE_GAP / s;
+            }
+            muse::RectF pageBBox = pages[pageIndex]->ldata()->bbox();
+            double xOffsetScore = (width() / s - pageBBox.width()) / 2.0;
+            if (xOffsetScore < 0) xOffsetScore = 0;
+
+            double renderX = (xOffsetScore + dotX) * s;
+            double renderY = (yOffsetScore + dotY) * s;
+
+            DotInfo dot;
+            dot.beatIndex = beatIdx;
+            dot.center = QPointF(renderX, renderY);
+            dot.radius = radius;
+            m_dotInfos.push_back(dot);
+
+            bool selected = (beatIdx == m_selectedBeatIndex);
+
+            if (beats[beatIdx].synced) {
+                // Filled blue dot for synced beats
+                painter.setBrush(QColor(30, 120, 255));
+                painter.setPen(Qt::NoPen);
+                painter.drawEllipse(dot.center, radius, radius);
+            } else if (beatIdx == nextUnsynced) {
+                // Highlighted outline for next beat to tap
+                painter.setBrush(Qt::NoBrush);
+                painter.setPen(QPen(QColor(30, 120, 255), 2.0));
+                painter.drawEllipse(dot.center, radius, radius);
+            } else {
+                // Dim outline for unsynced beats
+                painter.setBrush(Qt::NoBrush);
+                painter.setPen(QPen(QColor(120, 120, 120, 100), 1.0));
+                painter.drawEllipse(dot.center, radius, radius);
+            }
+
+            // Selection ring
+            if (selected) {
+                painter.setBrush(Qt::NoBrush);
+                painter.setPen(QPen(QColor(255, 180, 0), 2.5));
+                painter.drawEllipse(dot.center, radius + 4, radius + 4);
+            }
+        }
+    }
+}
+
+int ScoreCanvas::hitTestDot(const QPoint& pos) const
+{
+    for (const auto& dot : m_dotInfos) {
+        double dx = pos.x() - dot.center.x();
+        double dy = pos.y() - dot.center.y();
+        if (dx * dx + dy * dy <= (dot.radius + 4) * (dot.radius + 4)) {
+            return dot.beatIndex;
+        }
+    }
+    return -1;
+}
+
+void ScoreCanvas::mousePressEvent(QMouseEvent* event)
+{
+    if (m_syncMode && m_syncMode->isActive() && event->button() == Qt::LeftButton) {
+        int hit = hitTestDot(event->pos());
+        if (hit >= 0) {
+            m_selectedBeatIndex = hit;
+            emit beatClicked(hit);
+            update();
+            return;
+        }
+        // Click outside dots deselects
+        if (m_selectedBeatIndex >= 0) {
+            m_selectedBeatIndex = -1;
+            emit beatClicked(-1);
+            update();
+        }
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void ScoreCanvas::mouseDoubleClickEvent(QMouseEvent* event)
+{
+    if (m_syncMode && m_syncMode->isActive() && event->button() == Qt::LeftButton) {
+        int hit = hitTestDot(event->pos());
+        if (hit >= 0) {
+            m_selectedBeatIndex = hit;
+            emit beatDoubleClicked(hit);
+            update();
+            return;
+        }
+    }
+    QWidget::mouseDoubleClickEvent(event);
+}
+
+void ScoreCanvas::mouseMoveEvent(QMouseEvent* event)
+{
+    if (m_syncMode && m_syncMode->isActive()) {
+        int hit = hitTestDot(event->pos());
+        setCursor(hit >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
 
 // --- TriggerLineOverlay ---
 
@@ -461,6 +633,22 @@ void ScoreWidget::setCursorAnchor(int anchor)
 void ScoreWidget::setCursorVisible(bool visible)
 {
     m_canvas->setCursorVisible(visible);
+}
+
+void ScoreWidget::setSyncMode(scoretracker::SyncMode* syncMode)
+{
+    m_canvas->setSyncMode(syncMode);
+    if (syncMode) {
+        connect(m_canvas, &ScoreCanvas::beatClicked, this, &ScoreWidget::beatClicked,
+                Qt::UniqueConnection);
+        connect(m_canvas, &ScoreCanvas::beatDoubleClicked, this, &ScoreWidget::beatDoubleClicked,
+                Qt::UniqueConnection);
+    }
+}
+
+int ScoreWidget::selectedBeatIndex() const
+{
+    return m_canvas->selectedBeatIndex();
 }
 
 void ScoreWidget::ensureCursorVisible()

@@ -3,6 +3,8 @@
 #include "audioplayer.h"
 #include "youtubeplayer.h"
 #include "synctimer.h"
+#include "syncmode.h"
+#include "syncpanel.h"
 #include "partpanel.h"
 #include "displaysettings.h"
 #include "trackingsettings.h"
@@ -33,8 +35,10 @@
 #include <QDebug>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QStyle>
@@ -65,9 +69,29 @@ App::App(QWidget* parent)
 
     m_audioPlayer = new AudioPlayer(this);
     m_syncTimer = new SyncTimer(this);
+    m_syncMode = new SyncMode(this);
 
     setupUI();
     setupToolbar();
+
+    // Sync mode signals
+    connect(m_syncMode, &SyncMode::beatSynced, this, [this](int) {
+        m_scoreWidget->widget()->update();
+        if (m_syncPanel) m_syncPanel->updateStatus();
+    });
+    connect(m_syncMode, &SyncMode::beatAdjusted, this, [this](int) {
+        m_scoreWidget->widget()->update();
+    });
+    connect(m_syncMode, &SyncMode::beatUnsynced, this, [this](int) {
+        m_scoreWidget->widget()->update();
+        if (m_syncPanel) m_syncPanel->updateStatus();
+    });
+    connect(m_syncMode, &SyncMode::entered, this, [this]() {
+        m_scoreWidget->setScore(m_score);
+    });
+    connect(m_syncMode, &SyncMode::exited, this, [this]() {
+        m_scoreWidget->setScore(m_score);
+    });
 
     // Wire audio position to sync timer to score widget
     connect(m_audioPlayer, &AudioPlayer::positionChanged,
@@ -248,6 +272,7 @@ void App::resizeEvent(QResizeEvent* event)
 {
     QMainWindow::resizeEvent(event);
     repositionSidebar();
+    repositionSyncSidebar();
 }
 
 bool App::eventFilter(QObject* obj, QEvent* event)
@@ -319,6 +344,8 @@ void App::setSidebarVisible(bool visible)
 void App::setupToolbar()
 {
     m_toolbar = addToolBar("Playback");
+    m_toolbar->setContextMenuPolicy(Qt::PreventContextMenu);
+    m_toolbar->setMovable(false);
 
     m_playPauseAction = m_toolbar->addAction("Play");
     m_playPauseAction->setShortcut(QKeySequence(Qt::Key_Space));
@@ -408,6 +435,29 @@ void App::setupToolbar()
         if (!on) {
             m_scoreWidget->setCursorRect(muse::RectF(), -1);
         }
+    });
+
+    m_toolbar->addSeparator();
+
+    // Sync mode button
+    m_syncModeButton = new QPushButton("Sync Mode", this);
+    m_syncModeButton->setFlat(true);
+    m_syncModeButton->setCursor(Qt::PointingHandCursor);
+    m_syncModeButton->setFocusPolicy(Qt::NoFocus);
+    m_syncModeButton->setCheckable(true);
+    m_syncModeButton->setStyleSheet(
+        "QPushButton { padding: 2px 8px; font-size: 12px; border: none; background: transparent; }"
+        "QPushButton:checked { color: #1e78ff; font-weight: bold; }");
+    // Size to bold metrics so toggling doesn't crop
+    QFont boldFont = m_syncModeButton->font();
+    boldFont.setPointSize(12);
+    boldFont.setBold(true);
+    int boldWidth = QFontMetrics(boldFont).horizontalAdvance("Sync Mode") + 20;
+    m_syncModeButton->setMinimumWidth(boldWidth);
+    m_toolbar->addWidget(m_syncModeButton);
+    connect(m_syncModeButton, &QPushButton::toggled, this, [this](bool on) {
+        if (on) enterSyncMode();
+        else exitSyncMode();
     });
 
     m_toolbar->addSeparator();
@@ -615,6 +665,11 @@ void App::setVisibleParts(const QList<int>& partNumbers)
     m_partPanel->showOnlyParts(partNumbers);
 }
 
+void App::startSyncMode()
+{
+    m_syncModeButton->setChecked(true);
+}
+
 bool App::loadBeatData(const QString& jsonPath)
 {
     QFile file(jsonPath);
@@ -632,17 +687,34 @@ bool App::loadBeatData(const QString& jsonPath)
     QJsonObject obj = doc.object();
     int beatsPerMeasure = obj.value("beats_per_measure").toInt(3);
 
-    QJsonArray arr = obj.value("beat_times").toArray();
     std::vector<double> beatTimes;
-    beatTimes.reserve(arr.size());
-    for (const auto& v : arr) {
-        beatTimes.push_back(v.toDouble());
-    }
-
-    // Compute measure starts from beat times
     std::vector<double> measureStarts;
-    for (size_t i = 0; i < beatTimes.size(); i += beatsPerMeasure) {
-        measureStarts.push_back(beatTimes[i]);
+
+    if (obj.contains("measures")) {
+        // Measures format: array of {beats: [{beat, time}, ...]}
+        QJsonArray measuresArr = obj.value("measures").toArray();
+        for (const auto& mv : measuresArr) {
+            QJsonArray beatsArr = mv.toObject().value("beats").toArray();
+            bool first = true;
+            for (const auto& bv : beatsArr) {
+                double t = bv.toObject().value("time").toDouble();
+                beatTimes.push_back(t);
+                if (first) {
+                    measureStarts.push_back(t);
+                    first = false;
+                }
+            }
+        }
+    } else if (obj.contains("beat_times")) {
+        // Legacy flat array format
+        QJsonArray arr = obj.value("beat_times").toArray();
+        beatTimes.reserve(arr.size());
+        for (const auto& v : arr) {
+            beatTimes.push_back(v.toDouble());
+        }
+        for (size_t i = 0; i < beatTimes.size(); i += beatsPerMeasure) {
+            measureStarts.push_back(beatTimes[i]);
+        }
     }
 
     m_syncTimer->setBeatTimes(beatTimes, beatsPerMeasure);
@@ -928,7 +1000,7 @@ void App::loadYouTube(const QString& url)
 
     // Enable speed button and wire it to the YouTube player
     connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this]() {
-        m_speedButton->setEnabled(true);
+        m_speedButton->setEnabled(m_useYouTube);
     });
     connect(m_speedButton->menu(), &QMenu::triggered, this, [this](QAction* action) {
         m_youtubePlayer->setPlaybackRate(action->data().toDouble());
@@ -939,6 +1011,199 @@ void App::loadYouTube(const QString& url)
     });
 
     m_youtubePlayer->load(url);
+}
+
+void App::enterSyncMode()
+{
+    if (!m_score || !m_renderer) return;
+
+    // Save sidebar state, close it, and disable the button
+    m_savedSidebarVisible = m_sidebarWidget->isVisible();
+    setSidebarVisible(false);
+    m_sidebarAction->blockSignals(true);
+    m_sidebarAction->setChecked(false);
+    m_sidebarAction->blockSignals(false);
+    m_sidebarAction->setEnabled(false);
+
+    // Disable tracking
+    m_savedTrackingOn = m_trackingAction->isChecked();
+    if (m_savedTrackingOn) {
+        m_trackingAction->setChecked(false);
+    }
+    m_trackingButton->setEnabled(false);
+
+    // Switch to file source if currently using YouTube (without auto-playing)
+    if (m_useYouTube && m_sourceButton && m_sourceButton->menu()) {
+        for (auto* action : m_sourceButton->menu()->actions()) {
+            if (action->text() == "File") {
+                action->trigger();
+                playerPause();
+                break;
+            }
+        }
+    }
+
+    m_syncMode->enter(m_score, m_renderer.get());
+
+    // Setup and show sync sidebar
+    setupSyncSidebar();
+    m_syncPanel->setSyncMode(m_syncMode);
+    m_syncSidebarWidget->show();
+    m_syncSidebarHandle->show();
+    repositionSyncSidebar();
+
+    int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
+    m_scoreWidget->setOverlayWidth(m_sidebarWidth + scrollbarW);
+
+    m_scoreWidget->setSyncMode(m_syncMode);
+
+    // Fit score after sidebar overlay is set so available width is correct
+    QTimer::singleShot(0, m_scoreWidget, &ScoreWidget::zoomToFit);
+
+    connect(m_scoreWidget, &ScoreWidget::beatClicked, m_syncPanel, &SyncPanel::showBeatInfo,
+            Qt::UniqueConnection);
+
+    connect(m_syncPanel, &SyncPanel::beatTimeChanged, this, [this](int beatIndex, double newTime) {
+        if (!m_syncMode) return;
+        const auto& beat = m_syncMode->beats()[beatIndex];
+        double delta = newTime - beat.effectiveTime();
+        m_syncMode->adjustBeat(beatIndex, delta);
+        m_scoreWidget->widget()->update();
+        m_syncPanel->showBeatInfo(beatIndex);
+    }, Qt::UniqueConnection);
+
+    connect(m_scoreWidget, &ScoreWidget::beatDoubleClicked, this, [this](int beatIndex) {
+        if (!m_syncMode) return;
+        m_syncMode->setNextUnsyncedFrom(beatIndex);
+        m_syncPanel->showBeatInfo(beatIndex);
+    }, Qt::UniqueConnection);
+}
+
+void App::exitSyncMode()
+{
+    m_scoreWidget->setSyncMode(nullptr);
+    m_syncMode->exit();
+
+    // Hide sync sidebar
+    if (m_syncSidebarWidget) {
+        m_syncSidebarWidget->hide();
+        m_syncSidebarHandle->hide();
+    }
+
+    // Restore tracking
+    m_trackingButton->setEnabled(true);
+    if (m_savedTrackingOn) {
+        m_trackingAction->setChecked(true);
+    }
+
+    // Restore sidebar
+    m_sidebarAction->setEnabled(true);
+    if (m_savedSidebarVisible) {
+        m_sidebarAction->blockSignals(true);
+        m_sidebarAction->setChecked(true);
+        m_sidebarAction->blockSignals(false);
+        setSidebarVisible(true);
+    } else {
+        m_scoreWidget->setOverlayWidth(0);
+    }
+}
+
+void App::setupSyncSidebar()
+{
+    if (m_syncSidebarWidget) return; // already created
+
+    m_syncSidebarWidget = new QWidget(this);
+    m_syncSidebarWidget->setAutoFillBackground(true);
+    m_syncSidebarWidget->setFocusPolicy(Qt::ClickFocus);
+
+    auto* layout = new QVBoxLayout(m_syncSidebarWidget);
+    layout->setContentsMargins(2, 0, 0, 0);
+
+    m_syncPanel = new SyncPanel();
+    auto* syncSection = new CollapsibleSection("Sync", m_syncPanel);
+    layout->addWidget(syncSection);
+
+    auto* spacer = new QWidget();
+    spacer->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    layout->addWidget(spacer);
+
+    connect(m_syncPanel, &SyncPanel::exportRequested, this, &App::saveSyncData);
+    connect(m_syncPanel, &SyncPanel::clearRequested, this, [this]() {
+        // Re-enter sync mode to clear all data
+        if (m_syncMode->isActive()) {
+            m_syncMode->exit();
+            m_syncMode->enter(m_score, m_renderer.get());
+            m_syncPanel->setSyncMode(m_syncMode);
+            m_scoreWidget->setSyncMode(m_syncMode);
+            m_scoreWidget->setScore(m_score);
+        }
+    });
+
+    // Drag handle
+    m_syncSidebarHandle = new QWidget(this);
+    m_syncSidebarHandle->setFixedWidth(5);
+    m_syncSidebarHandle->setCursor(Qt::SplitHCursor);
+    m_syncSidebarHandle->hide();
+    m_syncSidebarWidget->hide();
+}
+
+void App::repositionSyncSidebar()
+{
+    if (!m_syncSidebarWidget || !m_syncSidebarWidget->isVisible()) return;
+    QRect cr = centralWidget()->geometry();
+    int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
+    int x = cr.right() - m_sidebarWidth - scrollbarW + 1;
+    m_syncSidebarWidget->setGeometry(x, cr.top(), m_sidebarWidth, cr.height());
+    m_syncSidebarHandle->setGeometry(x - 5, cr.top(), 5, cr.height());
+    m_syncSidebarWidget->raise();
+    m_syncSidebarHandle->raise();
+}
+
+void App::saveSyncData()
+{
+    if (!m_syncMode->isActive()) return;
+
+    QJsonObject obj = m_syncMode->toJson();
+    QJsonDocument doc(obj);
+
+    QString path = QCoreApplication::applicationDirPath() + "/beatdata.json";
+    QFile file(path);
+    if (file.open(QIODevice::WriteOnly)) {
+        file.write(doc.toJson(QJsonDocument::Indented));
+        file.close();
+        qDebug() << "Saved sync data to" << path;
+    }
+}
+
+void App::keyPressEvent(QKeyEvent* event)
+{
+    if (m_syncMode->isActive()) {
+        // Delete/Backspace: unsync the selected beat
+        if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
+            int sel = m_scoreWidget->selectedBeatIndex();
+            if (sel >= 0) {
+                m_syncMode->unsyncBeat(sel);
+                m_syncPanel->showBeatInfo(sel);
+            }
+            return;
+        }
+        if (playerIsPlaying()) {
+            // Let Space through for play/pause
+            if (event->key() == Qt::Key_Space) {
+                QMainWindow::keyPressEvent(event);
+                return;
+            }
+            // Ignore modifier-only keys
+            if (event->key() == Qt::Key_Shift || event->key() == Qt::Key_Control
+                || event->key() == Qt::Key_Alt || event->key() == Qt::Key_Meta) {
+                QMainWindow::keyPressEvent(event);
+                return;
+            }
+            m_syncMode->recordTap(playerCurrentTime());
+            return;
+        }
+    }
+    QMainWindow::keyPressEvent(event);
 }
 
 } // namespace scoretracker

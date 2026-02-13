@@ -113,10 +113,13 @@ int main(int argc, char* argv[])
     QString sourcesPath;
     QString beatDataPath;
     QList<int> visibleParts;
+    bool startSyncMode = false;
 
     QStringList args = qapp.arguments();
     for (int i = 1; i < args.size(); ++i) {
-        if (args[i] == "--parts" && i + 1 < args.size()) {
+        if (args[i] == "--sync") {
+            startSyncMode = true;
+        } else if (args[i] == "--parts" && i + 1 < args.size()) {
             for (const QString& s : args[++i].split(',')) {
                 bool ok;
                 int n = s.trimmed().toInt(&ok);
@@ -136,13 +139,14 @@ int main(int argc, char* argv[])
     }
 
     if (musicXmlPath.isEmpty()) {
-        qWarning() << "Usage: scoretracker <musicxml-file> [audio-file] [--youtube url] [--sources path] [--beats beatdata.json] [--parts 1,4,5]";
+        qWarning() << "Usage: scoretracker <musicxml-file> [audio-file] [--youtube url] [--sources path] [--beats beatdata.json] [--parts 1,4,5] [--sync]";
         qWarning() << "  musicxml-file: Path to MusicXML score (.musicxml, .xml, .mxl)";
         qWarning() << "  audio-file:    Path to audio recording (.m4a, .mp3, .wav)";
         qWarning() << "  --youtube:     YouTube video URL (mutually exclusive with audio-file)";
         qWarning() << "  --sources:     Path to sources.json (overrides --youtube)";
         qWarning() << "  --beats:       Path to beat data JSON file";
         qWarning() << "  --parts:       Comma-separated 1-based part numbers to show";
+        qWarning() << "  --sync:        Start in sync mode";
         return 1;
     }
 
@@ -219,6 +223,10 @@ int main(int argc, char* argv[])
     }
 
     app.show();
+
+    if (startSyncMode) {
+        app.startSyncMode();
+    }
 
     int ret = qapp.exec();
 

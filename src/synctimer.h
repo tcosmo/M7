@@ -21,6 +21,7 @@ public:
     void setScore(mu::engraving::Score* score);
     void setMeasureStarts(const std::vector<double>& measureStarts);
     void setBeatTimes(const std::vector<double>& beatTimes, int beatsPerMeasure);
+    int beatsPerMeasure() const { return m_beatsPerMeasure; }
 
 public slots:
     void setTime(double seconds);

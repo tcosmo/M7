@@ -916,6 +916,9 @@ void PartPanel::populateList()
     }
 
     for (Part* part : m_score->parts()) {
+        // Skip the transient Sync part (managed by SyncMode)
+        if (part->partName() == u"Sync") continue;
+
         m_parts.push_back(part);
 
         QString name = part->partName().toQString();

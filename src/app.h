@@ -23,6 +23,8 @@ class ScoreWidget;
 class AudioPlayer;
 class YouTubePlayer;
 class SyncTimer;
+class SyncMode;
+class SyncPanel;
 class PartPanel;
 class DisplaySettings;
 class TrackingSettings;
@@ -41,6 +43,7 @@ public:
     void loadYouTube(const QString& url);
     void loadSources(const QString& jsonPath);
     void setVisibleParts(const QList<int>& partNumbers);
+    void startSyncMode();
 
 private slots:
     void togglePlayPause();
@@ -50,6 +53,7 @@ private slots:
 protected:
     void resizeEvent(QResizeEvent* event) override;
     void changeEvent(QEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
 
 private:
@@ -59,6 +63,12 @@ private:
     void repositionSidebar();
     void updateTrackingIcon();
     QString formatTime(double seconds) const;
+
+    void enterSyncMode();
+    void exitSyncMode();
+    void setupSyncSidebar();
+    void repositionSyncSidebar();
+    void saveSyncData();
 
     // Player dispatch helpers (route to active player)
     void playerPlay();
@@ -96,6 +106,13 @@ private:
     QPushButton* m_speedButton = nullptr;
     bool m_useYouTube = false;
     SyncTimer* m_syncTimer = nullptr;
+    SyncMode* m_syncMode = nullptr;
+    QPushButton* m_syncModeButton = nullptr;
+    QWidget* m_syncSidebarWidget = nullptr;
+    QWidget* m_syncSidebarHandle = nullptr;
+    SyncPanel* m_syncPanel = nullptr;
+    bool m_savedSidebarVisible = true;
+    bool m_savedTrackingOn = false;
 
     // Score
     mu::engraving::MasterScore* m_score = nullptr;

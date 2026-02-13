@@ -7,11 +7,18 @@
 
 #include "types/geometry.h"
 
+#include <QPointF>
+#include <vector>
+
 namespace mu::engraving {
 class Score;
 namespace rendering {
 class IScoreRenderer;
 }
+}
+
+namespace scoretracker {
+class SyncMode;
 }
 
 namespace scoretracker {
@@ -35,20 +42,42 @@ public:
     int cursorPageIndex() const { return m_cursorPageIndex; }
     void setCursorVisible(bool visible);
     double maxPageWidthScore() const;
+    void setSyncMode(scoretracker::SyncMode* syncMode);
+    int selectedBeatIndex() const { return m_selectedBeatIndex; }
+
+signals:
+    void beatClicked(int beatIndex);
+    void beatDoubleClicked(int beatIndex);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
 
 private:
+    struct DotInfo {
+        int beatIndex;
+        QPointF center;
+        double radius;
+    };
+
     void updateCanvasSize();
     muse::RectF mapToRenderCoords(const muse::RectF& pageRelRect, int pageIndex) const;
+    void paintSyncDots(QPainter& painter);
+    int hitTestDot(const QPoint& pos) const;
 
     mu::engraving::Score* m_score = nullptr;
     mu::engraving::rendering::IScoreRenderer* m_renderer = nullptr;
+    scoretracker::SyncMode* m_syncMode = nullptr;
     muse::RectF m_cursorRect;
     int m_cursorPageIndex = 0;
     double m_zoom = 1.0;
     bool m_cursorVisible = true;
+
+    // Sync dots
+    std::vector<DotInfo> m_dotInfos;
+    int m_selectedBeatIndex = -1;
 };
 
 class TriggerLineOverlay : public QWidget
@@ -88,9 +117,13 @@ public:
     void setShowTriggerLine(bool show);
     void setCursorAnchor(int anchor); // 0=Top, 1=Center, 2=Bottom
     void setCursorVisible(bool visible);
+    void setSyncMode(scoretracker::SyncMode* syncMode);
+    int selectedBeatIndex() const;
 
 signals:
     void zoomChanged(double zoom);
+    void beatClicked(int beatIndex);
+    void beatDoubleClicked(int beatIndex);
 
 public slots:
     void setCursorRect(const muse::RectF& rect, int pageIndex);

@@ -148,7 +148,6 @@ qt_add_resources(scoretracker "icons"
     PREFIX "/"
     FILES
         src/icons/youtube.png
-        src/icons/spotify.png
 )
 
 set_target_properties(engraving PROPERTIES COMPILE_FLAGS "-fPIC")

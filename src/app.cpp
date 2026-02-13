@@ -865,11 +865,6 @@ void App::loadSources(const QString& jsonPath)
         });
     }
 
-    if (obj.contains("spotify")) {
-        auto* action = menu->addAction(QIcon(":/src/icons/spotify.png"), "Spotify (coming soon)");
-        action->setEnabled(false);
-    }
-
     if (!menu->actions().isEmpty()) {
         m_sourceButtonAction->setVisible(true);
     }

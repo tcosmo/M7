@@ -8,6 +8,7 @@
 #include "types/geometry.h"
 
 #include <QPointF>
+#include <QElapsedTimer>
 #include <vector>
 
 namespace mu::engraving {
@@ -52,7 +53,6 @@ signals:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
-    void mouseDoubleClickEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
 
 private:
@@ -78,6 +78,10 @@ private:
     // Sync dots
     std::vector<DotInfo> m_dotInfos;
     int m_selectedBeatIndex = -1;
+
+    // Manual double-click detection
+    QElapsedTimer m_lastClickTimer;
+    int m_lastClickBeat = -1;
 };
 
 class TriggerLineOverlay : public QWidget

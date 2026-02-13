@@ -400,12 +400,27 @@ void ScoreCanvas::mousePressEvent(QMouseEvent* event)
     if (m_syncMode && m_syncMode->isActive() && event->button() == Qt::LeftButton) {
         int hit = hitTestDot(event->pos());
         if (hit >= 0) {
+            // Detect double-click manually: same dot clicked within 400ms
+            bool isDoubleClick = (hit == m_lastClickBeat
+                                  && m_lastClickTimer.isValid()
+                                  && m_lastClickTimer.elapsed() < 400);
+            m_lastClickBeat = hit;
+            m_lastClickTimer.restart();
+
             m_selectedBeatIndex = hit;
-            emit beatClicked(hit);
+            if (isDoubleClick || event->modifiers() & Qt::ShiftModifier) {
+                // Set this dot as the next inputtable beat directly
+                m_selectedBeatIndex = -1;
+                m_syncMode->setNextUnsyncedFrom(hit);
+                emit beatDoubleClicked(hit);
+            } else {
+                emit beatClicked(hit);
+            }
             update();
             return;
         }
         // Click outside dots deselects
+        m_lastClickBeat = -1;
         if (m_selectedBeatIndex >= 0) {
             m_selectedBeatIndex = -1;
             emit beatClicked(-1);
@@ -413,20 +428,6 @@ void ScoreCanvas::mousePressEvent(QMouseEvent* event)
         }
     }
     QWidget::mousePressEvent(event);
-}
-
-void ScoreCanvas::mouseDoubleClickEvent(QMouseEvent* event)
-{
-    if (m_syncMode && m_syncMode->isActive() && event->button() == Qt::LeftButton) {
-        int hit = hitTestDot(event->pos());
-        if (hit >= 0) {
-            m_selectedBeatIndex = hit;
-            emit beatDoubleClicked(hit);
-            update();
-            return;
-        }
-    }
-    QWidget::mouseDoubleClickEvent(event);
 }
 
 void ScoreCanvas::mouseMoveEvent(QMouseEvent* event)

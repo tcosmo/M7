@@ -832,17 +832,17 @@ void App::loadSources(const QString& jsonPath)
         audioFile = sourceDir.absoluteFilePath(obj.value("file").toString());
         auto* action = menu->addAction("File");
         connect(action, &QAction::triggered, this, [this, audioFile]() {
+            double pos = playerCurrentTime();
             if (m_useYouTube && m_youtubePlayer) {
-                m_youtubePlayer->stop();
+                m_youtubePlayer->pause();
                 m_videoDock->hide();
                 m_speedButton->setEnabled(false);
                 m_speedButton->setText("Speed: 1x");
             }
             m_useYouTube = false;
             loadAudio(audioFile);
-            m_seekSlider->setValue(0);
-            m_playPauseAction->setText("Play");
-            m_syncTimer->setTime(0);
+            m_audioPlayer->seekTo(pos);
+            m_audioPlayer->play();
         });
     }
 
@@ -850,13 +850,18 @@ void App::loadSources(const QString& jsonPath)
         youtubeUrl = obj.value("youtube").toString();
         auto* action = menu->addAction(QIcon(":/src/icons/youtube.png"), "YouTube");
         connect(action, &QAction::triggered, this, [this, youtubeUrl]() {
+            double pos = playerCurrentTime();
             if (!m_useYouTube) {
-                m_audioPlayer->stop();
+                m_audioPlayer->pause();
             }
             loadYouTube(youtubeUrl);
-            m_seekSlider->setValue(0);
+            // Seek once video is ready (seekTo requires m_ready)
+            auto conn = std::make_shared<QMetaObject::Connection>();
+            *conn = connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this, pos, conn]() {
+                m_youtubePlayer->seekTo(pos);
+                disconnect(*conn);
+            });
             m_playPauseAction->setText("Play");
-            m_syncTimer->setTime(0);
         });
     }
 

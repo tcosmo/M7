@@ -39,6 +39,7 @@ public:
     bool loadAudio(const QString& audioPath);
     bool loadBeatData(const QString& jsonPath);
     void loadYouTube(const QString& url);
+    void loadSources(const QString& jsonPath);
     void setVisibleParts(const QList<int>& partNumbers);
 
 private slots:
@@ -89,6 +90,9 @@ private:
     // Backend
     AudioPlayer* m_audioPlayer = nullptr;
     YouTubePlayer* m_youtubePlayer = nullptr;
+    QDockWidget* m_videoDock = nullptr;
+    QPushButton* m_sourceButton = nullptr;
+    QAction* m_sourceButtonAction = nullptr;
     QPushButton* m_speedButton = nullptr;
     bool m_useYouTube = false;
     SyncTimer* m_syncTimer = nullptr;

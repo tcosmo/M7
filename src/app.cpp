@@ -33,6 +33,7 @@
 #include <QDebug>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QDir>
 #include <QFileInfo>
 #include <QMouseEvent>
 #include <QPainter>
@@ -345,6 +346,18 @@ void App::setupToolbar()
     m_timeLabel = new QLabel("0:00 / 0:00", this);
     m_timeLabel->setMinimumWidth(120);
     m_toolbar->addWidget(m_timeLabel);
+
+    // Source button (hidden until loadSources is called)
+    m_sourceButton = new QPushButton("Source", this);
+    m_sourceButton->setFlat(true);
+    m_sourceButton->setCursor(Qt::PointingHandCursor);
+    m_sourceButton->setFocusPolicy(Qt::NoFocus);
+    m_sourceButton->setStyleSheet(
+        "QPushButton { padding: 2px 4px; }"
+        "QPushButton:pressed { background: transparent; padding: 2px 4px; }");
+    m_sourceButton->setMenu(new QMenu(m_sourceButton));
+    m_sourceButtonAction = m_toolbar->addWidget(m_sourceButton);
+    m_sourceButtonAction->setVisible(false);
 
     m_toolbar->addSeparator();
 
@@ -793,9 +806,88 @@ bool App::playerIsPlaying() const
     return m_audioPlayer->isPlaying();
 }
 
+void App::loadSources(const QString& jsonPath)
+{
+    QFile file(jsonPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning() << "Failed to open sources file:" << jsonPath;
+        return;
+    }
+
+    QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    if (!doc.isObject()) {
+        qWarning() << "Invalid sources JSON:" << jsonPath;
+        return;
+    }
+
+    QJsonObject obj = doc.object();
+    QMenu* menu = m_sourceButton->menu();
+    menu->clear();
+
+    QDir sourceDir = QFileInfo(jsonPath).absoluteDir();
+    QString youtubeUrl;
+    QString audioFile;
+
+    if (obj.contains("file")) {
+        audioFile = sourceDir.absoluteFilePath(obj.value("file").toString());
+        auto* action = menu->addAction("File");
+        connect(action, &QAction::triggered, this, [this, audioFile]() {
+            if (m_useYouTube && m_youtubePlayer) {
+                m_youtubePlayer->stop();
+                m_videoDock->hide();
+                m_speedButton->setEnabled(false);
+                m_speedButton->setText("Speed: 1x");
+            }
+            m_useYouTube = false;
+            loadAudio(audioFile);
+            m_seekSlider->setValue(0);
+            m_playPauseAction->setText("Play");
+            m_syncTimer->setTime(0);
+        });
+    }
+
+    if (obj.contains("youtube")) {
+        youtubeUrl = obj.value("youtube").toString();
+        auto* action = menu->addAction(QIcon(":/src/icons/youtube.png"), "YouTube");
+        connect(action, &QAction::triggered, this, [this, youtubeUrl]() {
+            if (!m_useYouTube) {
+                m_audioPlayer->stop();
+            }
+            loadYouTube(youtubeUrl);
+            m_seekSlider->setValue(0);
+            m_playPauseAction->setText("Play");
+            m_syncTimer->setTime(0);
+        });
+    }
+
+    if (obj.contains("spotify")) {
+        auto* action = menu->addAction(QIcon(":/src/icons/spotify.png"), "Spotify (coming soon)");
+        action->setEnabled(false);
+    }
+
+    if (!menu->actions().isEmpty()) {
+        m_sourceButtonAction->setVisible(true);
+    }
+
+    // Auto-load: YouTube if present, otherwise file
+    if (!youtubeUrl.isEmpty()) {
+        loadYouTube(youtubeUrl);
+    } else if (!audioFile.isEmpty()) {
+        loadAudio(audioFile);
+    }
+}
+
 void App::loadYouTube(const QString& url)
 {
     m_useYouTube = true;
+
+    // If player already exists, just show dock and reload
+    if (m_youtubePlayer) {
+        m_videoDock->show();
+        m_youtubePlayer->load(url);
+        return;
+    }
+
     m_youtubePlayer = new YouTubePlayer(this);
 
     // Connect position updates
@@ -828,11 +920,11 @@ void App::loadYouTube(const QString& url)
     videoWidget->setPalette(videoPal);
     videoWidget->setAutoFillBackground(true);
 
-    auto* dock = new QDockWidget("Video", this);
-    dock->setWidget(videoWidget);
-    dock->setFeatures(QDockWidget::NoDockWidgetFeatures);
-    dock->setFixedWidth(200);
-    addDockWidget(Qt::LeftDockWidgetArea, dock);
+    m_videoDock = new QDockWidget("Video", this);
+    m_videoDock->setWidget(videoWidget);
+    m_videoDock->setFeatures(QDockWidget::NoDockWidgetFeatures);
+    m_videoDock->setFixedWidth(200);
+    addDockWidget(Qt::LeftDockWidgetArea, m_videoDock);
 
     // Enable speed button and wire it to the YouTube player
     connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this]() {

@@ -74,8 +74,12 @@ void SyncMode::recordTap(double audioTime)
     if (idx < 0) return;
 
     m_beats[idx].tappedTime = audioTime;
+    m_beats[idx].timeOffset = 0.0;
     m_beats[idx].synced = true;
-    m_nextInputOverride = -1; // clear override after filling it
+
+    // Advance to the next immediate beat
+    m_nextInputOverride = (idx + 1 < static_cast<int>(m_beats.size())) ? idx + 1 : -1;
+
     emit beatSynced(idx);
 }
 
@@ -96,7 +100,6 @@ void SyncMode::unsyncBeat(int beatIndex)
     m_beats[beatIndex].synced = false;
     m_beats[beatIndex].tappedTime = 0.0;
     m_beats[beatIndex].timeOffset = 0.0;
-    m_beats[beatIndex].skipped = true;
     emit beatUnsynced(beatIndex);
 }
 
@@ -104,27 +107,17 @@ void SyncMode::setNextUnsyncedFrom(int beatIndex)
 {
     if (beatIndex < 0 || beatIndex >= static_cast<int>(m_beats.size())) return;
 
-    // Unsync this beat if synced
-    if (m_beats[beatIndex].synced) {
-        m_beats[beatIndex].synced = false;
-        m_beats[beatIndex].tappedTime = 0.0;
-        m_beats[beatIndex].timeOffset = 0.0;
-    }
-    m_beats[beatIndex].skipped = false;
-
     m_nextInputOverride = beatIndex;
-    emit beatUnsynced(beatIndex);
 }
 
 int SyncMode::nextUnsyncedBeat() const
 {
     if (m_nextInputOverride >= 0
-        && m_nextInputOverride < static_cast<int>(m_beats.size())
-        && !m_beats[m_nextInputOverride].synced) {
+        && m_nextInputOverride < static_cast<int>(m_beats.size())) {
         return m_nextInputOverride;
     }
     for (size_t i = 0; i < m_beats.size(); ++i) {
-        if (!m_beats[i].synced && !m_beats[i].skipped) return static_cast<int>(i);
+        if (!m_beats[i].synced) return static_cast<int>(i);
     }
     return -1;
 }
@@ -148,6 +141,25 @@ int SyncMode::syncStaffIdx() const
 {
     if (!m_syncStaff || !m_score) return -1;
     return static_cast<int>(m_syncStaff->idx());
+}
+
+int SyncMode::activeBeatForTime(double time) const
+{
+    int result = -1;
+    for (size_t i = 0; i < m_beats.size(); ++i) {
+        if (m_beats[i].synced && m_beats[i].effectiveTime() <= time) {
+            result = static_cast<int>(i);
+        }
+    }
+    // Only show if there's a synced beat ahead — means we're reviewing,
+    // not at the input frontier
+    if (result >= 0) {
+        for (size_t i = result + 1; i < m_beats.size(); ++i) {
+            if (m_beats[i].synced) return result;
+        }
+        return -1;
+    }
+    return result;
 }
 
 void SyncMode::createSyncPart()

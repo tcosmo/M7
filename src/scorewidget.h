@@ -44,7 +44,10 @@ public:
     void setCursorVisible(bool visible);
     double maxPageWidthScore() const;
     void setSyncMode(scoretracker::SyncMode* syncMode);
+    void setPlaybackTime(double time);
     int selectedBeatIndex() const { return m_selectedBeatIndex; }
+    void setSelectedBeat(int beatIndex);
+    QPoint dotWidgetPos(int beatIndex) const;
 
 signals:
     void beatClicked(int beatIndex);
@@ -82,6 +85,9 @@ private:
     // Manual double-click detection
     QElapsedTimer m_lastClickTimer;
     int m_lastClickBeat = -1;
+
+    // Playback position
+    double m_playbackTime = -1.0;
 };
 
 class TriggerLineOverlay : public QWidget
@@ -122,7 +128,10 @@ public:
     void setCursorAnchor(int anchor); // 0=Top, 1=Center, 2=Bottom
     void setCursorVisible(bool visible);
     void setSyncMode(scoretracker::SyncMode* syncMode);
+    void setPlaybackTime(double time);
+    void ensureBeatVisible(int beatIndex);
     int selectedBeatIndex() const;
+    void setSelectedBeat(int beatIndex);
 
 signals:
     void zoomChanged(double zoom);

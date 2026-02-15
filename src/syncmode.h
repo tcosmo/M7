@@ -23,7 +23,6 @@ struct BeatSync {
     double tappedTime = 0.0;
     double timeOffset = 0.0;
     bool synced = false;
-    bool skipped = false;      // deleted by user, skip in nextUnsyncedBeat
 
     double effectiveTime() const { return tappedTime + timeOffset; }
 };
@@ -54,6 +53,7 @@ public:
     int beatsInMeasure(int measureIdx) const;
 
     int syncStaffIdx() const;
+    int activeBeatForTime(double time) const;
 
     QJsonObject toJson() const;
     void fromJson(const QJsonObject& obj);

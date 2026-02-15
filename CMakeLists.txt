@@ -146,6 +146,8 @@ add_executable(scoretracker
     src/syncmode.cpp
     src/syncpanel.h
     src/syncpanel.cpp
+    src/waveformwidget.h
+    src/waveformwidget.mm
 )
 
 qt_add_resources(scoretracker "icons"
@@ -190,4 +192,5 @@ target_link_libraries(scoretracker
     "-framework CoreFoundation"
     "-framework AppKit"
     "-framework AVFoundation"
+    "-framework Accelerate"
 )

@@ -25,6 +25,7 @@ class YouTubePlayer;
 class SyncTimer;
 class SyncMode;
 class SyncPanel;
+class WaveformWidget;
 class PartPanel;
 class DisplaySettings;
 class TrackingSettings;
@@ -111,6 +112,8 @@ private:
     QWidget* m_syncSidebarWidget = nullptr;
     QWidget* m_syncSidebarHandle = nullptr;
     SyncPanel* m_syncPanel = nullptr;
+    WaveformWidget* m_waveformWidget = nullptr;
+    QSplitter* m_centralSplitter = nullptr;
     bool m_savedSidebarVisible = true;
     bool m_savedTrackingOn = false;
 
@@ -118,6 +121,7 @@ private:
     mu::engraving::MasterScore* m_score = nullptr;
     std::shared_ptr<mu::engraving::rendering::IScoreRenderer> m_renderer;
 
+    QString m_audioFilePath;
     bool m_sliderDragging = false;
     bool m_userForcedAutoScroll = false;
     int m_sidebarWidth = 300;

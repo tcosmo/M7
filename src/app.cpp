@@ -5,6 +5,7 @@
 #include "synctimer.h"
 #include "syncmode.h"
 #include "syncpanel.h"
+#include "waveformwidget.h"
 #include "partpanel.h"
 #include "displaysettings.h"
 #include "trackingsettings.h"
@@ -28,6 +29,7 @@
 #include "engraving/style/styledef.h"
 #include "engraving/types/types.h"
 #include "engraving/types/fraction.h"
+#include "engraving/dom/tempo.h"
 #include "engraving/rendering/layoutoptions.h"
 
 #include "importexport/musicxml/internal/import/importmusicxml.h"
@@ -78,6 +80,9 @@ App::App(QWidget* parent)
     connect(m_syncMode, &SyncMode::beatSynced, this, [this](int) {
         m_scoreWidget->widget()->update();
         if (m_syncPanel) m_syncPanel->updateStatus();
+        if (m_waveformWidget) m_waveformWidget->update();
+        int next = m_syncMode->nextUnsyncedBeat();
+        if (next >= 0) m_scoreWidget->ensureBeatVisible(next);
     });
     connect(m_syncMode, &SyncMode::beatAdjusted, this, [this](int) {
         m_scoreWidget->widget()->update();
@@ -196,9 +201,54 @@ App::~App()
 
 void App::setupUI()
 {
-    // Score view takes full window area
-    m_scoreWidget = new ScoreWidget(this);
-    setCentralWidget(m_scoreWidget);
+    // Central splitter: waveform (top) + score (bottom)
+    m_centralSplitter = new QSplitter(Qt::Vertical, this);
+    m_centralSplitter->setChildrenCollapsible(false);
+    m_centralSplitter->setHandleWidth(5);
+    m_centralSplitter->setStyleSheet(
+        "QSplitter::handle:vertical { background: #555; border-top: 1px solid #666; border-bottom: 1px solid #333; }");
+
+    m_waveformWidget = new WaveformWidget(m_centralSplitter);
+    m_waveformWidget->hide();
+    m_centralSplitter->addWidget(m_waveformWidget);
+
+    connect(m_waveformWidget, &WaveformWidget::seekRequested, this, [this](double t) {
+        playerSeekTo(t);
+        m_syncTimer->setTime(t);
+        onPositionChanged(t);
+    });
+
+    m_scoreWidget = new ScoreWidget(m_centralSplitter);
+    m_centralSplitter->addWidget(m_scoreWidget);
+
+    // Beat click on score → seek audio + scroll waveform
+    connect(m_scoreWidget, &ScoreWidget::beatClicked, this, [this](int beatIndex) {
+        if (!m_syncMode || beatIndex < 0 || beatIndex >= m_syncMode->totalBeats()) return;
+        const auto& beat = m_syncMode->beats()[beatIndex];
+        if (beat.synced) {
+            playerSeekTo(beat.effectiveTime());
+            m_syncTimer->setTime(beat.effectiveTime());
+            onPositionChanged(beat.effectiveTime());
+            if (m_waveformWidget) m_waveformWidget->scrollToTime(beat.effectiveTime());
+        }
+    });
+
+    // Beat click on waveform → seek audio
+    connect(m_waveformWidget, &WaveformWidget::beatClicked, this, [this](int beatIndex) {
+        if (!m_syncMode || beatIndex < 0 || beatIndex >= m_syncMode->totalBeats()) return;
+        const auto& beat = m_syncMode->beats()[beatIndex];
+        if (beat.synced) {
+            playerSeekTo(beat.effectiveTime());
+            m_syncTimer->setTime(beat.effectiveTime());
+            onPositionChanged(beat.effectiveTime());
+        }
+    });
+
+    // Score gets most of the space by default
+    m_centralSplitter->setStretchFactor(0, 0); // waveform: don't stretch
+    m_centralSplitter->setStretchFactor(1, 1); // score: stretch
+
+    setCentralWidget(m_centralSplitter);
 
     // Sidebar overlays the score on the right edge
     m_sidebarWidget = new QWidget(this);
@@ -727,6 +777,7 @@ bool App::loadBeatData(const QString& jsonPath)
 
 bool App::loadAudio(const QString& audioPath)
 {
+    m_audioFilePath = audioPath;
     if (!m_audioPlayer->load(audioPath)) {
         return false;
     }
@@ -777,6 +828,12 @@ void App::onPositionChanged(double seconds)
     // Update sync timer -> cursor if tracking is on, or auto-scroll without tracking
     if (m_trackingAction->isChecked() || m_trackingSettings->autoScrollEnabled()) {
         m_syncTimer->setTime(seconds);
+    }
+
+    // Update sync mode widgets
+    if (m_syncMode->isActive()) {
+        m_scoreWidget->setPlaybackTime(seconds);
+        if (m_waveformWidget) m_waveformWidget->setPlaybackTime(seconds);
     }
 }
 
@@ -1045,6 +1102,36 @@ void App::enterSyncMode()
 
     m_syncMode->enter(m_score, m_renderer.get());
 
+    // Show waveform
+    if (m_waveformWidget) {
+        if (!m_audioFilePath.isEmpty()) {
+            m_waveformWidget->loadAudio(m_audioFilePath);
+        }
+        m_waveformWidget->setSyncMode(m_syncMode);
+        m_waveformWidget->setDuration(playerDuration());
+        m_waveformWidget->show();
+
+        // Set initial waveform zoom based on score tempo so dots are well-spaced
+        double duration = playerDuration();
+        if (duration > 0 && m_score->tempomap()) {
+            double bps = m_score->tempomap()->tempo(0).val; // beats per second
+            double bpm = bps * 60.0;
+            if (bpm > 0) {
+                int totalBeats = m_syncMode->totalBeats();
+                int vpWidth = m_waveformWidget->viewport()->width();
+                if (vpWidth <= 0) vpWidth = 800;
+                double targetSpacing = 40.0; // pixels between dots
+                double zoom = (totalBeats * targetSpacing) / vpWidth;
+                if (zoom < 1.0) zoom = 1.0;
+                m_waveformWidget->setWaveformZoom(zoom);
+            }
+        }
+
+        connect(m_waveformWidget, &WaveformWidget::beatTimeChanged, this, [this](int, double) {
+            m_scoreWidget->widget()->update();
+        }, Qt::UniqueConnection);
+    }
+
     // Setup and show sync sidebar
     setupSyncSidebar();
     m_syncPanel->setSyncMode(m_syncMode);
@@ -1053,12 +1140,22 @@ void App::enterSyncMode()
     repositionSyncSidebar();
 
     int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
-    m_scoreWidget->setOverlayWidth(m_sidebarWidth + scrollbarW);
+    int sidebarTotal = m_sidebarWidth + scrollbarW;
+    m_scoreWidget->setOverlayWidth(sidebarTotal);
+
+    // Keep waveform from going under the sync sidebar
+    if (m_waveformWidget) {
+        m_waveformWidget->setRightMargin(sidebarTotal);
+    }
 
     m_scoreWidget->setSyncMode(m_syncMode);
 
     // Fit score after sidebar overlay is set so available width is correct
-    QTimer::singleShot(0, m_scoreWidget, &ScoreWidget::zoomToFit);
+    QTimer::singleShot(0, this, [this]() {
+        m_scoreWidget->zoomToFit();
+        int next = m_syncMode->nextUnsyncedBeat();
+        if (next >= 0) m_scoreWidget->ensureBeatVisible(next);
+    });
 
     connect(m_scoreWidget, &ScoreWidget::beatClicked, m_syncPanel, &SyncPanel::showBeatInfo,
             Qt::UniqueConnection);
@@ -1077,12 +1174,41 @@ void App::enterSyncMode()
         m_syncMode->setNextUnsyncedFrom(beatIndex);
         m_syncPanel->showBeatInfo(beatIndex);
     }, Qt::UniqueConnection);
+
+    // Waveform zoom: sync panel buttons → waveform, Cmd+scroll → sync panel label
+    if (m_waveformWidget) {
+        connect(m_syncPanel, &SyncPanel::waveformZoomRequested, m_waveformWidget, &WaveformWidget::setWaveformZoom,
+                Qt::UniqueConnection);
+        connect(m_waveformWidget, &WaveformWidget::zoomChanged, m_syncPanel, &SyncPanel::setWaveformZoom,
+                Qt::UniqueConnection);
+
+        // Sync dot selection between score and waveform
+        connect(m_scoreWidget, &ScoreWidget::beatClicked, m_waveformWidget, &WaveformWidget::setSelectedBeat,
+                Qt::UniqueConnection);
+        connect(m_waveformWidget, &WaveformWidget::beatClicked, m_scoreWidget, &ScoreWidget::setSelectedBeat,
+                Qt::UniqueConnection);
+
+        // Waveform beat click also shows info in sync panel
+        connect(m_waveformWidget, &WaveformWidget::beatClicked, m_syncPanel, &SyncPanel::showBeatInfo,
+                Qt::UniqueConnection);
+
+        // Spectrogram toggle
+        connect(m_syncPanel, &SyncPanel::spectrogramToggled, m_waveformWidget, &WaveformWidget::setShowSpectrogram,
+                Qt::UniqueConnection);
+    }
 }
 
 void App::exitSyncMode()
 {
     m_scoreWidget->setSyncMode(nullptr);
     m_syncMode->exit();
+
+    // Hide waveform
+    if (m_waveformWidget) {
+        m_waveformWidget->hide();
+        m_waveformWidget->setSyncMode(nullptr);
+        m_waveformWidget->setRightMargin(0);
+    }
 
     // Hide sync sidebar
     if (m_syncSidebarWidget) {
@@ -1187,18 +1313,7 @@ void App::keyPressEvent(QKeyEvent* event)
             }
             return;
         }
-        if (playerIsPlaying()) {
-            // Let Space through for play/pause
-            if (event->key() == Qt::Key_Space) {
-                QMainWindow::keyPressEvent(event);
-                return;
-            }
-            // Ignore modifier-only keys
-            if (event->key() == Qt::Key_Shift || event->key() == Qt::Key_Control
-                || event->key() == Qt::Key_Alt || event->key() == Qt::Key_Meta) {
-                QMainWindow::keyPressEvent(event);
-                return;
-            }
+        if (event->key() == Qt::Key_O && playerIsPlaying()) {
             m_syncMode->recordTap(playerCurrentTime());
             return;
         }

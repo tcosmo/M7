@@ -197,85 +197,79 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
         return;
     }
 
-    QPainter qp(this);
-    qp.setRenderHint(QPainter::Antialiasing, true);
-    qp.setRenderHint(QPainter::TextAntialiasing, true);
-
     double s = scale();
     const auto& pages = m_score->pages();
     QRect clipRect = event->rect();
 
-    // Apply base scale once, then work in score coordinates
-    qp.scale(s, s);
+    // Score rendering in its own scope so qp is destroyed before overlay painters
+    {
+        QPainter qp(this);
+        qp.setRenderHint(QPainter::Antialiasing, true);
+        qp.setRenderHint(QPainter::TextAntialiasing, true);
+        qp.scale(s, s);
 
-    Painter painter(QPainterProvider::make(&qp, false), "scorewidget");
-    painter.setAntialiasing(true);
+        Painter painter(QPainterProvider::make(&qp, false), "scorewidget");
+        painter.setAntialiasing(true);
 
-    PaintOptions paintOpt;
-    paintOpt.isPrinting = true;
-    double yOffsetScore = PAGE_GAP / (2.0 * s); // gap in score coords
+        PaintOptions paintOpt;
+        paintOpt.isPrinting = true;
+        double yOffsetScore = PAGE_GAP / (2.0 * s);
 
-    for (size_t pi = 0; pi < pages.size(); ++pi) {
-        Page* page = pages[pi];
-        muse::RectF bbox = page->ldata()->bbox();
+        for (size_t pi = 0; pi < pages.size(); ++pi) {
+            Page* page = pages[pi];
+            muse::RectF bbox = page->ldata()->bbox();
 
-        double pageScreenH = bbox.height() * s;
-        double pageScreenW = bbox.width() * s;
-        double pageScreenY = yOffsetScore * s;
+            double pageScreenH = bbox.height() * s;
+            double pageScreenW = bbox.width() * s;
+            double pageScreenY = yOffsetScore * s;
 
-        // Center page horizontally
-        double xOffsetScreen = (width() - pageScreenW) / 2.0;
-        if (xOffsetScreen < 0) xOffsetScreen = 0;
-        double xOffsetScore = xOffsetScreen / s;
+            double xOffsetScreen = (width() - pageScreenW) / 2.0;
+            if (xOffsetScreen < 0) xOffsetScreen = 0;
+            double xOffsetScore = xOffsetScreen / s;
 
-        QRectF pageScreenRect(xOffsetScreen, pageScreenY, pageScreenW, pageScreenH);
+            QRectF pageScreenRect(xOffsetScreen, pageScreenY, pageScreenW, pageScreenH);
 
-        // Skip pages not visible in the clip rect
-        if (pageScreenRect.bottom() < clipRect.top()) {
+            if (pageScreenRect.bottom() < clipRect.top()) {
+                yOffsetScore += bbox.height() + PAGE_GAP / s;
+                continue;
+            }
+            if (pageScreenRect.top() > clipRect.bottom()) {
+                break;
+            }
+
+            painter.fillRect(muse::RectF(xOffsetScore, yOffsetScore, bbox.width(), bbox.height()),
+                             muse::draw::Color::WHITE);
+
+            painter.save();
+            painter.translate(muse::PointF(xOffsetScore, yOffsetScore));
+
+            muse::RectF itemRect(bbox.x() - 500, bbox.y(), bbox.width() + 500, bbox.height());
+            std::vector<EngravingItem*> elements = page->items(itemRect);
+            for (const EngravingItem* item : elements) {
+                m_renderer->paintItem(painter, item, paintOpt);
+            }
+
+            painter.restore();
             yOffsetScore += bbox.height() + PAGE_GAP / s;
-            continue;
-        }
-        if (pageScreenRect.top() > clipRect.bottom()) {
-            break;
         }
 
-        // Draw page background (white rectangle in score coords)
-        painter.fillRect(muse::RectF(xOffsetScore, yOffsetScore, bbox.width(), bbox.height()),
-                         muse::draw::Color::WHITE);
-
-        // Translate to page position and draw elements
-        painter.save();
-        painter.translate(muse::PointF(xOffsetScore, yOffsetScore));
-
-        // Expand bbox leftward to include instrument names in the margin
-        muse::RectF itemRect(bbox.x() - 500, bbox.y(), bbox.width() + 500, bbox.height());
-        std::vector<EngravingItem*> elements = page->items(itemRect);
-        for (const EngravingItem* item : elements) {
-            m_renderer->paintItem(painter, item, paintOpt);
-        }
-
-        painter.restore();
-        yOffsetScore += bbox.height() + PAGE_GAP / s;
+        painter.endDraw();
     }
 
-    painter.endDraw();
-
-    // Draw cursor overlay (using raw QPainter after Painter is done)
+    // Draw cursor overlay
     if (!m_cursorRect.isNull() && m_cursorVisible) {
-        QColor cursorColor(50, 100, 255, 120);
-        // qp state is already scaled, but endDraw may have reset it
-        // Use a fresh QPainter approach
         QPainter overlay(this);
         overlay.fillRect(
             QRectF(m_cursorRect.x() * s, m_cursorRect.y() * s,
                    m_cursorRect.width() * s, m_cursorRect.height() * s),
-            cursorColor
+            QColor(50, 100, 255, 120)
         );
     }
 
-    // Draw sync dots
+    // Draw sync dots (fixed pixel size, independent of zoom)
     if (m_syncMode && m_syncMode->isActive()) {
         QPainter dotPainter(this);
+        dotPainter.resetTransform();
         paintSyncDots(dotPainter);
     }
 }
@@ -283,7 +277,26 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
 void ScoreCanvas::setSyncMode(scoretracker::SyncMode* syncMode)
 {
     m_syncMode = syncMode;
+    m_playbackTime = -1.0;
     update();
+}
+
+QPoint ScoreCanvas::dotWidgetPos(int beatIndex) const
+{
+    for (const auto& dot : m_dotInfos) {
+        if (dot.beatIndex == beatIndex) {
+            return dot.center.toPoint();
+        }
+    }
+    return QPoint(-1, -1);
+}
+
+void ScoreCanvas::setPlaybackTime(double time)
+{
+    m_playbackTime = time;
+    if (m_syncMode && m_syncMode->isActive()) {
+        update();
+    }
 }
 
 void ScoreCanvas::paintSyncDots(QPainter& painter)
@@ -304,7 +317,7 @@ void ScoreCanvas::paintSyncDots(QPainter& painter)
 
     // Dot placed below the 5-line staff: top + 4sp (staff height) + 2sp (padding)
     const double dotYOffset = 6.0 * spatium;
-    const double radius = 5.0;
+    const double radius = 0.9 * spatium * s;
 
     int beatIdx = 0;
     int measureIdx = 0;
@@ -333,7 +346,7 @@ void ScoreCanvas::paintSyncDots(QPainter& painter)
             // Y position: below the sync staff
             double staffY = system->staffCanvasYpage(syncStaff);
             double dotY = staffY + dotYOffset - pageY;
-            double dotX = canvasX - pageX;
+            double dotX = canvasX - pageX + 0.5 * spatium;
 
             // Map to render coordinates (same as mapToRenderCoords)
             double yOffsetScore = PAGE_GAP / (2.0 * s);
@@ -356,29 +369,30 @@ void ScoreCanvas::paintSyncDots(QPainter& painter)
 
             bool selected = (beatIdx == m_selectedBeatIndex);
 
-            if (beats[beatIdx].synced) {
-                // Filled blue dot for synced beats
+            double pw = 0.3 * spatium * s; // pen width in score-proportional pixels
+
+            if (beatIdx == nextUnsynced) {
+                // Next inputtable: always blue outline, no fill
+                painter.setBrush(Qt::NoBrush);
+                painter.setPen(QPen(QColor(30, 120, 255), pw));
+                painter.drawEllipse(dot.center, radius, radius);
+            } else if (beats[beatIdx].synced) {
                 painter.setBrush(QColor(30, 120, 255));
                 painter.setPen(Qt::NoPen);
                 painter.drawEllipse(dot.center, radius, radius);
-            } else if (beatIdx == nextUnsynced) {
-                // Highlighted outline for next beat to tap
-                painter.setBrush(Qt::NoBrush);
-                painter.setPen(QPen(QColor(30, 120, 255), 2.0));
-                painter.drawEllipse(dot.center, radius, radius);
             } else {
-                // Dim outline for unsynced beats
                 painter.setBrush(Qt::NoBrush);
-                painter.setPen(QPen(QColor(120, 120, 120, 100), 1.0));
+                painter.setPen(QPen(QColor(120, 120, 120, 100), pw * 0.5));
                 painter.drawEllipse(dot.center, radius, radius);
             }
 
-            // Selection ring
+            // Selection ring (orange)
             if (selected) {
                 painter.setBrush(Qt::NoBrush);
-                painter.setPen(QPen(QColor(255, 180, 0), 2.5));
-                painter.drawEllipse(dot.center, radius + 4, radius + 4);
+                painter.setPen(QPen(QColor(255, 180, 0), pw));
+                painter.drawEllipse(dot.center, radius + pw * 2, radius + pw * 2);
             }
+
         }
     }
 }
@@ -400,27 +414,18 @@ void ScoreCanvas::mousePressEvent(QMouseEvent* event)
     if (m_syncMode && m_syncMode->isActive() && event->button() == Qt::LeftButton) {
         int hit = hitTestDot(event->pos());
         if (hit >= 0) {
-            // Detect double-click manually: same dot clicked within 400ms
-            bool isDoubleClick = (hit == m_lastClickBeat
-                                  && m_lastClickTimer.isValid()
-                                  && m_lastClickTimer.elapsed() < 400);
-            m_lastClickBeat = hit;
-            m_lastClickTimer.restart();
-
-            m_selectedBeatIndex = hit;
-            if (isDoubleClick || event->modifiers() & Qt::ShiftModifier) {
-                // Set this dot as the next inputtable beat directly
+            const auto& beat = m_syncMode->beats()[hit];
+            if (beat.synced) {
+                m_selectedBeatIndex = hit;
+                emit beatClicked(hit);
+            } else {
                 m_selectedBeatIndex = -1;
                 m_syncMode->setNextUnsyncedFrom(hit);
-                emit beatDoubleClicked(hit);
-            } else {
-                emit beatClicked(hit);
             }
             update();
             return;
         }
         // Click outside dots deselects
-        m_lastClickBeat = -1;
         if (m_selectedBeatIndex >= 0) {
             m_selectedBeatIndex = -1;
             emit beatClicked(-1);
@@ -647,9 +652,53 @@ void ScoreWidget::setSyncMode(scoretracker::SyncMode* syncMode)
     }
 }
 
+void ScoreWidget::setPlaybackTime(double time)
+{
+    m_canvas->setPlaybackTime(time);
+}
+
+void ScoreWidget::ensureBeatVisible(int beatIndex)
+{
+    QPoint pos = m_canvas->dotWidgetPos(beatIndex);
+    if (pos.x() < 0) return;
+
+    int margin = 80;
+    int vpH = viewport()->height();
+    int vpW = viewport()->width();
+    int scrollY = verticalScrollBar()->value();
+    int scrollX = horizontalScrollBar()->value();
+
+    int dotInVpY = pos.y() - scrollY;
+    if (dotInVpY > vpH - margin) {
+        verticalScrollBar()->setValue(pos.y() - vpH / 3);
+    } else if (dotInVpY < margin) {
+        verticalScrollBar()->setValue(pos.y() - margin);
+    }
+
+    int effectiveW = vpW - m_overlayWidth;
+    int dotInVpX = pos.x() - scrollX;
+    if (dotInVpX > effectiveW - margin) {
+        horizontalScrollBar()->setValue(pos.x() - effectiveW + margin);
+    } else if (dotInVpX < margin) {
+        horizontalScrollBar()->setValue(pos.x() - margin);
+    }
+}
+
 int ScoreWidget::selectedBeatIndex() const
 {
     return m_canvas->selectedBeatIndex();
+}
+
+void ScoreWidget::setSelectedBeat(int beatIndex)
+{
+    m_canvas->setSelectedBeat(beatIndex);
+}
+
+void ScoreCanvas::setSelectedBeat(int beatIndex)
+{
+    if (m_selectedBeatIndex == beatIndex) return;
+    m_selectedBeatIndex = beatIndex;
+    update();
 }
 
 void ScoreWidget::ensureCursorVisible()

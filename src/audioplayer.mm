@@ -77,8 +77,13 @@ void AudioPlayer::play()
     if (!m_player) return;
 
     AVAudioPlayer* player = (AVAudioPlayer*)m_player;
+    if (m_hasPendingSeek) {
+        player.currentTime = m_pendingSeek;
+        m_hasPendingSeek = false;
+    }
     BOOL success = [player play];
-    qDebug() << "Audio play:" << (bool)success << "isPlaying:" << (bool)player.isPlaying;
+    qDebug() << "Audio play:" << (bool)success << "isPlaying:" << (bool)player.isPlaying
+             << "at:" << player.currentTime;
     m_playing = true;
     m_pollTimer.start();
     emit playbackStarted();
@@ -114,6 +119,8 @@ void AudioPlayer::seekTo(double seconds)
 
     AVAudioPlayer* player = (AVAudioPlayer*)m_player;
     player.currentTime = seconds;
+    m_pendingSeek = seconds;
+    m_hasPendingSeek = true;
     emit positionChanged(seconds);
 }
 

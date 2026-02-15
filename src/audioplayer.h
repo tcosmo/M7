@@ -36,6 +36,8 @@ private:
     QTimer m_pollTimer;
     bool m_playing = false;
     double m_duration = 0.0;
+    double m_pendingSeek = 0.0;
+    bool m_hasPendingSeek = false;
 };
 
 } // namespace scoretracker

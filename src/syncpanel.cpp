@@ -4,6 +4,7 @@
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <algorithm>
 
 namespace scoretracker {
 
@@ -19,7 +20,7 @@ SyncPanel::SyncPanel(QWidget* parent)
     layout->setContentsMargins(12, 4, 12, 10);
     layout->setSpacing(8);
 
-    m_instructionLabel = new QLabel("Play audio and press any key to tap beats");
+    m_instructionLabel = new QLabel("Play audio and press 'O' to tap beats");
     m_instructionLabel->setWordWrap(true);
     m_instructionLabel->setStyleSheet(QString("color: %1; font-size: 11px;")
         .arg(Theme::textSecondary().name()));
@@ -64,6 +65,58 @@ SyncPanel::SyncPanel(QWidget* parent)
             emit beatTimeChanged(m_selectedBeatIndex, val);
         }
     });
+
+    // Waveform zoom controls
+    auto* zoomRow = new QWidget;
+    auto* zoomLayout = new QHBoxLayout(zoomRow);
+    zoomLayout->setContentsMargins(0, 0, 0, 0);
+    zoomLayout->setSpacing(4);
+
+    auto* zoomTitle = new QLabel("Waveform Zoom:");
+    zoomTitle->setStyleSheet(QString("color: %1; font-size: 11px;")
+        .arg(Theme::textSecondary().name()));
+    zoomLayout->addWidget(zoomTitle);
+
+    auto* zoomOutBtn = new QPushButton("\u2212"); // minus sign
+    zoomOutBtn->setFixedSize(24, 24);
+    zoomOutBtn->setCursor(Qt::PointingHandCursor);
+    zoomOutBtn->setFocusPolicy(Qt::NoFocus);
+    zoomLayout->addWidget(zoomOutBtn);
+
+    m_zoomLabel = new QLabel("1.0x");
+    m_zoomLabel->setFixedWidth(40);
+    m_zoomLabel->setAlignment(Qt::AlignCenter);
+    m_zoomLabel->setStyleSheet(QString("color: %1; font-size: 11px;")
+        .arg(Theme::textPrimary().name()));
+    zoomLayout->addWidget(m_zoomLabel);
+
+    auto* zoomInBtn = new QPushButton("+");
+    zoomInBtn->setFixedSize(24, 24);
+    zoomInBtn->setCursor(Qt::PointingHandCursor);
+    zoomInBtn->setFocusPolicy(Qt::NoFocus);
+    zoomLayout->addWidget(zoomInBtn);
+
+    zoomLayout->addStretch();
+    layout->addWidget(zoomRow);
+
+    connect(zoomInBtn, &QPushButton::clicked, this, [this]() {
+        m_waveformZoom = std::min(m_waveformZoom * 1.5, 100.0);
+        m_zoomLabel->setText(QString("%1x").arg(m_waveformZoom, 0, 'f', 1));
+        emit waveformZoomRequested(m_waveformZoom);
+    });
+    connect(zoomOutBtn, &QPushButton::clicked, this, [this]() {
+        m_waveformZoom = std::max(m_waveformZoom / 1.5, 1.0);
+        m_zoomLabel->setText(QString("%1x").arg(m_waveformZoom, 0, 'f', 1));
+        emit waveformZoomRequested(m_waveformZoom);
+    });
+
+    // Spectrogram toggle
+    auto* spectrogramCheck = new QCheckBox("Show Spectrogram");
+    spectrogramCheck->setFocusPolicy(Qt::NoFocus);
+    spectrogramCheck->setStyleSheet(QString("color: %1; font-size: 11px;")
+        .arg(Theme::textSecondary().name()));
+    layout->addWidget(spectrogramCheck);
+    connect(spectrogramCheck, &QCheckBox::toggled, this, &SyncPanel::spectrogramToggled);
 
     layout->addSpacing(4);
 
@@ -132,6 +185,14 @@ void SyncPanel::showBeatInfo(int beatIndex)
         m_timeEditWidget->setVisible(true);
     } else {
         m_timeEditWidget->setVisible(false);
+    }
+}
+
+void SyncPanel::setWaveformZoom(double zoom)
+{
+    m_waveformZoom = zoom;
+    if (m_zoomLabel) {
+        m_zoomLabel->setText(QString("%1x").arg(zoom, 0, 'f', 1));
     }
 }
 

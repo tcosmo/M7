@@ -299,6 +299,22 @@ void ScoreCanvas::setPlaybackTime(double time)
     }
 }
 
+void ScoreCanvas::setPlaying(bool playing)
+{
+    m_playing = playing;
+    update();
+}
+
+void ScoreCanvas::setLastTappedBeat(int beatIndex)
+{
+    m_lastTappedBeat = beatIndex;
+}
+
+void ScoreCanvas::clearLastTappedBeat()
+{
+    m_lastTappedBeat = -1;
+}
+
 void ScoreCanvas::paintSyncDots(QPainter& painter)
 {
     if (!m_score || !m_syncMode) return;
@@ -382,6 +398,28 @@ void ScoreCanvas::paintSyncDots(QPainter& painter)
                 painter.setBrush(Qt::NoBrush);
                 painter.setPen(QPen(QColor(120, 120, 120, 100), pw * 0.5));
                 painter.drawEllipse(dot.center, radius, radius);
+            }
+
+            // Active beat indicator: small orange dot below during playback (not on just-tapped beat)
+            if (m_playing && beats[beatIdx].synced && m_playbackTime >= 0
+                && beatIdx != m_lastTappedBeat
+                && beats[beatIdx].effectiveTime() <= m_playbackTime) {
+                // Only show on the most recently passed synced beat
+                bool isActive = true;
+                for (int j = beatIdx + 1; j < static_cast<int>(beats.size()); ++j) {
+                    if (beats[j].synced) {
+                        if (beats[j].effectiveTime() <= m_playbackTime)
+                            isActive = false;
+                        break;
+                    }
+                }
+                if (isActive) {
+                    double smallRadius = radius * 0.45;
+                    QPointF belowCenter(dot.center.x(), dot.center.y() + radius + smallRadius + pw * 2);
+                    painter.setBrush(QColor(255, 180, 0));
+                    painter.setPen(Qt::NoPen);
+                    painter.drawEllipse(belowCenter, smallRadius, smallRadius);
+                }
             }
 
         }
@@ -634,6 +672,21 @@ void ScoreWidget::setSyncMode(scoretracker::SyncMode* syncMode)
 void ScoreWidget::setPlaybackTime(double time)
 {
     m_canvas->setPlaybackTime(time);
+}
+
+void ScoreWidget::setPlaying(bool playing)
+{
+    m_canvas->setPlaying(playing);
+}
+
+void ScoreWidget::setLastTappedBeat(int beatIndex)
+{
+    m_canvas->setLastTappedBeat(beatIndex);
+}
+
+void ScoreWidget::clearLastTappedBeat()
+{
+    m_canvas->clearLastTappedBeat();
 }
 
 void ScoreWidget::ensureBeatVisible(int beatIndex)

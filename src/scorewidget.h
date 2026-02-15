@@ -45,6 +45,9 @@ public:
     double maxPageWidthScore() const;
     void setSyncMode(scoretracker::SyncMode* syncMode);
     void setPlaybackTime(double time);
+    void setPlaying(bool playing);
+    void setLastTappedBeat(int beatIndex);
+    void clearLastTappedBeat();
     QPoint dotWidgetPos(int beatIndex) const;
 
 signals:
@@ -85,6 +88,8 @@ private:
 
     // Playback position
     double m_playbackTime = -1.0;
+    bool m_playing = false;
+    int m_lastTappedBeat = -1;
 };
 
 class TriggerLineOverlay : public QWidget
@@ -126,6 +131,9 @@ public:
     void setCursorVisible(bool visible);
     void setSyncMode(scoretracker::SyncMode* syncMode);
     void setPlaybackTime(double time);
+    void setPlaying(bool playing);
+    void setLastTappedBeat(int beatIndex);
+    void clearLastTappedBeat();
     void ensureBeatVisible(int beatIndex);
 
 signals:

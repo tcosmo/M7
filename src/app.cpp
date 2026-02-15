@@ -83,13 +83,16 @@ App::App(QWidget* parent)
         if (m_waveformWidget) m_waveformWidget->update();
         int next = m_syncMode->nextUnsyncedBeat();
         if (next >= 0) m_scoreWidget->ensureBeatVisible(next);
+        updateSyncTimerFromSyncMode();
     });
     connect(m_syncMode, &SyncMode::beatAdjusted, this, [this](int) {
         m_scoreWidget->widget()->update();
+        updateSyncTimerFromSyncMode();
     });
     connect(m_syncMode, &SyncMode::beatUnsynced, this, [this](int) {
         m_scoreWidget->widget()->update();
         if (m_syncPanel) m_syncPanel->updateStatus();
+        updateSyncTimerFromSyncMode();
     });
     connect(m_syncMode, &SyncMode::entered, this, [this]() {
         m_scoreWidget->setScore(m_score);
@@ -216,6 +219,7 @@ void App::setupUI()
         playerSeekTo(t);
         m_syncTimer->setTime(t);
         onPositionChanged(t);
+        m_scoreWidget->clearLastTappedBeat();
     });
 
     m_scoreWidget = new ScoreWidget(m_centralSplitter);
@@ -224,6 +228,7 @@ void App::setupUI()
     // Beat click on score → seek audio + scroll waveform + update waveform display
     connect(m_scoreWidget, &ScoreWidget::beatClicked, this, [this](int beatIndex) {
         if (!m_syncMode || beatIndex < 0 || beatIndex >= m_syncMode->totalBeats()) return;
+        m_scoreWidget->clearLastTappedBeat();
         if (m_waveformWidget) m_waveformWidget->widget()->update();
         const auto& beat = m_syncMode->beats()[beatIndex];
         if (beat.synced) {
@@ -237,6 +242,7 @@ void App::setupUI()
     // Beat click on waveform → seek audio + update score display
     connect(m_waveformWidget, &WaveformWidget::beatClicked, this, [this](int beatIndex) {
         if (!m_syncMode || beatIndex < 0 || beatIndex >= m_syncMode->totalBeats()) return;
+        m_scoreWidget->clearLastTappedBeat();
         m_scoreWidget->widget()->update();
         const auto& beat = m_syncMode->beats()[beatIndex];
         if (beat.synced) {
@@ -560,12 +566,15 @@ void App::setupToolbar()
 
     connect(m_audioPlayer, &AudioPlayer::playbackStarted, [this]() {
         m_playPauseAction->setText("Pause");
+        m_scoreWidget->setPlaying(true);
     });
     connect(m_audioPlayer, &AudioPlayer::playbackPaused, [this]() {
         m_playPauseAction->setText("Play");
+        m_scoreWidget->setPlaying(false);
     });
     connect(m_audioPlayer, &AudioPlayer::playbackStopped, [this]() {
         m_playPauseAction->setText("Play");
+        m_scoreWidget->setPlaying(false);
     });
 }
 
@@ -807,6 +816,7 @@ void App::onSeekSliderMoved(int value)
     double seconds = (static_cast<double>(value) / m_seekSlider->maximum()) * duration;
     playerSeekTo(seconds);
     m_syncTimer->setTime(seconds);
+    m_scoreWidget->clearLastTappedBeat();
 }
 
 void App::onPositionChanged(double seconds)
@@ -1028,12 +1038,15 @@ void App::loadYouTube(const QString& url)
     // Connect playback state to toolbar
     connect(m_youtubePlayer, &YouTubePlayer::playbackStarted, [this]() {
         m_playPauseAction->setText("Pause");
+        m_scoreWidget->setPlaying(true);
     });
     connect(m_youtubePlayer, &YouTubePlayer::playbackPaused, [this]() {
         m_playPauseAction->setText("Play");
+        m_scoreWidget->setPlaying(false);
     });
     connect(m_youtubePlayer, &YouTubePlayer::playbackStopped, [this]() {
         m_playPauseAction->setText("Play");
+        m_scoreWidget->setPlaying(false);
     });
 
     // When video is ready, set up seek slider
@@ -1084,12 +1097,14 @@ void App::enterSyncMode()
     m_sidebarAction->blockSignals(false);
     m_sidebarAction->setEnabled(false);
 
-    // Disable tracking
+    // Save original CLI tracking data and turn tracking off
     m_savedTrackingOn = m_trackingAction->isChecked();
-    if (m_savedTrackingOn) {
+    m_savedBeatTimes = m_syncTimer->beatTimes();
+    m_savedMeasureStarts = m_syncTimer->measureStarts();
+    m_savedBeatsPerMeasure = m_syncTimer->beatsPerMeasure();
+    if (m_trackingAction->isChecked()) {
         m_trackingAction->setChecked(false);
     }
-    m_trackingButton->setEnabled(false);
 
     // Switch to file source if currently using YouTube (without auto-playing)
     if (m_useYouTube && m_sourceButton && m_sourceButton->menu()) {
@@ -1108,6 +1123,9 @@ void App::enterSyncMode()
     if (!m_savedSyncState.isEmpty()) {
         m_syncMode->fromJson(m_savedSyncState);
     }
+
+    // Feed sync beat data to SyncTimer for tracking
+    updateSyncTimerFromSyncMode();
 
     // Show waveform
     if (m_waveformWidget) {
@@ -1220,6 +1238,11 @@ void App::exitSyncMode()
         m_syncSidebarHandle->hide();
     }
 
+    // Restore original CLI tracking data
+    m_syncTimer->setBeatTimes(m_savedBeatTimes, m_savedBeatsPerMeasure);
+    m_syncTimer->setMeasureStarts(m_savedMeasureStarts);
+    m_syncTimer->setMeasureIndices({}); // CLI data uses contiguous indices
+
     // Restore tracking
     m_trackingButton->setEnabled(true);
     if (m_savedTrackingOn) {
@@ -1305,6 +1328,37 @@ void App::saveSyncData()
     }
 }
 
+void App::updateSyncTimerFromSyncMode()
+{
+    if (!m_syncMode || !m_syncMode->isActive()) return;
+
+    const auto& beats = m_syncMode->beats();
+    const auto& bpmVec = m_syncMode->beatsPerMeasure();
+    std::vector<double> beatTimes;
+    std::vector<double> measureStarts;
+    std::vector<int> measureIndices;
+
+    int beatIdx = 0;
+    for (size_t mi = 0; mi < bpmVec.size(); ++mi) {
+        bool firstInMeasure = true;
+        for (int b = 0; b < bpmVec[mi] && beatIdx < static_cast<int>(beats.size()); ++b, ++beatIdx) {
+            if (beats[beatIdx].synced) {
+                beatTimes.push_back(beats[beatIdx].effectiveTime());
+                if (firstInMeasure) {
+                    measureStarts.push_back(beats[beatIdx].effectiveTime());
+                    measureIndices.push_back(static_cast<int>(mi));
+                    firstInMeasure = false;
+                }
+            }
+        }
+    }
+
+    int beatsPerMeasure = bpmVec.empty() ? 3 : bpmVec[0];
+    m_syncTimer->setBeatTimes(beatTimes, beatsPerMeasure);
+    m_syncTimer->setMeasureStarts(measureStarts);
+    m_syncTimer->setMeasureIndices(measureIndices);
+}
+
 void App::keyPressEvent(QKeyEvent* event)
 {
     if (m_syncMode->isActive()) {
@@ -1336,7 +1390,9 @@ void App::keyPressEvent(QKeyEvent* event)
             return;
         }
         if (event->key() == Qt::Key_O && playerIsPlaying()) {
+            int next = m_syncMode->nextUnsyncedBeat();
             m_syncMode->recordTap(playerCurrentTime());
+            m_scoreWidget->setLastTappedBeat(next);
             return;
         }
     }

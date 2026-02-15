@@ -35,10 +35,33 @@ void SyncTimer::setBeatTimes(const std::vector<double>& beatTimes, int beatsPerM
     m_beatsPerMeasure = beatsPerMeasure;
 }
 
+void SyncTimer::setMeasureIndices(const std::vector<int>& indices)
+{
+    m_measureIndices = indices;
+}
+
 void SyncTimer::setTime(double seconds)
 {
     m_lastTime = seconds;
-    if (!m_score || m_measureStarts.empty()) return;
+    if (!m_score || m_measureStarts.empty() || m_beatTimes.empty()) return;
+
+    // If time is before the first beat or after the last, keep cursor at last position
+    if (seconds < m_beatTimes.front() || seconds > m_beatTimes.back()) return;
+
+    // Find surrounding beat times and check for gaps (unsynced holes)
+    auto it = std::upper_bound(m_beatTimes.begin(), m_beatTimes.end(), seconds);
+    if (it != m_beatTimes.begin() && it != m_beatTimes.end()) {
+        double prevBeat = *(it - 1);
+        double nextBeat = *it;
+        double gap = nextBeat - prevBeat;
+
+        // Compute typical beat spacing from average
+        double totalSpan = m_beatTimes.back() - m_beatTimes.front();
+        double avgSpacing = totalSpan / static_cast<double>(m_beatTimes.size() - 1);
+
+        // If gap is much larger than average, we're in an unsynced hole — freeze cursor
+        if (gap > avgSpacing * 3.0 && seconds > prevBeat + avgSpacing) return;
+    }
 
     int measureIndex = findMeasureIndex(seconds);
     int pageIndex = 0;
@@ -71,7 +94,12 @@ muse::RectF SyncTimer::resolveCursorRect(int measureIndex, double seconds, int& 
     // A 3/4 measure spans Fraction(3,4)
 
     // Calculate the tick at the start of this measure
-    Fraction measureTick = Fraction(measureIndex * m_beatsPerMeasure, 4);
+    // Use real score measure index if available (for sync mode with gaps)
+    int scoreMeasureIndex = measureIndex;
+    if (measureIndex < static_cast<int>(m_measureIndices.size())) {
+        scoreMeasureIndex = m_measureIndices[measureIndex];
+    }
+    Fraction measureTick = Fraction(scoreMeasureIndex * m_beatsPerMeasure, 4);
 
     // Find how far we are within this measure (fractional position 0..1)
     double measureStartTime = (measureIndex < static_cast<int>(m_measureStarts.size()))

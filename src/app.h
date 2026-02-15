@@ -10,6 +10,7 @@
 #include <QDockWidget>
 #include <QJsonObject>
 #include <memory>
+#include <vector>
 
 namespace mu::engraving {
 class MasterScore;
@@ -71,6 +72,7 @@ private:
     void setupSyncSidebar();
     void repositionSyncSidebar();
     void saveSyncData();
+    void updateSyncTimerFromSyncMode();
 
     // Player dispatch helpers (route to active player)
     void playerPlay();
@@ -118,6 +120,9 @@ private:
     bool m_savedSidebarVisible = true;
     bool m_savedTrackingOn = false;
     QJsonObject m_savedSyncState;
+    std::vector<double> m_savedBeatTimes;
+    std::vector<double> m_savedMeasureStarts;
+    int m_savedBeatsPerMeasure = 3;
 
     // Score
     mu::engraving::MasterScore* m_score = nullptr;

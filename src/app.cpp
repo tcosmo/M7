@@ -1104,6 +1104,11 @@ void App::enterSyncMode()
 
     m_syncMode->enter(m_score, m_renderer.get());
 
+    // Restore previously saved sync state
+    if (!m_savedSyncState.isEmpty()) {
+        m_syncMode->fromJson(m_savedSyncState);
+    }
+
     // Show waveform
     if (m_waveformWidget) {
         if (!m_audioFilePath.isEmpty()) {
@@ -1196,6 +1201,9 @@ void App::enterSyncMode()
 
 void App::exitSyncMode()
 {
+    // Save sync state before exiting
+    m_savedSyncState = m_syncMode->toJson();
+
     m_scoreWidget->setSyncMode(nullptr);
     m_syncMode->exit();
 
@@ -1308,6 +1316,22 @@ void App::keyPressEvent(QKeyEvent* event)
                 m_syncMode->setNextUnsyncedFrom(next);
                 m_scoreWidget->widget()->update();
                 if (m_waveformWidget) m_waveformWidget->widget()->update();
+            }
+            return;
+        }
+        // Escape: deselect and move next-to-tap to next unsynced beat
+        if (event->key() == Qt::Key_Escape) {
+            int next = m_syncMode->nextUnsyncedBeat();
+            if (next >= 0) {
+                const auto& beats = m_syncMode->beats();
+                for (int i = next; i < static_cast<int>(beats.size()); ++i) {
+                    if (!beats[i].synced) {
+                        m_syncMode->setNextUnsyncedFrom(i);
+                        m_scoreWidget->widget()->update();
+                        if (m_waveformWidget) m_waveformWidget->widget()->update();
+                        break;
+                    }
+                }
             }
             return;
         }

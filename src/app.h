@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QSplitter>
 #include <QDockWidget>
+#include <QJsonObject>
 #include <memory>
 
 namespace mu::engraving {
@@ -116,6 +117,7 @@ private:
     QSplitter* m_centralSplitter = nullptr;
     bool m_savedSidebarVisible = true;
     bool m_savedTrackingOn = false;
+    QJsonObject m_savedSyncState;
 
     // Score
     mu::engraving::MasterScore* m_score = nullptr;

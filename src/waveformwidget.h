@@ -28,7 +28,6 @@ public:
     double xToTime(int x) const;
     void computePeaks();
     void updateWidth();
-    void setSelectedBeat(int beatIndex);
     void setShowSpectrogram(bool show);
     bool showSpectrogram() const { return m_showSpectrogram; }
     void renderSpectrogramImage();
@@ -58,8 +57,8 @@ private:
     double m_zoom = 1.0;
     SyncMode* m_syncMode = nullptr;
 
-    int m_selectedBeat = -1;
     bool m_dragging = false;
+    int m_dragBeatIndex = -1;
     int m_dragStartX = 0;
     double m_dragStartTime = 0.0;
 
@@ -84,7 +83,6 @@ public:
     void setDuration(double duration);
     void setWaveformZoom(double zoom);
     double waveformZoom() const;
-    void setSelectedBeat(int beatIndex);
     void setRightMargin(int margin);
     void setShowSpectrogram(bool show);
     void scrollToTime(double time);
@@ -98,6 +96,7 @@ signals:
 protected:
     void wheelEvent(QWheelEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    bool event(QEvent* event) override;
 
 private:
     void ensureCursorVisible();

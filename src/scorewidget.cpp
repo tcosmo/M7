@@ -367,8 +367,6 @@ void ScoreCanvas::paintSyncDots(QPainter& painter)
             dot.radius = radius;
             m_dotInfos.push_back(dot);
 
-            bool selected = (beatIdx == m_selectedBeatIndex);
-
             double pw = 0.3 * spatium * s; // pen width in score-proportional pixels
 
             if (beatIdx == nextUnsynced) {
@@ -384,13 +382,6 @@ void ScoreCanvas::paintSyncDots(QPainter& painter)
                 painter.setBrush(Qt::NoBrush);
                 painter.setPen(QPen(QColor(120, 120, 120, 100), pw * 0.5));
                 painter.drawEllipse(dot.center, radius, radius);
-            }
-
-            // Selection ring (orange)
-            if (selected) {
-                painter.setBrush(Qt::NoBrush);
-                painter.setPen(QPen(QColor(255, 180, 0), pw));
-                painter.drawEllipse(dot.center, radius + pw * 2, radius + pw * 2);
             }
 
         }
@@ -414,22 +405,10 @@ void ScoreCanvas::mousePressEvent(QMouseEvent* event)
     if (m_syncMode && m_syncMode->isActive() && event->button() == Qt::LeftButton) {
         int hit = hitTestDot(event->pos());
         if (hit >= 0) {
-            const auto& beat = m_syncMode->beats()[hit];
-            if (beat.synced) {
-                m_selectedBeatIndex = hit;
-                emit beatClicked(hit);
-            } else {
-                m_selectedBeatIndex = -1;
-                m_syncMode->setNextUnsyncedFrom(hit);
-            }
+            m_syncMode->setNextUnsyncedFrom(hit);
+            emit beatClicked(hit);
             update();
             return;
-        }
-        // Click outside dots deselects
-        if (m_selectedBeatIndex >= 0) {
-            m_selectedBeatIndex = -1;
-            emit beatClicked(-1);
-            update();
         }
     }
     QWidget::mousePressEvent(event);
@@ -684,22 +663,6 @@ void ScoreWidget::ensureBeatVisible(int beatIndex)
     }
 }
 
-int ScoreWidget::selectedBeatIndex() const
-{
-    return m_canvas->selectedBeatIndex();
-}
-
-void ScoreWidget::setSelectedBeat(int beatIndex)
-{
-    m_canvas->setSelectedBeat(beatIndex);
-}
-
-void ScoreCanvas::setSelectedBeat(int beatIndex)
-{
-    if (m_selectedBeatIndex == beatIndex) return;
-    m_selectedBeatIndex = beatIndex;
-    update();
-}
 
 void ScoreWidget::ensureCursorVisible()
 {

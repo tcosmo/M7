@@ -8,12 +8,12 @@
 #include <QPainter>
 #include <QMouseEvent>
 #include <QKeyEvent>
+#include <QNativeGestureEvent>
 #include <QScrollBar>
 #include <cmath>
 
 namespace scoretracker {
 
-static const int DOT_RADIUS = 5;
 static const double KEY_ADJUST_STEP = 0.01; // 10ms per arrow key press
 static const int WAVEFORM_HEIGHT = 250;
 static const int SPECTROGRAM_HEIGHT = 100;
@@ -155,7 +155,6 @@ void WaveformCanvas::computePeaks()
 void WaveformCanvas::setSyncMode(SyncMode* syncMode)
 {
     m_syncMode = syncMode;
-    m_selectedBeat = -1;
     update();
 }
 
@@ -189,17 +188,13 @@ int WaveformCanvas::hitTestDot(const QPoint& pos) const
 {
     if (!m_syncMode || m_duration <= 0) return -1;
 
-    int waveH = m_showSpectrogram ? height() / 2 : height();
-    int midY = waveH / 2;
-    int hitRadius = DOT_RADIUS + 3;
+    int hitMargin = 5;
     const auto& beats = m_syncMode->beats();
 
     for (size_t i = 0; i < beats.size(); ++i) {
         if (!beats[i].synced) continue;
         int dx = timeToX(beats[i].effectiveTime());
-        int distX = pos.x() - dx;
-        int distY = pos.y() - midY;
-        if (distX * distX + distY * distY <= hitRadius * hitRadius) {
+        if (std::abs(pos.x() - dx) <= hitMargin) {
             return static_cast<int>(i);
         }
     }
@@ -209,11 +204,14 @@ int WaveformCanvas::hitTestDot(const QPoint& pos) const
 void WaveformCanvas::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing, true);
     int w = width();
     int h = height();
+    p.setClipRect(0, 0, w, h);
     int waveH = m_showSpectrogram ? h / 2 : h;
     int midY = waveH / 2;
+
+    // Clear background
+    p.fillRect(0, 0, w, h, QColor(37, 37, 37));
 
     if (static_cast<int>(m_peaks.size()) != w && !m_samples.empty()) {
         computePeaks();
@@ -239,27 +237,22 @@ void WaveformCanvas::paintEvent(QPaintEvent*)
         p.drawImage(destRect, m_spectrogramImage);
     }
 
-    p.setRenderHint(QPainter::Antialiasing, true);
-
-    // Draw sync dots
+    // Draw sync lines
     if (m_syncMode && m_duration > 0) {
+        int nextToTap = m_syncMode->nextUnsyncedBeat();
         const auto& beats = m_syncMode->beats();
         for (size_t i = 0; i < beats.size(); ++i) {
             if (!beats[i].synced) continue;
             int dx = timeToX(beats[i].effectiveTime());
-            QPointF center(dx, midY);
 
-            // Blue filled dot
-            p.setBrush(QColor(30, 120, 255));
-            p.setPen(Qt::NoPen);
-            p.drawEllipse(center, DOT_RADIUS, DOT_RADIUS);
-
-            // Orange selection ring
-            if (static_cast<int>(i) == m_selectedBeat) {
-                p.setBrush(Qt::NoBrush);
-                p.setPen(QPen(QColor(255, 180, 0), 1.5));
-                p.drawEllipse(center, DOT_RADIUS + 3, DOT_RADIUS + 3);
+            if (static_cast<int>(i) == nextToTap) {
+                // Next-to-tap: bright orange line
+                p.setPen(QPen(QColor(255, 180, 0), 2));
+            } else {
+                // Synced: blue line
+                p.setPen(QPen(QColor(30, 120, 255, 180), 1));
             }
+            p.drawLine(dx, 0, dx, waveH);
         }
     }
 
@@ -271,32 +264,28 @@ void WaveformCanvas::paintEvent(QPaintEvent*)
     }
 }
 
-void WaveformCanvas::setSelectedBeat(int beatIndex)
-{
-    if (m_selectedBeat == beatIndex) return;
-    m_selectedBeat = beatIndex;
-    update();
-}
-
 void WaveformCanvas::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() != Qt::LeftButton || m_duration <= 0) return;
 
     int hit = hitTestDot(event->pos());
     if (hit >= 0) {
-        m_selectedBeat = hit;
-        m_dragging = true;
-        m_dragStartX = event->pos().x();
-        m_dragStartTime = m_syncMode->beats()[hit].effectiveTime();
-        setCursor(Qt::SizeHorCursor);
+        if (m_syncMode) {
+            m_syncMode->setNextUnsyncedFrom(hit);
+            if (m_syncMode->beats()[hit].synced) {
+                m_dragging = true;
+                m_dragBeatIndex = hit;
+                m_dragStartX = event->pos().x();
+                m_dragStartTime = m_syncMode->beats()[hit].effectiveTime();
+                setCursor(Qt::SizeHorCursor);
+            }
+        }
         setFocus();
         emit beatClicked(hit);
         update();
         return;
     }
 
-    m_selectedBeat = -1;
-    emit beatClicked(-1);
     double t = xToTime(event->pos().x());
     m_playbackTime = t;
     emit seekRequested(t);
@@ -305,12 +294,27 @@ void WaveformCanvas::mousePressEvent(QMouseEvent* event)
 
 void WaveformCanvas::mouseMoveEvent(QMouseEvent* event)
 {
-    if (m_dragging && m_selectedBeat >= 0 && m_syncMode) {
+    if (m_dragging && m_dragBeatIndex >= 0 && m_syncMode) {
         double newTime = xToTime(event->pos().x());
         newTime = std::max(0.0, std::min(newTime, m_duration));
-        double delta = newTime - m_syncMode->beats()[m_selectedBeat].effectiveTime();
-        m_syncMode->adjustBeat(m_selectedBeat, delta);
-        emit beatTimeChanged(m_selectedBeat, newTime);
+
+        // Clamp between previous and next synced beats
+        const auto& beats = m_syncMode->beats();
+        double minTime = 0.0;
+        double maxTime = m_duration;
+        for (int i = m_dragBeatIndex - 1; i >= 0; --i) {
+            if (beats[i].synced) { minTime = beats[i].effectiveTime(); break; }
+        }
+        for (int i = m_dragBeatIndex + 1; i < static_cast<int>(beats.size()); ++i) {
+            if (beats[i].synced) { maxTime = beats[i].effectiveTime(); break; }
+        }
+        newTime = std::max(minTime, std::min(newTime, maxTime));
+
+        double delta = newTime - beats[m_dragBeatIndex].effectiveTime();
+        m_syncMode->adjustBeat(m_dragBeatIndex, delta);
+        m_playbackTime = newTime;
+        emit seekRequested(newTime);
+        emit beatTimeChanged(m_dragBeatIndex, newTime);
         update();
         return;
     }
@@ -323,35 +327,13 @@ void WaveformCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton && m_dragging) {
         m_dragging = false;
+        m_dragBeatIndex = -1;
         setCursor(Qt::ArrowCursor);
     }
 }
 
 void WaveformCanvas::keyPressEvent(QKeyEvent* event)
 {
-    if (m_selectedBeat >= 0 && m_syncMode) {
-        double step = KEY_ADJUST_STEP;
-        if (event->modifiers() & Qt::ShiftModifier) step *= 10;
-
-        if (event->key() == Qt::Key_Left) {
-            m_syncMode->adjustBeat(m_selectedBeat, -step);
-            emit beatTimeChanged(m_selectedBeat, m_syncMode->beats()[m_selectedBeat].effectiveTime());
-            update();
-            return;
-        }
-        if (event->key() == Qt::Key_Right) {
-            m_syncMode->adjustBeat(m_selectedBeat, step);
-            emit beatTimeChanged(m_selectedBeat, m_syncMode->beats()[m_selectedBeat].effectiveTime());
-            update();
-            return;
-        }
-        if (event->key() == Qt::Key_Escape) {
-            m_selectedBeat = -1;
-            emit beatClicked(-1);
-            update();
-            return;
-        }
-    }
     QWidget::keyPressEvent(event);
 }
 
@@ -507,10 +489,6 @@ void WaveformWidget::setDuration(double duration)
     m_canvas->setDuration(duration);
 }
 
-void WaveformWidget::setSelectedBeat(int beatIndex)
-{
-    m_canvas->setSelectedBeat(beatIndex);
-}
 
 void WaveformWidget::setRightMargin(int margin)
 {
@@ -530,6 +508,22 @@ void WaveformWidget::setWaveformZoom(double zoom)
 double WaveformWidget::waveformZoom() const
 {
     return m_canvas->waveformZoom();
+}
+
+bool WaveformWidget::event(QEvent* event)
+{
+    if (event->type() == QEvent::NativeGesture) {
+        auto* gesture = static_cast<QNativeGestureEvent*>(event);
+        if (gesture->gestureType() == Qt::ZoomNativeGesture) {
+            double delta = gesture->value(); // +/- fraction
+            double newZoom = m_canvas->waveformZoom() * (1.0 + delta);
+            m_canvas->setWaveformZoom(newZoom);
+            emit zoomChanged(m_canvas->waveformZoom());
+            ensureCursorVisible();
+            return true;
+        }
+    }
+    return QScrollArea::event(event);
 }
 
 void WaveformWidget::wheelEvent(QWheelEvent* event)

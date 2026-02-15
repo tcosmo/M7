@@ -221,9 +221,10 @@ void App::setupUI()
     m_scoreWidget = new ScoreWidget(m_centralSplitter);
     m_centralSplitter->addWidget(m_scoreWidget);
 
-    // Beat click on score → seek audio + scroll waveform
+    // Beat click on score → seek audio + scroll waveform + update waveform display
     connect(m_scoreWidget, &ScoreWidget::beatClicked, this, [this](int beatIndex) {
         if (!m_syncMode || beatIndex < 0 || beatIndex >= m_syncMode->totalBeats()) return;
+        if (m_waveformWidget) m_waveformWidget->widget()->update();
         const auto& beat = m_syncMode->beats()[beatIndex];
         if (beat.synced) {
             playerSeekTo(beat.effectiveTime());
@@ -233,9 +234,10 @@ void App::setupUI()
         }
     });
 
-    // Beat click on waveform → seek audio
+    // Beat click on waveform → seek audio + update score display
     connect(m_waveformWidget, &WaveformWidget::beatClicked, this, [this](int beatIndex) {
         if (!m_syncMode || beatIndex < 0 || beatIndex >= m_syncMode->totalBeats()) return;
+        m_scoreWidget->widget()->update();
         const auto& beat = m_syncMode->beats()[beatIndex];
         if (beat.synced) {
             playerSeekTo(beat.effectiveTime());
@@ -1182,12 +1184,6 @@ void App::enterSyncMode()
         connect(m_waveformWidget, &WaveformWidget::zoomChanged, m_syncPanel, &SyncPanel::setWaveformZoom,
                 Qt::UniqueConnection);
 
-        // Sync dot selection between score and waveform
-        connect(m_scoreWidget, &ScoreWidget::beatClicked, m_waveformWidget, &WaveformWidget::setSelectedBeat,
-                Qt::UniqueConnection);
-        connect(m_waveformWidget, &WaveformWidget::beatClicked, m_scoreWidget, &ScoreWidget::setSelectedBeat,
-                Qt::UniqueConnection);
-
         // Waveform beat click also shows info in sync panel
         connect(m_waveformWidget, &WaveformWidget::beatClicked, m_syncPanel, &SyncPanel::showBeatInfo,
                 Qt::UniqueConnection);
@@ -1304,12 +1300,14 @@ void App::saveSyncData()
 void App::keyPressEvent(QKeyEvent* event)
 {
     if (m_syncMode->isActive()) {
-        // Delete/Backspace: unsync the selected beat
+        // Delete/Backspace: unsync the next-to-tap beat
         if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-            int sel = m_scoreWidget->selectedBeatIndex();
-            if (sel >= 0) {
-                m_syncMode->unsyncBeat(sel);
-                m_syncPanel->showBeatInfo(sel);
+            int next = m_syncMode->nextUnsyncedBeat();
+            if (next >= 0 && m_syncMode->beats()[next].synced) {
+                m_syncMode->unsyncBeat(next);
+                m_syncMode->setNextUnsyncedFrom(next);
+                m_scoreWidget->widget()->update();
+                if (m_waveformWidget) m_waveformWidget->widget()->update();
             }
             return;
         }

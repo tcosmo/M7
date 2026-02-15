@@ -45,8 +45,6 @@ public:
     double maxPageWidthScore() const;
     void setSyncMode(scoretracker::SyncMode* syncMode);
     void setPlaybackTime(double time);
-    int selectedBeatIndex() const { return m_selectedBeatIndex; }
-    void setSelectedBeat(int beatIndex);
     QPoint dotWidgetPos(int beatIndex) const;
 
 signals:
@@ -80,7 +78,6 @@ private:
 
     // Sync dots
     std::vector<DotInfo> m_dotInfos;
-    int m_selectedBeatIndex = -1;
 
     // Manual double-click detection
     QElapsedTimer m_lastClickTimer;
@@ -130,8 +127,6 @@ public:
     void setSyncMode(scoretracker::SyncMode* syncMode);
     void setPlaybackTime(double time);
     void ensureBeatVisible(int beatIndex);
-    int selectedBeatIndex() const;
-    void setSelectedBeat(int beatIndex);
 
 signals:
     void zoomChanged(double zoom);

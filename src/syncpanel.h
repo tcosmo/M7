@@ -22,10 +22,12 @@ public:
     void showBeatInfo(int beatIndex);
 
     void setWaveformZoom(double zoom);
+    void setBeatDataPath(const QString& path);
 
 signals:
-    void exportRequested();
-    void clearRequested();
+    void saveRequested();
+    void newSyncRequested();
+    void reloadRequested();
     void beatTimeChanged(int beatIndex, double newTime);
     void waveformZoomRequested(double zoom);
     void spectrogramToggled(bool show);
@@ -38,8 +40,10 @@ private:
     QWidget* m_timeEditWidget = nullptr;
     QDoubleSpinBox* m_timeSpinBox = nullptr;
     QLabel* m_zoomLabel = nullptr;
-    QPushButton* m_exportButton = nullptr;
-    QPushButton* m_clearButton = nullptr;
+    QLabel* m_filePathLabel = nullptr;
+    QPushButton* m_saveButton = nullptr;
+    QPushButton* m_newSyncButton = nullptr;
+    QPushButton* m_reloadButton = nullptr;
     int m_selectedBeatIndex = -1;
     double m_waveformZoom = 1.0;
 };

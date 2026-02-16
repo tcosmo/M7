@@ -735,6 +735,8 @@ void App::startSyncMode()
 
 bool App::loadBeatData(const QString& jsonPath)
 {
+    m_beatDataPath = QFileInfo(jsonPath).absoluteFilePath();
+
     QFile file(jsonPath);
     if (!file.open(QIODevice::ReadOnly)) {
         qWarning() << "Failed to open beat data file:" << jsonPath;
@@ -780,7 +782,15 @@ bool App::loadBeatData(const QString& jsonPath)
         }
     }
 
+    // Compute tick position for each beat (each beat = quarter note = 480 ticks)
+    std::vector<int> beatTicks;
+    beatTicks.reserve(beatTimes.size());
+    for (size_t i = 0; i < beatTimes.size(); ++i) {
+        beatTicks.push_back(static_cast<int>(i) * 480);
+    }
+
     m_syncTimer->setBeatTimes(beatTimes, beatsPerMeasure);
+    m_syncTimer->setBeatTicks(beatTicks);
     m_syncTimer->setMeasureStarts(measureStarts);
 
     qDebug() << "Loaded beat data:" << beatTimes.size() << "beats,"
@@ -1116,9 +1126,13 @@ void App::enterSyncMode()
     m_sidebarAction->blockSignals(false);
     m_sidebarAction->setEnabled(false);
 
-    // Save original CLI tracking data
+    // Save original CLI tracking data and auto-scroll state
     m_savedTrackingOn = m_trackingAction->isChecked();
+    m_savedAutoScroll = m_trackingSettings->autoScrollEnabled();
+    m_trackingSettings->setAutoScrollEnabled(false);
+    m_scoreWidget->setAutoScrollEnabled(false);
     m_savedBeatTimes = m_syncTimer->beatTimes();
+    m_savedBeatTicks = m_syncTimer->beatTicks();
     m_savedMeasureStarts = m_syncTimer->measureStarts();
     m_savedBeatsPerMeasure = m_syncTimer->beatsPerMeasure();
 
@@ -1135,9 +1149,17 @@ void App::enterSyncMode()
 
     m_syncMode->enter(m_score, m_renderer.get());
 
-    // Restore previously saved sync state
+    // Load sync state: prefer saved in-session state, then CLI file data
     if (!m_savedSyncState.isEmpty()) {
         m_syncMode->fromJson(m_savedSyncState);
+    } else if (!m_beatDataPath.isEmpty()) {
+        QFile f(m_beatDataPath);
+        if (f.open(QIODevice::ReadOnly)) {
+            QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+            if (doc.isObject()) {
+                m_syncMode->fromJson(doc.object());
+            }
+        }
     }
 
     // Feed sync beat data to SyncTimer for tracking
@@ -1176,6 +1198,7 @@ void App::enterSyncMode()
     // Setup and show sync sidebar
     setupSyncSidebar();
     m_syncPanel->setSyncMode(m_syncMode);
+    m_syncPanel->setBeatDataPath(m_beatDataPath);
     m_syncSidebarWidget->show();
     m_syncSidebarHandle->show();
     repositionSyncSidebar();
@@ -1256,11 +1279,14 @@ void App::exitSyncMode()
 
     // Restore original CLI tracking data
     m_syncTimer->setBeatTimes(m_savedBeatTimes, m_savedBeatsPerMeasure);
+    m_syncTimer->setBeatTicks(m_savedBeatTicks);
     m_syncTimer->setMeasureStarts(m_savedMeasureStarts);
     m_syncTimer->setMeasureIndices({}); // CLI data uses contiguous indices
 
-    // Restore tracking and refresh cursor to current time
+    // Restore tracking, auto-scroll, and refresh cursor to current time
     m_trackingButton->setEnabled(true);
+    m_trackingSettings->setAutoScrollEnabled(m_savedAutoScroll);
+    m_scoreWidget->setAutoScrollEnabled(m_savedAutoScroll);
     if (m_savedTrackingOn) {
         m_trackingAction->setChecked(true);
         m_syncTimer->setTime(playerCurrentTime());
@@ -1297,16 +1323,36 @@ void App::setupSyncSidebar()
     spacer->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     layout->addWidget(spacer);
 
-    connect(m_syncPanel, &SyncPanel::exportRequested, this, &App::saveSyncData);
-    connect(m_syncPanel, &SyncPanel::clearRequested, this, [this]() {
+    connect(m_syncPanel, &SyncPanel::saveRequested, this, &App::saveSyncData);
+    connect(m_syncPanel, &SyncPanel::newSyncRequested, this, [this]() {
         // Re-enter sync mode to clear all data
         if (m_syncMode->isActive()) {
             m_syncMode->exit();
             m_syncMode->enter(m_score, m_renderer.get());
             m_syncPanel->setSyncMode(m_syncMode);
+            m_syncPanel->updateStatus();
             m_scoreWidget->setSyncMode(m_syncMode);
             m_scoreWidget->setScore(m_score);
+            if (m_waveformWidget) m_waveformWidget->setSyncMode(m_syncMode);
+            updateSyncTimerFromSyncMode();
         }
+    });
+    connect(m_syncPanel, &SyncPanel::reloadRequested, this, [this]() {
+        if (!m_syncMode->isActive() || m_beatDataPath.isEmpty()) return;
+        QFile f(m_beatDataPath);
+        if (!f.open(QIODevice::ReadOnly)) return;
+        QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        if (!doc.isObject()) return;
+        // Re-enter and load from file
+        m_syncMode->exit();
+        m_syncMode->enter(m_score, m_renderer.get());
+        m_syncMode->fromJson(doc.object());
+        m_syncPanel->setSyncMode(m_syncMode);
+        m_syncPanel->updateStatus();
+        m_scoreWidget->setSyncMode(m_syncMode);
+        m_scoreWidget->setScore(m_score);
+        if (m_waveformWidget) m_waveformWidget->setSyncMode(m_syncMode);
+        updateSyncTimerFromSyncMode();
     });
 
     // Drag handle
@@ -1331,17 +1377,16 @@ void App::repositionSyncSidebar()
 
 void App::saveSyncData()
 {
-    if (!m_syncMode->isActive()) return;
+    if (!m_syncMode->isActive() || m_beatDataPath.isEmpty()) return;
 
     QJsonObject obj = m_syncMode->toJson();
     QJsonDocument doc(obj);
 
-    QString path = QCoreApplication::applicationDirPath() + "/beatdata.json";
-    QFile file(path);
+    QFile file(m_beatDataPath);
     if (file.open(QIODevice::WriteOnly)) {
         file.write(doc.toJson(QJsonDocument::Indented));
         file.close();
-        qDebug() << "Saved sync data to" << path;
+        qDebug() << "Saved sync data to" << m_beatDataPath;
     }
 }
 
@@ -1352,6 +1397,7 @@ void App::updateSyncTimerFromSyncMode()
     const auto& beats = m_syncMode->beats();
     const auto& bpmVec = m_syncMode->beatsPerMeasure();
     std::vector<double> beatTimes;
+    std::vector<int> beatTicks;
     std::vector<double> measureStarts;
     std::vector<int> measureIndices;
 
@@ -1361,6 +1407,7 @@ void App::updateSyncTimerFromSyncMode()
         for (int b = 0; b < bpmVec[mi] && beatIdx < static_cast<int>(beats.size()); ++b, ++beatIdx) {
             if (beats[beatIdx].synced) {
                 beatTimes.push_back(beats[beatIdx].effectiveTime());
+                beatTicks.push_back(beatIdx * 480);
                 if (firstInMeasure) {
                     measureStarts.push_back(beats[beatIdx].effectiveTime());
                     measureIndices.push_back(static_cast<int>(mi));
@@ -1372,6 +1419,7 @@ void App::updateSyncTimerFromSyncMode()
 
     int beatsPerMeasure = bpmVec.empty() ? 3 : bpmVec[0];
     m_syncTimer->setBeatTimes(beatTimes, beatsPerMeasure);
+    m_syncTimer->setBeatTicks(beatTicks);
     m_syncTimer->setMeasureStarts(measureStarts);
     m_syncTimer->setMeasureIndices(measureIndices);
 }

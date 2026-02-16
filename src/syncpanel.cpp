@@ -120,20 +120,32 @@ SyncPanel::SyncPanel(QWidget* parent)
 
     layout->addSpacing(4);
 
-    m_exportButton = new QPushButton("Export beatdata.json");
-    m_exportButton->setCursor(Qt::PointingHandCursor);
-    m_exportButton->setFocusPolicy(Qt::NoFocus);
-    layout->addWidget(m_exportButton);
+    m_filePathLabel = new QLabel();
+    m_filePathLabel->setWordWrap(true);
+    m_filePathLabel->setStyleSheet(QString("color: %1; font-size: 10px;")
+        .arg(Theme::textSecondary().name()));
+    layout->addWidget(m_filePathLabel);
 
-    m_clearButton = new QPushButton("Clear All");
-    m_clearButton->setCursor(Qt::PointingHandCursor);
-    m_clearButton->setFocusPolicy(Qt::NoFocus);
-    layout->addWidget(m_clearButton);
+    m_saveButton = new QPushButton("Save");
+    m_saveButton->setCursor(Qt::PointingHandCursor);
+    m_saveButton->setFocusPolicy(Qt::NoFocus);
+    layout->addWidget(m_saveButton);
+
+    m_reloadButton = new QPushButton("Reload from file");
+    m_reloadButton->setCursor(Qt::PointingHandCursor);
+    m_reloadButton->setFocusPolicy(Qt::NoFocus);
+    layout->addWidget(m_reloadButton);
+
+    m_newSyncButton = new QPushButton("New Sync");
+    m_newSyncButton->setCursor(Qt::PointingHandCursor);
+    m_newSyncButton->setFocusPolicy(Qt::NoFocus);
+    layout->addWidget(m_newSyncButton);
 
     layout->addStretch();
 
-    connect(m_exportButton, &QPushButton::clicked, this, &SyncPanel::exportRequested);
-    connect(m_clearButton, &QPushButton::clicked, this, &SyncPanel::clearRequested);
+    connect(m_saveButton, &QPushButton::clicked, this, &SyncPanel::saveRequested);
+    connect(m_newSyncButton, &QPushButton::clicked, this, &SyncPanel::newSyncRequested);
+    connect(m_reloadButton, &QPushButton::clicked, this, &SyncPanel::reloadRequested);
 }
 
 void SyncPanel::setSyncMode(SyncMode* syncMode)
@@ -193,6 +205,20 @@ void SyncPanel::setWaveformZoom(double zoom)
     m_waveformZoom = zoom;
     if (m_zoomLabel) {
         m_zoomLabel->setText(QString("%1x").arg(zoom, 0, 'f', 1));
+    }
+}
+
+void SyncPanel::setBeatDataPath(const QString& path)
+{
+    if (path.isEmpty()) {
+        m_filePathLabel->setVisible(false);
+        m_saveButton->setEnabled(false);
+        m_reloadButton->setEnabled(false);
+    } else {
+        m_filePathLabel->setText(QString("File: %1").arg(path));
+        m_filePathLabel->setVisible(true);
+        m_saveButton->setEnabled(true);
+        m_reloadButton->setEnabled(true);
     }
 }
 

@@ -35,6 +35,11 @@ void SyncTimer::setBeatTimes(const std::vector<double>& beatTimes, int beatsPerM
     m_beatsPerMeasure = beatsPerMeasure;
 }
 
+void SyncTimer::setBeatTicks(const std::vector<int>& beatTicks)
+{
+    m_beatTicks = beatTicks;
+}
+
 void SyncTimer::setMeasureIndices(const std::vector<int>& indices)
 {
     m_measureIndices = indices;
@@ -43,30 +48,62 @@ void SyncTimer::setMeasureIndices(const std::vector<int>& indices)
 void SyncTimer::setTime(double seconds)
 {
     m_lastTime = seconds;
-    if (!m_score || m_measureStarts.empty() || m_beatTimes.empty()) return;
+    if (!m_score || m_beatTimes.empty() || m_beatTicks.empty()) return;
 
-    // If time is before the first beat or after the last, keep cursor at last position
-    if (seconds < m_beatTimes.front() || seconds > m_beatTimes.back()) return;
+    // If time is before the first beat, snap cursor to the first beat
+    if (seconds < m_beatTimes.front()) {
+        Fraction tick = Fraction::fromTicks(m_beatTicks.front());
+        int pageIndex = 0;
+        muse::RectF rect = resolveCursorRect(tick, pageIndex);
+        emit cursorRectChanged(rect, pageIndex);
+        return;
+    }
 
-    // Find surrounding beat times and check for gaps (unsynced holes)
+    // If time is after the last beat, keep cursor at last position
+    if (seconds > m_beatTimes.back()) return;
+
+    // Find surrounding beats via binary search
     auto it = std::upper_bound(m_beatTimes.begin(), m_beatTimes.end(), seconds);
-    if (it != m_beatTimes.begin() && it != m_beatTimes.end()) {
-        double prevBeat = *(it - 1);
-        double nextBeat = *it;
+    if (it == m_beatTimes.begin()) return;
+
+    size_t nextIdx = static_cast<size_t>(it - m_beatTimes.begin());
+    size_t prevIdx = nextIdx - 1;
+
+    // In sync mode (m_measureIndices non-empty), check for gaps from unsynced holes
+    if (!m_measureIndices.empty() && nextIdx < m_beatTimes.size()) {
+        double prevBeat = m_beatTimes[prevIdx];
+        double nextBeat = m_beatTimes[nextIdx];
         double gap = nextBeat - prevBeat;
 
-        // Compute typical beat spacing from average
         double totalSpan = m_beatTimes.back() - m_beatTimes.front();
         double avgSpacing = totalSpan / static_cast<double>(m_beatTimes.size() - 1);
 
-        // If gap is much larger than average, we're in an unsynced hole — freeze cursor
         if (gap > avgSpacing * 3.0 && seconds > prevBeat + avgSpacing) return;
     }
 
-    int measureIndex = findMeasureIndex(seconds);
+    // Interpolate tick position between surrounding beats
+    double prevTime = m_beatTimes[prevIdx];
+    int prevTick = m_beatTicks[prevIdx];
+    int nextTick;
+    double nextTime;
+
+    if (nextIdx < m_beatTimes.size()) {
+        nextTime = m_beatTimes[nextIdx];
+        nextTick = m_beatTicks[nextIdx];
+    } else {
+        // Past the last beat — extrapolate one beat forward
+        nextTime = prevTime + 1.0;
+        nextTick = prevTick + 480; // one quarter note
+    }
+
+    double t = (nextTime > prevTime) ? (seconds - prevTime) / (nextTime - prevTime) : 0.0;
+    t = std::clamp(t, 0.0, 1.0);
+
+    int interpTick = prevTick + static_cast<int>(t * (nextTick - prevTick));
+    Fraction tick = Fraction::fromTicks(interpTick);
+
     int pageIndex = 0;
-    muse::RectF rect = resolveCursorRect(measureIndex, seconds, pageIndex);
-    m_lastMeasureIndex = measureIndex;
+    muse::RectF rect = resolveCursorRect(tick, pageIndex);
     emit cursorRectChanged(rect, pageIndex);
 }
 
@@ -75,52 +112,14 @@ void SyncTimer::refresh()
     setTime(m_lastTime);
 }
 
-int SyncTimer::findMeasureIndex(double seconds) const
-{
-    // Binary search for the measure containing this time
-    auto it = std::upper_bound(m_measureStarts.begin(), m_measureStarts.end(), seconds);
-    if (it == m_measureStarts.begin()) return 0;
-    return static_cast<int>(std::distance(m_measureStarts.begin(), it) - 1);
-}
-
-muse::RectF SyncTimer::resolveCursorRect(int measureIndex, double seconds, int& outPageIndex) const
+muse::RectF SyncTimer::resolveCursorRect(const Fraction& tick, int& outPageIndex) const
 {
     outPageIndex = 0;
     if (!m_score) return muse::RectF();
 
-    // Convert measure index to a tick position
-    // Each measure in 3/4 time has 3 quarter notes = 3 * 480 ticks (at standard MIDI resolution)
-    // MuseScore uses Fraction for ticks: 1 quarter note = Fraction(1,4)
-    // A 3/4 measure spans Fraction(3,4)
-
-    // Calculate the tick at the start of this measure
-    // Use real score measure index if available (for sync mode with gaps)
-    int scoreMeasureIndex = measureIndex;
-    if (measureIndex < static_cast<int>(m_measureIndices.size())) {
-        scoreMeasureIndex = m_measureIndices[measureIndex];
-    }
-    Fraction measureTick = Fraction(scoreMeasureIndex * m_beatsPerMeasure, 4);
-
-    // Find how far we are within this measure (fractional position 0..1)
-    double measureStartTime = (measureIndex < static_cast<int>(m_measureStarts.size()))
-        ? m_measureStarts[measureIndex] : seconds;
-    double measureEndTime = (measureIndex + 1 < static_cast<int>(m_measureStarts.size()))
-        ? m_measureStarts[measureIndex + 1]
-        : measureStartTime + 2.0; // fallback
-    double fraction = 0.0;
-    if (measureEndTime > measureStartTime) {
-        fraction = (seconds - measureStartTime) / (measureEndTime - measureStartTime);
-        fraction = std::clamp(fraction, 0.0, 1.0);
-    }
-
-    // Calculate the tick within this measure
-    Fraction withinMeasure = Fraction(m_beatsPerMeasure, 4) * Fraction(static_cast<int>(fraction * 1000), 1000);
-    Fraction tick = measureTick + withinMeasure;
-
     // Use MuseScore's tick2measureMM to find the measure
     const Measure* measure = m_score->tick2measureMM(tick);
     if (!measure) {
-        // Try the first measure as fallback
         measure = m_score->tick2measureMM(Fraction(0, 1));
         if (!measure) return muse::RectF();
     }
@@ -131,7 +130,6 @@ muse::RectF SyncTimer::resolveCursorRect(int measureIndex, double seconds, int& 
     }
 
     // Interpolate x position within the measure using segment positions
-    // (Ported from PlaybackCursor::resolveCursorRectByTick)
     double x = 0.0;
     Segment* s = nullptr;
     for (s = measure->first(SegmentType::ChordRest); s;) {
@@ -168,7 +166,6 @@ muse::RectF SyncTimer::resolveCursorRect(int measureIndex, double seconds, int& 
     }
 
     if (!s) {
-        // Fallback: use the start of the measure
         x = measure->canvasPos().x();
     }
 

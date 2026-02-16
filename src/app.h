@@ -119,8 +119,10 @@ private:
     QSplitter* m_centralSplitter = nullptr;
     bool m_savedSidebarVisible = true;
     bool m_savedTrackingOn = false;
+    bool m_savedAutoScroll = true;
     QJsonObject m_savedSyncState;
     std::vector<double> m_savedBeatTimes;
+    std::vector<int> m_savedBeatTicks;
     std::vector<double> m_savedMeasureStarts;
     int m_savedBeatsPerMeasure = 3;
 
@@ -129,6 +131,7 @@ private:
     std::shared_ptr<mu::engraving::rendering::IScoreRenderer> m_renderer;
 
     QString m_audioFilePath;
+    QString m_beatDataPath;
     bool m_sliderDragging = false;
     bool m_userForcedAutoScroll = false;
     int m_sidebarWidth = 300;

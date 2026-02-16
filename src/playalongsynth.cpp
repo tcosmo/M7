@@ -1,4 +1,4 @@
-#include "trumpetsynth.h"
+#include "playalongsynth.h"
 
 #include <fluidsynth.h>
 #include <miniaudio/miniaudio.h>
@@ -33,36 +33,35 @@ static void audioCallback(ma_device* dev, void* output, const void* /*input*/, m
 }
 
 
-TrumpetSynth::TrumpetSynth()
+PlayAlongSynth::PlayAlongSynth()
 {
-    // Picked bass on channel 0, GM program 34
-    m_voices.push_back({"Organo e\nContinuo.", 34, 0, -1, 0, {}});
+    // No hardcoded voice — starts empty until setVoice() is called
 }
 
-TrumpetSynth::~TrumpetSynth()
+PlayAlongSynth::~PlayAlongSynth()
 {
     stop();
 }
 
-bool TrumpetSynth::init(const QString& sf3Path)
+bool PlayAlongSynth::init(const QString& sf3Path)
 {
     m_settings = new_fluid_settings();
     if (!m_settings) return false;
 
     fluid_settings_setnum(fsettings(m_settings), "synth.sample-rate", 44100.0);
     fluid_settings_setint(fsettings(m_settings), "synth.audio-channels", 1);
-    fluid_settings_setnum(fsettings(m_settings), "synth.gain", 0.6);
+    fluid_settings_setnum(fsettings(m_settings), "synth.gain", m_gain);
 
     m_synth = new_fluid_synth(fsettings(m_settings));
     if (!m_synth) return false;
 
     m_sfontId = fluid_synth_sfload(fs(m_synth), sf3Path.toUtf8().constData(), 1);
     if (m_sfontId < 0) {
-        qWarning() << "TrumpetSynth: failed to load SF3:" << sf3Path;
+        qWarning() << "PlayAlongSynth: failed to load SF3:" << sf3Path;
         return false;
     }
 
-    // Set up GM programs for each voice
+    // Set up GM programs for any existing voices
     for (const auto& v : m_voices) {
         fluid_synth_program_change(fs(m_synth), v.channel, v.gmProgram);
     }
@@ -77,28 +76,103 @@ bool TrumpetSynth::init(const QString& sf3Path)
     config.pUserData = m_synth;
 
     if (ma_device_init(nullptr, &config, madev(m_device)) != MA_SUCCESS) {
-        qWarning() << "TrumpetSynth: failed to init audio device";
+        qWarning() << "PlayAlongSynth: failed to init audio device";
         delete madev(m_device);
         m_device = nullptr;
         return false;
     }
 
     if (ma_device_start(madev(m_device)) != MA_SUCCESS) {
-        qWarning() << "TrumpetSynth: failed to start audio device";
+        qWarning() << "PlayAlongSynth: failed to start audio device";
         ma_device_uninit(madev(m_device));
         delete madev(m_device);
         m_device = nullptr;
         return false;
     }
 
-    for (const auto& v : m_voices) {
-        qDebug() << "TrumpetSynth: voice" << v.partName << "ch" << v.channel
-                 << "prog" << v.gmProgram << "notes:" << v.notes.size();
-    }
+    qDebug() << "PlayAlongSynth: initialized with" << m_voices.size() << "voices";
     return true;
 }
 
-void TrumpetSynth::buildNoteTables(Score* score)
+void PlayAlongSynth::setVoice(Part* part, int gmProg, Score* score)
+{
+    if (!part || !score) return;
+
+    // Stop any currently playing note
+    stopNote();
+
+    // Clear existing voices
+    m_voices.clear();
+
+    // Build the new voice from the part's track range
+    QString name = part->partName().toQString();
+    Voice voice{name, gmProg, 0, -1, 0, {}};
+
+    // Build note table using the part's track range directly
+    voice.notes.clear();
+    staff_idx_t startStaff = part->startTrack() / VOICES;
+    track_idx_t startTrack = startStaff * VOICES;
+    track_idx_t endTrack = startTrack + VOICES;
+
+    for (Segment* seg = score->firstSegment(SegmentType::ChordRest);
+         seg; seg = seg->next1(SegmentType::ChordRest)) {
+        for (track_idx_t track = startTrack; track < endTrack; ++track) {
+            EngravingItem* e = seg->element(track);
+            if (!e || !e->isChord()) continue;
+            Chord* chord = static_cast<Chord*>(e);
+            int tick = seg->tick().ticks();
+            int durTicks = chord->actualTicks().ticks();
+            const auto& notes = chord->notes();
+            if (!notes.empty()) {
+                Note* note = notes.front();
+                voice.notes.push_back({tick, note->pitch(), durTicks, note});
+            }
+        }
+    }
+
+    std::sort(voice.notes.begin(), voice.notes.end(),
+              [](const NoteEvent& a, const NoteEvent& b) { return a.tick < b.tick; });
+
+    m_voices.push_back(std::move(voice));
+
+    // Set GM program if synth is already initialized
+    if (m_synth) {
+        fluid_synth_program_change(fs(m_synth), 0, gmProg);
+    }
+
+    qDebug() << "PlayAlongSynth: setVoice" << name << "program" << gmProg
+             << "notes:" << m_voices[0].notes.size();
+}
+
+void PlayAlongSynth::setGmProgram(int program)
+{
+    if (!m_voices.empty()) {
+        m_voices[0].gmProgram = program;
+    }
+    if (m_synth) {
+        fluid_synth_program_change(fs(m_synth), 0, program);
+    }
+}
+
+int PlayAlongSynth::gmProgram() const
+{
+    return m_voices.empty() ? -1 : m_voices[0].gmProgram;
+}
+
+void PlayAlongSynth::setGain(double gain)
+{
+    m_gain = gain;
+    if (m_synth) {
+        fluid_synth_set_gain(fs(m_synth), static_cast<float>(gain));
+    }
+}
+
+double PlayAlongSynth::gain() const
+{
+    return m_gain;
+}
+
+void PlayAlongSynth::buildNoteTables(Score* score)
 {
     if (!score) return;
     for (auto& v : m_voices) {
@@ -106,7 +180,7 @@ void TrumpetSynth::buildNoteTables(Score* score)
     }
 }
 
-void TrumpetSynth::buildNoteTableForPart(Score* score, Voice& voice)
+void PlayAlongSynth::buildNoteTableForPart(Score* score, Voice& voice)
 {
     voice.notes.clear();
 
@@ -124,7 +198,7 @@ void TrumpetSynth::buildNoteTableForPart(Score* score, Voice& voice)
     }
 
     if (!matchedPart) {
-        qWarning() << "TrumpetSynth: part not found:" << voice.partName;
+        qWarning() << "PlayAlongSynth: part not found:" << voice.partName;
         return;
     }
 
@@ -151,10 +225,10 @@ void TrumpetSynth::buildNoteTableForPart(Score* score, Voice& voice)
     std::sort(voice.notes.begin(), voice.notes.end(),
               [](const NoteEvent& a, const NoteEvent& b) { return a.tick < b.tick; });
 
-    qDebug() << "TrumpetSynth: built" << voice.notes.size() << "notes for" << voice.partName;
+    qDebug() << "PlayAlongSynth: built" << voice.notes.size() << "notes for" << voice.partName;
 }
 
-void TrumpetSynth::playNextNote()
+void PlayAlongSynth::playNextNote()
 {
     if (!m_synth) return;
 
@@ -176,7 +250,7 @@ void TrumpetSynth::playNextNote()
     }
 }
 
-void TrumpetSynth::stopNote()
+void PlayAlongSynth::stopNote()
 {
     if (!m_synth) return;
 
@@ -189,7 +263,7 @@ void TrumpetSynth::stopNote()
     }
 }
 
-void TrumpetSynth::stop()
+void PlayAlongSynth::stop()
 {
     stopNote();
 
@@ -210,7 +284,7 @@ void TrumpetSynth::stop()
     }
 }
 
-void* TrumpetSynth::nextNoteElement() const
+void* PlayAlongSynth::nextNoteElement() const
 {
     // Return the element from the first voice that still has notes
     for (const auto& v : m_voices) {

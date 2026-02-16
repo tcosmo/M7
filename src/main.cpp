@@ -114,11 +114,17 @@ int main(int argc, char* argv[])
     QString beatDataPath;
     QList<int> visibleParts;
     bool startSyncMode = false;
+    bool startPlayMode = false;
+    bool preferFile = false;
 
     QStringList args = qapp.arguments();
     for (int i = 1; i < args.size(); ++i) {
         if (args[i] == "--sync") {
             startSyncMode = true;
+        } else if (args[i] == "--play") {
+            startPlayMode = true;
+        } else if (args[i] == "--file") {
+            preferFile = true;
         } else if (args[i] == "--parts" && i + 1 < args.size()) {
             for (const QString& s : args[++i].split(',')) {
                 bool ok;
@@ -147,6 +153,8 @@ int main(int argc, char* argv[])
         qWarning() << "  --beats:       Path to beat data JSON file";
         qWarning() << "  --parts:       Comma-separated 1-based part numbers to show";
         qWarning() << "  --sync:        Start in sync mode";
+        qWarning() << "  --play:        Start in play mode";
+        qWarning() << "  --file:        Prefer file source over YouTube";
         return 1;
     }
 
@@ -222,10 +230,16 @@ int main(int argc, char* argv[])
         }
     }
 
+    if (preferFile) {
+        app.selectFileSource();
+    }
+
     app.show();
 
     if (startSyncMode) {
         app.startSyncMode();
+    } else if (startPlayMode) {
+        app.startPlayMode();
     }
 
     int ret = qapp.exec();

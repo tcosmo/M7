@@ -5,6 +5,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QComboBox>
+#include <QSlider>
 #include <QRadioButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -43,6 +44,11 @@ public:
     void applyOriginalClef();
     void reapplyPerPartClef();
 
+    void setPlayAlongActive(bool active);
+    bool isPlayAlongActive() const { return m_playAlongActive; }
+    int playAlongGmProgram() const;
+    void setPlayModeVisible(bool visible);
+
     QString partName() const;
     int clefComboValue() const;
     int octaveComboValue() const;
@@ -55,12 +61,15 @@ signals:
     void soloRequested();
     void clefChanged();
     void pitchModeChanged();
+    void playAlongToggled();
+    void playAlongInstrumentChanged(int gmProgram);
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
 
 private:
     void updateEyeIcon();
+    void updateEarIcon();
     void toggleExpand();
     void applyClefInternal(int clefType);
     void updateOctaveCombo();
@@ -68,14 +77,17 @@ private:
     mu::engraving::Part* m_part = nullptr;
     QWidget* m_header = nullptr;
     QToolButton* m_eyeButton = nullptr;
+    QToolButton* m_earButton = nullptr;
     QLabel* m_nameLabel = nullptr;
     QToolButton* m_arrowButton = nullptr;
     QWidget* m_contentArea = nullptr;
     QLabel* m_clefLabel = nullptr;
     QLabel* m_octaveLabel = nullptr;
     QLabel* m_sectionLabel = nullptr;
+    QLabel* m_instrLabel = nullptr;
     QComboBox* m_clefCombo = nullptr;
     QComboBox* m_octaveCombo = nullptr;
+    QComboBox* m_instrCombo = nullptr;
     QRadioButton* m_writtenRadio = nullptr;
     QRadioButton* m_concertRadio = nullptr;
     mu::engraving::Interval m_origTranspose;
@@ -83,6 +95,7 @@ private:
     bool m_inConcertPitch = false;
     int m_xmlClefInt = -1;
     bool m_expanded = false;
+    bool m_playAlongActive = false;
 };
 
 class PartPanel : public QWidget
@@ -98,9 +111,13 @@ public:
     void showOnlyParts(const QList<int>& partNumbers);
     int desiredHeight() const;
     void applyTheme();
+    void setPlayModeActive(bool active);
 
 signals:
     void partsChanged();
+    void playAlongChanged(mu::engraving::Part* part, int gmProgram);
+    void playAlongInstrChanged(int gmProgram);
+    void playAlongVolumeChanged(double gain);
 
 private slots:
     void showSoloPart();
@@ -134,6 +151,10 @@ private:
     QRadioButton* m_globalPitchPerPart = nullptr;
     QRadioButton* m_globalClefWritten = nullptr;
     QRadioButton* m_globalClefPerPart = nullptr;
+
+    bool m_playModeActive = false;
+    QLabel* m_volumeLabel = nullptr;
+    QSlider* m_volumeSlider = nullptr;
 };
 
 } // namespace scoretracker

@@ -9,7 +9,7 @@
 #include "partpanel.h"
 #include "displaysettings.h"
 #include "trackingsettings.h"
-#include "trumpetsynth.h"
+#include "playalongsynth.h"
 #include "collapsiblesection.h"
 #include "theme.h"
 #include <QFile>
@@ -73,7 +73,7 @@ App::App(QWidget* parent)
     m_audioPlayer = new AudioPlayer(this);
     m_syncTimer = new SyncTimer(this);
     m_syncMode = new SyncMode(this);
-    m_trumpetSynth = new TrumpetSynth();
+    m_playAlongSynth = new PlayAlongSynth();
 
     setupUI();
     setupToolbar();
@@ -201,7 +201,7 @@ App::App(QWidget* parent)
 
 App::~App()
 {
-    delete m_trumpetSynth;
+    delete m_playAlongSynth;
     delete m_score;
 }
 
@@ -500,6 +500,30 @@ void App::setupToolbar()
 
     m_toolbar->addSeparator();
 
+    // Play Mode button
+    m_playModeButton = new QPushButton("Play Mode", this);
+    m_playModeButton->setFlat(true);
+    m_playModeButton->setCursor(Qt::PointingHandCursor);
+    m_playModeButton->setFocusPolicy(Qt::NoFocus);
+    m_playModeButton->setCheckable(true);
+    m_playModeButton->setStyleSheet(
+        "QPushButton { padding: 2px 8px; font-size: 12px; border: none; background: transparent; }"
+        "QPushButton:checked { color: #1e78ff; font-weight: bold; }");
+    {
+        QFont boldFont = m_playModeButton->font();
+        boldFont.setPointSize(12);
+        boldFont.setBold(true);
+        int boldWidth = QFontMetrics(boldFont).horizontalAdvance("Play Mode") + 20;
+        m_playModeButton->setMinimumWidth(boldWidth);
+    }
+    m_toolbar->addWidget(m_playModeButton);
+    connect(m_playModeButton, &QPushButton::toggled, this, [this](bool on) {
+        if (on) enterPlayMode();
+        else exitPlayMode();
+    });
+
+    m_toolbar->addSeparator();
+
     // Sync mode button
     m_syncModeButton = new QPushButton("Sync Mode", this);
     m_syncModeButton->setFlat(true);
@@ -701,15 +725,25 @@ bool App::loadScore(const QString& musicXmlPath)
 
     m_syncTimer->setScore(m_score);
 
-    // Initialize trumpet synth
-    m_trumpetSynth->buildNoteTables(m_score);
+    // Initialize play-along synth (no voice until user clicks ear icon)
     QString sf3Path = QCoreApplication::applicationDirPath() + "/../../thirdparty/musescore_a/share/sound/MS Basic.sf3";
-    m_trumpetSynth->init(sf3Path);
-    m_scoreWidget->setHighlightElement(m_trumpetSynth->nextNoteElement());
+    m_playAlongSynth->init(sf3Path);
 
     m_partPanel->setScore(m_score);
     m_partPanel->setRenderer(m_renderer.get());
     m_partPanel->setScoreFileName(fi.fileName());
+
+    // Connect play-along part selection
+    connect(m_partPanel, &PartPanel::playAlongChanged, this, [this](mu::engraving::Part* part, int gmProgram) {
+        m_playAlongSynth->setVoice(part, gmProgram, m_score);
+        m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+    });
+    connect(m_partPanel, &PartPanel::playAlongInstrChanged, this, [this](int gmProgram) {
+        m_playAlongSynth->setGmProgram(gmProgram);
+    });
+    connect(m_partPanel, &PartPanel::playAlongVolumeChanged, this, [this](double gain) {
+        m_playAlongSynth->setGain(gain);
+    });
 
     // Size the Parts section: show all parts or cap at 60% of window
     int sectionHeaderH = 28; // CollapsibleSection header
@@ -740,6 +774,23 @@ void App::startSyncMode()
     m_syncModeButton->setChecked(true);
     // When launched via --sync, start with tracking off
     m_trackingAction->setChecked(false);
+}
+
+void App::startPlayMode()
+{
+    m_playModeButton->setChecked(true);
+}
+
+void App::selectFileSource()
+{
+    if (!m_useYouTube || !m_sourceButton || !m_sourceButton->menu()) return;
+    for (auto* action : m_sourceButton->menu()->actions()) {
+        if (action->text() == "File") {
+            action->trigger();
+            playerPause();
+            break;
+        }
+    }
 }
 
 bool App::loadBeatData(const QString& jsonPath)
@@ -1123,9 +1174,33 @@ void App::loadYouTube(const QString& url)
     m_youtubePlayer->load(url);
 }
 
+void App::enterPlayMode()
+{
+    if (m_syncModeButton->isChecked()) {
+        m_syncModeButton->setChecked(false);
+    }
+    m_playModeActive = true;
+    m_partPanel->setPlayModeActive(true);
+    m_syncModeButton->setEnabled(false);
+}
+
+void App::exitPlayMode()
+{
+    m_playModeActive = false;
+    m_playAlongSynth->stopNote();
+    m_scoreWidget->setHighlightElement(nullptr);
+    m_partPanel->setPlayModeActive(false);
+    m_syncModeButton->setEnabled(true);
+    m_keysHeld = 0;
+}
+
 void App::enterSyncMode()
 {
     if (!m_score || !m_renderer) return;
+
+    if (m_playModeButton->isChecked()) {
+        m_playModeButton->setChecked(false);
+    }
 
     // Save sidebar state, close it, and disable the button
     m_savedSidebarVisible = m_sidebarWidget->isVisible();
@@ -1476,11 +1551,11 @@ void App::keyPressEvent(QKeyEvent* event)
 
     // Tap-to-play: laptop keyboard as MIDI controller
     // Overlap keys for legato, release all for noteoff
-    if (!m_syncMode->isActive() && playerIsPlaying()) {
+    if (m_playModeActive && playerIsPlaying()) {
         if (!event->isAutoRepeat()) {
             m_keysHeld++;
-            m_trumpetSynth->playNextNote();
-            m_scoreWidget->setHighlightElement(m_trumpetSynth->nextNoteElement());
+            m_playAlongSynth->playNextNote();
+            m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
         }
         return;
     }
@@ -1490,10 +1565,10 @@ void App::keyPressEvent(QKeyEvent* event)
 
 void App::keyReleaseEvent(QKeyEvent* event)
 {
-    if (!event->isAutoRepeat() && !m_syncMode->isActive() && playerIsPlaying()) {
+    if (!event->isAutoRepeat() && m_playModeActive && playerIsPlaying()) {
         m_keysHeld = std::max(0, m_keysHeld - 1);
         if (m_keysHeld == 0) {
-            m_trumpetSynth->stopNote();
+            m_playAlongSynth->stopNote();
         }
         return;
     }

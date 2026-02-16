@@ -82,6 +82,50 @@ static QIcon makeEyeIcon(bool visible)
 }
 
 // ---------------------------------------------------------------------------
+// Ear icon helper (speaker/headphone icon for play-along)
+// ---------------------------------------------------------------------------
+
+static QIcon makeEarIcon(bool active)
+{
+    int sz = 32; // render at 2x for retina
+    QPixmap px(sz, sz);
+    px.fill(Qt::transparent);
+    QPainter p(&px);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    QColor col = active ? Theme::iconVisible() : Theme::iconHidden();
+    p.setPen(QPen(col, 1.5));
+    p.setBrush(Qt::NoBrush);
+
+    // Speaker body (small rectangle on the left)
+    qreal cx = sz / 2.0, cy = sz / 2.0;
+    QRectF body(cx - 7, cy - 3, 5, 6);
+    p.fillRect(body, col);
+
+    // Speaker cone (triangle to the right of body)
+    QPainterPath cone;
+    cone.moveTo(cx - 2, cy - 3);
+    cone.lineTo(cx + 4, cy - 7);
+    cone.lineTo(cx + 4, cy + 7);
+    cone.lineTo(cx - 2, cy + 3);
+    cone.closeSubpath();
+    p.setBrush(col);
+    p.setPen(Qt::NoPen);
+    p.drawPath(cone);
+
+    // Sound waves (arcs)
+    p.setBrush(Qt::NoBrush);
+    p.setPen(QPen(col, 1.3));
+    if (active) {
+        p.drawArc(QRectF(cx + 2, cy - 5, 6, 10), -60 * 16, 120 * 16);
+        p.drawArc(QRectF(cx + 5, cy - 8, 8, 16), -60 * 16, 120 * 16);
+    }
+
+    px.setDevicePixelRatio(2);
+    return QIcon(px);
+}
+
+// ---------------------------------------------------------------------------
 // Octave-shifted clef helpers
 // ---------------------------------------------------------------------------
 
@@ -199,6 +243,18 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
         emit visibilityToggled();
     });
 
+    // Ear button (play-along) — hidden until Play Mode
+    m_earButton = new QToolButton(header);
+    m_earButton->setFixedSize(20, 20);
+    m_earButton->setAutoRaise(true);
+    m_earButton->setIconSize(QSize(16, 16));
+    m_earButton->hide();
+    updateEarIcon();
+
+    connect(m_earButton, &QToolButton::clicked, [this]() {
+        emit playAlongToggled();
+    });
+
     // Name label
     m_nameLabel = new QLabel(name, header);
     m_nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textPrimary().name()));
@@ -216,6 +272,7 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
     );
 
     hLayout->addWidget(m_eyeButton);
+    hLayout->addWidget(m_earButton);
     hLayout->addWidget(m_nameLabel);
     hLayout->addWidget(m_arrowButton);
 
@@ -317,6 +374,51 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
 
     // Enable/disable octave combo based on initial clef
     updateOctaveCombo();
+
+    // Instrument selector row (for play-along synth) — hidden until Play Mode
+    auto* instrRow = new QHBoxLayout();
+    instrRow->setSpacing(6);
+    m_instrLabel = new QLabel("Instrument", m_contentArea);
+    m_instrLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name()));
+    m_instrLabel->hide();
+    m_instrCombo = new QComboBox(m_contentArea);
+    m_instrCombo->setFixedWidth(160);
+    m_instrCombo->addItem("Acoustic Grand Piano", 0);
+    m_instrCombo->addItem("Nylon Guitar",         24);
+    m_instrCombo->addItem("Steel Guitar",          25);
+    m_instrCombo->addItem("Acoustic Bass",         32);
+    m_instrCombo->addItem("Electric Bass (finger)", 33);
+    m_instrCombo->addItem("Electric Bass (pick)",  34);
+    m_instrCombo->addItem("Violin",                40);
+    m_instrCombo->addItem("Cello",                 42);
+    m_instrCombo->addItem("Orchestral Harp",       46);
+    m_instrCombo->addItem("String Ensemble",       48);
+    m_instrCombo->addItem("Trumpet",               56);
+    m_instrCombo->addItem("French Horn",           60);
+    m_instrCombo->addItem("Oboe",                  68);
+    m_instrCombo->addItem("Clarinet",              71);
+    m_instrCombo->addItem("Flute",                 73);
+    m_instrCombo->addItem("Recorder",              74);
+
+    // Default to Electric Bass (pick) = program 34
+    for (int i = 0; i < m_instrCombo->count(); ++i) {
+        if (m_instrCombo->itemData(i).toInt() == 34) {
+            m_instrCombo->setCurrentIndex(i);
+            break;
+        }
+    }
+    m_instrCombo->hide();
+
+    connect(m_instrCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            [this](int index) {
+        int gmProg = m_instrCombo->itemData(index).toInt();
+        emit playAlongInstrumentChanged(gmProg);
+    });
+
+    instrRow->addWidget(m_instrLabel);
+    instrRow->addWidget(m_instrCombo);
+    instrRow->addStretch();
+    contentLayout->addLayout(instrRow);
 
     // Transposing instrument section
     Interval transpose = m_part->instrument()->transpose();
@@ -668,6 +770,34 @@ void PartRow::updateEyeIcon()
     }
 }
 
+void PartRow::setPlayAlongActive(bool active)
+{
+    m_playAlongActive = active;
+    updateEarIcon();
+}
+
+int PartRow::playAlongGmProgram() const
+{
+    if (!m_instrCombo) return 34;
+    return m_instrCombo->currentData().toInt();
+}
+
+void PartRow::updateEarIcon()
+{
+    if (m_earButton)
+        m_earButton->setIcon(makeEarIcon(m_playAlongActive));
+}
+
+void PartRow::setPlayModeVisible(bool visible)
+{
+    if (m_earButton) m_earButton->setVisible(visible);
+    if (m_instrLabel) m_instrLabel->setVisible(visible);
+    if (m_instrCombo) m_instrCombo->setVisible(visible);
+    if (!visible) {
+        setPlayAlongActive(false);
+    }
+}
+
 void PartRow::toggleExpand()
 {
     m_expanded = !m_expanded;
@@ -715,8 +845,9 @@ void PartRow::applyTheme()
         m_contentArea->setPalette(cpal);
     }
 
-    // Eye icon + name label color
+    // Eye icon + ear icon + name label color
     updateEyeIcon();
+    updateEarIcon();
 
     // Arrow button
     if (m_arrowButton) {
@@ -730,6 +861,7 @@ void PartRow::applyTheme()
     QString secStyle = QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name());
     if (m_clefLabel) m_clefLabel->setStyleSheet(secStyle);
     if (m_octaveLabel) m_octaveLabel->setStyleSheet(secStyle);
+    if (m_instrLabel) m_instrLabel->setStyleSheet(secStyle);
 
     // Transpose section label
     if (m_sectionLabel) {
@@ -856,6 +988,24 @@ PartPanel::PartPanel(QWidget* parent)
     connect(btnAll, &QPushButton::clicked, this, &PartPanel::showAllParts);
     connect(btnSolo, &QPushButton::clicked, this, &PartPanel::showSoloPart);
 
+    // Volume slider (hidden until Play Mode)
+    auto* volumeRow = new QHBoxLayout();
+    volumeRow->setSpacing(6);
+    m_volumeLabel = new QLabel("Volume", this);
+    m_volumeLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name()));
+    m_volumeSlider = new QSlider(Qt::Horizontal, this);
+    m_volumeSlider->setRange(0, 100);
+    m_volumeSlider->setValue(60);
+    m_volumeSlider->setFixedHeight(18);
+    connect(m_volumeSlider, &QSlider::valueChanged, [this](int value) {
+        emit playAlongVolumeChanged(value / 100.0);
+    });
+    volumeRow->addWidget(m_volumeLabel);
+    volumeRow->addWidget(m_volumeSlider);
+    layout->addLayout(volumeRow);
+    m_volumeLabel->hide();
+    m_volumeSlider->hide();
+
     // Scroll area for part rows
     m_scrollArea = new QScrollArea(this);
     m_scrollArea->setWidgetResizable(true);
@@ -942,6 +1092,26 @@ void PartPanel::populateList()
         connect(row, &PartRow::clefChanged, this, &PartPanel::relayout);
         connect(row, &PartRow::clefChanged, this, &PartPanel::saveSettings);
         connect(row, &PartRow::pitchModeChanged, this, &PartPanel::relayout);
+
+        connect(row, &PartRow::playAlongToggled, [this, row]() {
+            // Deactivate all other rows' ears
+            for (auto* r : m_rows) {
+                r->setPlayAlongActive(r == row);
+            }
+            // Auto-enable eye if hidden
+            if (!row->isPartVisible()) {
+                row->setPartVisible(true);
+                relayout();
+            }
+            emit playAlongChanged(row->part(), row->playAlongGmProgram());
+        });
+        connect(row, &PartRow::playAlongInstrumentChanged, [this, row](int gmProgram) {
+            if (row->isPlayAlongActive()) {
+                emit playAlongInstrChanged(gmProgram);
+            }
+        });
+
+        row->setPlayModeVisible(m_playModeActive);
         m_rowsLayout->addWidget(row);
         m_rows.push_back(row);
     }
@@ -1207,6 +1377,27 @@ void PartPanel::resizeEvent(QResizeEvent* event)
     updateTransposingLabel();
 }
 
+void PartPanel::setPlayModeActive(bool active)
+{
+    m_playModeActive = active;
+    if (m_volumeLabel) m_volumeLabel->setVisible(active);
+    if (m_volumeSlider) m_volumeSlider->setVisible(active);
+    for (auto* row : m_rows) {
+        row->setPlayModeVisible(active);
+    }
+    if (active && !m_rows.empty()) {
+        // Auto-select first row for play-along
+        auto* first = m_rows.front();
+        for (auto* r : m_rows)
+            r->setPlayAlongActive(r == first);
+        if (!first->isPartVisible()) {
+            first->setPartVisible(true);
+            relayout();
+        }
+        emit playAlongChanged(first->part(), first->playAlongGmProgram());
+    }
+}
+
 void PartPanel::applyTheme()
 {
     QPalette pal = palette();
@@ -1220,6 +1411,8 @@ void PartPanel::applyTheme()
         m_transposingListLabel->setStyleSheet(QString("color: %1; font-size: 9px; padding-left: 1px;").arg(Theme::textHint().name()));
     if (m_clefSectionLabel)
         m_clefSectionLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textSecondary().name()));
+    if (m_volumeLabel)
+        m_volumeLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name()));
 
     QString radioStyle = Theme::radioStyleStr();
     if (m_globalPitchWritten) m_globalPitchWritten->setStyleSheet(radioStyle);

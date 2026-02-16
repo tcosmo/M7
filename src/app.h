@@ -32,7 +32,7 @@ class WaveformWidget;
 class PartPanel;
 class DisplaySettings;
 class TrackingSettings;
-class TrumpetSynth;
+class PlayAlongSynth;
 
 class App : public QMainWindow
 {
@@ -49,6 +49,8 @@ public:
     void loadSources(const QString& jsonPath);
     void setVisibleParts(const QList<int>& partNumbers);
     void startSyncMode();
+    void startPlayMode();
+    void selectFileSource();
 
 private slots:
     void togglePlayPause();
@@ -70,6 +72,8 @@ private:
     void updateTrackingIcon();
     QString formatTime(double seconds) const;
 
+    void enterPlayMode();
+    void exitPlayMode();
     void enterSyncMode();
     void exitSyncMode();
     void setupSyncSidebar();
@@ -114,6 +118,8 @@ private:
     bool m_useYouTube = false;
     SyncTimer* m_syncTimer = nullptr;
     SyncMode* m_syncMode = nullptr;
+    bool m_playModeActive = false;
+    QPushButton* m_playModeButton = nullptr;
     QPushButton* m_syncModeButton = nullptr;
     QWidget* m_syncSidebarWidget = nullptr;
     QWidget* m_syncSidebarHandle = nullptr;
@@ -133,7 +139,7 @@ private:
     mu::engraving::MasterScore* m_score = nullptr;
     std::shared_ptr<mu::engraving::rendering::IScoreRenderer> m_renderer;
 
-    TrumpetSynth* m_trumpetSynth = nullptr;
+    PlayAlongSynth* m_playAlongSynth = nullptr;
     int m_keysHeld = 0;
 
     QString m_audioFilePath;

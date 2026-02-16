@@ -167,8 +167,8 @@ add_executable(scoretracker
     src/syncpanel.cpp
     src/waveformwidget.h
     src/waveformwidget.mm
-    src/trumpetsynth.h
-    src/trumpetsynth.cpp
+    src/playalongsynth.h
+    src/playalongsynth.cpp
     src/miniaudio_impl.c
 )
 

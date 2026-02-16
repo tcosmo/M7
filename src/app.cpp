@@ -729,6 +729,8 @@ void App::setVisibleParts(const QList<int>& partNumbers)
 void App::startSyncMode()
 {
     m_syncModeButton->setChecked(true);
+    // When launched via --sync, start with tracking off
+    m_trackingAction->setChecked(false);
 }
 
 bool App::loadBeatData(const QString& jsonPath)
@@ -846,6 +848,23 @@ void App::onPositionChanged(double seconds)
     if (m_syncMode->isActive()) {
         m_scoreWidget->setPlaybackTime(seconds);
         if (m_waveformWidget) m_waveformWidget->setPlaybackTime(seconds);
+
+        // Clear selection when playback moves past the selected beat to the next synced one
+        int sel = m_scoreWidget->selectedBeatIndex();
+        if (sel >= 0 && playerIsPlaying()) {
+            const auto& beats = m_syncMode->beats();
+            if (beats[sel].synced) {
+                // Find next synced beat after sel
+                for (int i = sel + 1; i < static_cast<int>(beats.size()); ++i) {
+                    if (beats[i].synced) {
+                        if (seconds >= beats[i].effectiveTime()) {
+                            m_scoreWidget->setSelectedBeat(-1);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1097,14 +1116,11 @@ void App::enterSyncMode()
     m_sidebarAction->blockSignals(false);
     m_sidebarAction->setEnabled(false);
 
-    // Save original CLI tracking data and turn tracking off
+    // Save original CLI tracking data
     m_savedTrackingOn = m_trackingAction->isChecked();
     m_savedBeatTimes = m_syncTimer->beatTimes();
     m_savedMeasureStarts = m_syncTimer->measureStarts();
     m_savedBeatsPerMeasure = m_syncTimer->beatsPerMeasure();
-    if (m_trackingAction->isChecked()) {
-        m_trackingAction->setChecked(false);
-    }
 
     // Switch to file source if currently using YouTube (without auto-playing)
     if (m_useYouTube && m_sourceButton && m_sourceButton->menu()) {
@@ -1243,10 +1259,11 @@ void App::exitSyncMode()
     m_syncTimer->setMeasureStarts(m_savedMeasureStarts);
     m_syncTimer->setMeasureIndices({}); // CLI data uses contiguous indices
 
-    // Restore tracking
+    // Restore tracking and refresh cursor to current time
     m_trackingButton->setEnabled(true);
     if (m_savedTrackingOn) {
         m_trackingAction->setChecked(true);
+        m_syncTimer->setTime(playerCurrentTime());
     }
 
     // Restore sidebar
@@ -1362,31 +1379,34 @@ void App::updateSyncTimerFromSyncMode()
 void App::keyPressEvent(QKeyEvent* event)
 {
     if (m_syncMode->isActive()) {
-        // Delete/Backspace: unsync the next-to-tap beat
+        // Delete/Backspace: unsync the selected or next-to-tap beat
         if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-            int next = m_syncMode->nextUnsyncedBeat();
-            if (next >= 0 && m_syncMode->beats()[next].synced) {
-                m_syncMode->unsyncBeat(next);
-                m_syncMode->setNextUnsyncedFrom(next);
+            int sel = m_scoreWidget->selectedBeatIndex();
+            int target = (sel >= 0) ? sel : m_syncMode->nextUnsyncedBeat();
+            if (target >= 0 && m_syncMode->beats()[target].synced) {
+                m_syncMode->unsyncBeat(target);
+                m_syncMode->setNextUnsyncedFrom(target);
+                m_scoreWidget->setSelectedBeat(-1);
                 m_scoreWidget->widget()->update();
                 if (m_waveformWidget) m_waveformWidget->widget()->update();
             }
             return;
         }
-        // Escape: deselect and move next-to-tap to next unsynced beat
+        // Escape: clear selection and move next-to-tap to next unsynced beat
         if (event->key() == Qt::Key_Escape) {
+            m_scoreWidget->setSelectedBeat(-1);
             int next = m_syncMode->nextUnsyncedBeat();
             if (next >= 0) {
                 const auto& beats = m_syncMode->beats();
                 for (int i = next; i < static_cast<int>(beats.size()); ++i) {
                     if (!beats[i].synced) {
                         m_syncMode->setNextUnsyncedFrom(i);
-                        m_scoreWidget->widget()->update();
-                        if (m_waveformWidget) m_waveformWidget->widget()->update();
                         break;
                     }
                 }
             }
+            m_scoreWidget->widget()->update();
+            if (m_waveformWidget) m_waveformWidget->widget()->update();
             return;
         }
         if (event->key() == Qt::Key_O && playerIsPlaying()) {

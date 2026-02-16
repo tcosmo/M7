@@ -20,7 +20,7 @@ SyncPanel::SyncPanel(QWidget* parent)
     layout->setContentsMargins(12, 4, 12, 10);
     layout->setSpacing(8);
 
-    m_instructionLabel = new QLabel("Play audio and press 'O' to tap beats");
+    m_instructionLabel = new QLabel("Play audio and press 'O' to tap beats.\nDouble-click a sync point to allow overwrite.");
     m_instructionLabel->setWordWrap(true);
     m_instructionLabel->setStyleSheet(QString("color: %1; font-size: 11px;")
         .arg(Theme::textSecondary().name()));

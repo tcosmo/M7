@@ -315,6 +315,13 @@ void ScoreCanvas::clearLastTappedBeat()
     m_lastTappedBeat = -1;
 }
 
+void ScoreCanvas::setSelectedBeat(int beatIndex)
+{
+    if (m_selectedBeatIndex == beatIndex) return;
+    m_selectedBeatIndex = beatIndex;
+    update();
+}
+
 void ScoreCanvas::paintSyncDots(QPainter& painter)
 {
     if (!m_score || !m_syncMode) return;
@@ -377,10 +384,15 @@ void ScoreCanvas::paintSyncDots(QPainter& painter)
             double renderX = (xOffsetScore + dotX) * s;
             double renderY = (yOffsetScore + dotY) * s;
 
+            // System top: first staff Y minus minimal padding (just above the staff lines)
+            double sysTopY = system->staffCanvasYpage(0) - 1.0 * spatium - pageY;
+            double renderSysTop = (yOffsetScore + sysTopY) * s;
+
             DotInfo dot;
             dot.beatIndex = beatIdx;
             dot.center = QPointF(renderX, renderY);
             dot.radius = radius;
+            dot.systemTop = renderSysTop;
             m_dotInfos.push_back(dot);
 
             double pw = 0.3 * spatium * s; // pen width in score-proportional pixels
@@ -400,11 +412,13 @@ void ScoreCanvas::paintSyncDots(QPainter& painter)
                 painter.drawEllipse(dot.center, radius, radius);
             }
 
-            // Active beat indicator: small orange dot below during playback (not on just-tapped beat)
-            if (m_playing && beats[beatIdx].synced && m_playbackTime >= 0
-                && beatIdx != m_lastTappedBeat
-                && beats[beatIdx].effectiveTime() <= m_playbackTime) {
-                // Only show on the most recently passed synced beat
+            // Orange dot below: selected beat or active beat during playback
+            bool showOrangeDot = false;
+            if (beatIdx == m_selectedBeatIndex) {
+                showOrangeDot = true;
+            } else if (m_playing && m_lastTappedBeat < 0
+                       && beats[beatIdx].synced && m_playbackTime >= 0
+                       && beats[beatIdx].effectiveTime() <= m_playbackTime) {
                 bool isActive = true;
                 for (int j = beatIdx + 1; j < static_cast<int>(beats.size()); ++j) {
                     if (beats[j].synced) {
@@ -413,13 +427,14 @@ void ScoreCanvas::paintSyncDots(QPainter& painter)
                         break;
                     }
                 }
-                if (isActive) {
-                    double smallRadius = radius * 0.45;
-                    QPointF belowCenter(dot.center.x(), dot.center.y() + radius + smallRadius + pw * 2);
-                    painter.setBrush(QColor(255, 180, 0));
-                    painter.setPen(Qt::NoPen);
-                    painter.drawEllipse(belowCenter, smallRadius, smallRadius);
-                }
+                showOrangeDot = isActive;
+            }
+            if (showOrangeDot) {
+                double smallRadius = radius * 0.45;
+                QPointF belowCenter(dot.center.x(), dot.center.y() + radius + smallRadius + pw * 2);
+                painter.setBrush(QColor(255, 180, 0));
+                painter.setPen(Qt::NoPen);
+                painter.drawEllipse(belowCenter, smallRadius, smallRadius);
             }
 
         }
@@ -443,10 +458,33 @@ void ScoreCanvas::mousePressEvent(QMouseEvent* event)
     if (m_syncMode && m_syncMode->isActive() && event->button() == Qt::LeftButton) {
         int hit = hitTestDot(event->pos());
         if (hit >= 0) {
-            m_syncMode->setNextUnsyncedFrom(hit);
+            const auto& beat = m_syncMode->beats()[hit];
+            bool forceNextToTap = (event->modifiers() & Qt::ShiftModifier);
+
+            // Double-click detection
+            if (m_lastClickBeat == hit && m_lastClickTimer.isValid()
+                && m_lastClickTimer.elapsed() < 400) {
+                forceNextToTap = true;
+            }
+            m_lastClickBeat = hit;
+            m_lastClickTimer.restart();
+
+            if (forceNextToTap || !beat.synced) {
+                // Double-click, shift-click, or unsynced: set as next-to-tap
+                m_syncMode->setNextUnsyncedFrom(hit);
+                m_selectedBeatIndex = -1;
+            } else {
+                // Single click on synced: select (orange dot below)
+                m_selectedBeatIndex = hit;
+            }
             emit beatClicked(hit);
             update();
             return;
+        }
+        // Click outside dots: deselect
+        if (m_selectedBeatIndex >= 0) {
+            m_selectedBeatIndex = -1;
+            update();
         }
     }
     QWidget::mousePressEvent(event);
@@ -689,22 +727,49 @@ void ScoreWidget::clearLastTappedBeat()
     m_canvas->clearLastTappedBeat();
 }
 
+void ScoreWidget::setSelectedBeat(int beatIndex)
+{
+    m_canvas->setSelectedBeat(beatIndex);
+}
+
+int ScoreWidget::selectedBeatIndex() const
+{
+    return m_canvas->selectedBeatIndex();
+}
+
 void ScoreWidget::ensureBeatVisible(int beatIndex)
 {
     QPoint pos = m_canvas->dotWidgetPos(beatIndex);
     if (pos.x() < 0) return;
 
-    int margin = 80;
+    // Find the DotInfo for this beat to get systemTop
+    double sysTop = -1;
+    for (const auto& dot : m_canvas->dotInfos()) {
+        if (dot.beatIndex == beatIndex) {
+            sysTop = dot.systemTop;
+            break;
+        }
+    }
+
+    int margin = 40;
     int vpH = viewport()->height();
     int vpW = viewport()->width();
     int scrollY = verticalScrollBar()->value();
     int scrollX = horizontalScrollBar()->value();
 
-    int dotInVpY = pos.y() - scrollY;
-    if (dotInVpY > vpH - margin) {
-        verticalScrollBar()->setValue(pos.y() - vpH / 3);
-    } else if (dotInVpY < margin) {
-        verticalScrollBar()->setValue(pos.y() - margin);
+    // Vertical: try to show the full system (from systemTop to dot)
+    if (sysTop >= 0) {
+        int sysTopInVp = static_cast<int>(sysTop) - scrollY;
+        int dotInVpY = pos.y() - scrollY;
+        if (sysTopInVp < margin || dotInVpY > vpH - margin) {
+            // Scroll so system top is near the top of viewport
+            verticalScrollBar()->setValue(static_cast<int>(sysTop) - margin);
+        }
+    } else {
+        int dotInVpY = pos.y() - scrollY;
+        if (dotInVpY > vpH - margin || dotInVpY < margin) {
+            verticalScrollBar()->setValue(pos.y() - vpH / 3);
+        }
     }
 
     int effectiveW = vpW - m_overlayWidth;

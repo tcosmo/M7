@@ -43,6 +43,7 @@ public:
     void adjustBeat(int beatIndex, double timeDelta);
     void unsyncBeat(int beatIndex);
     void setNextUnsyncedFrom(int beatIndex);
+    void clearNextInputOverride();
 
     int nextUnsyncedBeat() const;
     int syncedCount() const;

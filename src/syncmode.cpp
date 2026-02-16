@@ -110,6 +110,11 @@ void SyncMode::setNextUnsyncedFrom(int beatIndex)
     m_nextInputOverride = beatIndex;
 }
 
+void SyncMode::clearNextInputOverride()
+{
+    m_nextInputOverride = -1;
+}
+
 int SyncMode::nextUnsyncedBeat() const
 {
     if (m_nextInputOverride >= 0

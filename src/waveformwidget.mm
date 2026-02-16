@@ -454,7 +454,7 @@ void WaveformCanvas::renderSpectrogramImage()
 WaveformWidget::WaveformWidget(QWidget* parent)
     : QScrollArea(parent)
 {
-    setMinimumHeight(WAVEFORM_HEIGHT + 2);
+    setMinimumHeight(40);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setFrameShape(QFrame::NoFrame);
@@ -592,11 +592,10 @@ void WaveformWidget::setShowSpectrogram(bool show)
 
 void WaveformWidget::updateHeight()
 {
-    int minH = m_canvas->showSpectrogram() ? WAVEFORM_HEIGHT + SPECTROGRAM_HEIGHT + 2 : WAVEFORM_HEIGHT + 2;
-    setMinimumHeight(minH);
-    // If currently smaller than the new minimum, resize up
-    if (height() < minH) {
-        resize(width(), minH);
+    int desiredH = m_canvas->showSpectrogram() ? WAVEFORM_HEIGHT + SPECTROGRAM_HEIGHT + 2 : WAVEFORM_HEIGHT + 2;
+    // Only resize up when spectrogram is toggled on, never enforce a minimum
+    if (m_canvas->showSpectrogram() && height() < desiredH) {
+        resize(width(), desiredH);
     }
 }
 

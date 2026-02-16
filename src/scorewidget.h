@@ -31,6 +31,13 @@ class ScoreCanvas : public QWidget
 public:
     explicit ScoreCanvas(QWidget* parent = nullptr);
 
+    struct DotInfo {
+        int beatIndex;
+        QPointF center;
+        double radius;
+        double systemTop;
+    };
+
     void setScore(mu::engraving::Score* score);
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
     void setCursorRect(const muse::RectF& rect, int pageIndex);
@@ -48,7 +55,10 @@ public:
     void setPlaying(bool playing);
     void setLastTappedBeat(int beatIndex);
     void clearLastTappedBeat();
+    void setSelectedBeat(int beatIndex);
+    int selectedBeatIndex() const { return m_selectedBeatIndex; }
     QPoint dotWidgetPos(int beatIndex) const;
+    const std::vector<DotInfo>& dotInfos() const { return m_dotInfos; }
 
 signals:
     void beatClicked(int beatIndex);
@@ -60,12 +70,6 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
 
 private:
-    struct DotInfo {
-        int beatIndex;
-        QPointF center;
-        double radius;
-    };
-
     void updateCanvasSize();
     muse::RectF mapToRenderCoords(const muse::RectF& pageRelRect, int pageIndex) const;
     void paintSyncDots(QPainter& painter);
@@ -81,6 +85,7 @@ private:
 
     // Sync dots
     std::vector<DotInfo> m_dotInfos;
+    int m_selectedBeatIndex = -1;
 
     // Manual double-click detection
     QElapsedTimer m_lastClickTimer;
@@ -134,6 +139,8 @@ public:
     void setPlaying(bool playing);
     void setLastTappedBeat(int beatIndex);
     void clearLastTappedBeat();
+    void setSelectedBeat(int beatIndex);
+    int selectedBeatIndex() const;
     void ensureBeatVisible(int beatIndex);
 
 signals:

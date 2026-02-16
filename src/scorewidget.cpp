@@ -22,6 +22,11 @@
 #include "engraving/dom/system.h"
 #include "engraving/dom/staff.h"
 #include "engraving/dom/mscore.h"
+#include "engraving/dom/note.h"
+#include "engraving/dom/chord.h"
+#include "engraving/dom/stem.h"
+#include "engraving/dom/hook.h"
+#include "engraving/dom/notedot.h"
 
 using namespace mu::engraving;
 using namespace mu::engraving::rendering;
@@ -266,12 +271,74 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
         );
     }
 
+    // Draw box highlight on next note to play
+    if (m_highlightElement && m_score) {
+        auto* note = static_cast<mu::engraving::Note*>(m_highlightElement);
+        auto* chord = note->chord();
+        if (chord) {
+            muse::RectF bbox = chord->canvasBoundingRect();
+            auto* pg = static_cast<mu::engraving::Page*>(
+                chord->findAncestor(mu::engraving::ElementType::PAGE));
+            int pageIdx = pg ? pg->no() : 0;
+            double pageX = pg ? pg->pos().x() : 0;
+            double pageY = pg ? pg->pos().y() : 0;
+            muse::RectF pageRel(bbox.x() - pageX, bbox.y() - pageY, bbox.width(), bbox.height());
+            muse::RectF mapped = mapToRenderCoords(pageRel, pageIdx);
+
+            QPainter hlPainter(this);
+            hlPainter.setRenderHint(QPainter::Antialiasing, true);
+            double pad = 2.0;
+            QRectF hlRect(mapped.x() * s - pad, mapped.y() * s - pad,
+                          mapped.width() * s + 2 * pad, mapped.height() * s + 2 * pad);
+            hlPainter.setPen(QPen(QColor(50, 120, 255), 2.0));
+            hlPainter.setBrush(QColor(50, 120, 255, 40));
+            hlPainter.drawRoundedRect(hlRect, 3, 3);
+        }
+    }
+
     // Draw sync dots (fixed pixel size, independent of zoom)
     if (m_syncMode && m_syncMode->isActive()) {
         QPainter dotPainter(this);
         dotPainter.resetTransform();
         paintSyncDots(dotPainter);
     }
+}
+
+static void colorChord(mu::engraving::Note* note, const muse::draw::Color& color)
+{
+    if (!note) return;
+    auto* chord = note->chord();
+    if (!chord) return;
+
+    // Color all notes in the chord
+    for (auto* n : chord->notes()) {
+        n->setColor(color);
+        for (auto* dot : n->dots())
+            if (dot) dot->setColor(color);
+    }
+    if (chord->stem()) chord->stem()->setColor(color);
+    if (chord->hook()) chord->hook()->setColor(color);
+}
+
+void ScoreCanvas::setHighlightElement(void* element)
+{
+    if (m_highlightElement == element) return;
+
+    // Reset previous highlight to black
+    if (m_highlightElement) {
+        colorChord(static_cast<mu::engraving::Note*>(m_highlightElement),
+                   muse::draw::Color::BLACK);
+    }
+
+    m_highlightElement = element;
+
+    // Apply blue highlight
+    if (m_highlightElement) {
+        colorChord(static_cast<mu::engraving::Note*>(m_highlightElement),
+                   muse::draw::Color(50, 120, 255));
+    }
+
+    update();
 }
 
 void ScoreCanvas::setSyncMode(scoretracker::SyncMode* syncMode)
@@ -781,6 +848,11 @@ void ScoreWidget::ensureBeatVisible(int beatIndex)
     }
 }
 
+
+void ScoreWidget::setHighlightElement(void* element)
+{
+    m_canvas->setHighlightElement(element);
+}
 
 void ScoreWidget::ensureCursorVisible()
 {

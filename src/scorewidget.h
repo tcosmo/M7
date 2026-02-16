@@ -59,6 +59,7 @@ public:
     int selectedBeatIndex() const { return m_selectedBeatIndex; }
     QPoint dotWidgetPos(int beatIndex) const;
     const std::vector<DotInfo>& dotInfos() const { return m_dotInfos; }
+    void setHighlightElement(void* element); // MuseScore EngravingItem*
 
 signals:
     void beatClicked(int beatIndex);
@@ -95,6 +96,9 @@ private:
     double m_playbackTime = -1.0;
     bool m_playing = false;
     int m_lastTappedBeat = -1;
+
+    // Note highlight
+    void* m_highlightElement = nullptr;
 };
 
 class TriggerLineOverlay : public QWidget
@@ -142,6 +146,7 @@ public:
     void setSelectedBeat(int beatIndex);
     int selectedBeatIndex() const;
     void ensureBeatVisible(int beatIndex);
+    void setHighlightElement(void* element);
 
 signals:
     void zoomChanged(double zoom);

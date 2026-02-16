@@ -24,6 +24,7 @@ public:
     void setBeatTimes(const std::vector<double>& beatTimes, int beatsPerMeasure);
     void setBeatTicks(const std::vector<int>& beatTicks);
     void setMeasureIndices(const std::vector<int>& indices);
+    int currentTick() const { return m_lastTick; }
     int beatsPerMeasure() const { return m_beatsPerMeasure; }
     const std::vector<double>& beatTimes() const { return m_beatTimes; }
     const std::vector<double>& measureStarts() const { return m_measureStarts; }
@@ -47,6 +48,7 @@ private:
     std::vector<int> m_measureIndices;   // real score measure index for each entry in m_measureStarts
     int m_beatsPerMeasure = 3;
     double m_lastTime = 0.0;
+    int m_lastTick = 0;
 };
 
 } // namespace scoretracker

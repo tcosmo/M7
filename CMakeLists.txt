@@ -83,6 +83,25 @@ target_include_directories(iex_musicxml PRIVATE ${MU_ROOT})
 # Fix: iex_musicxml uses muse_draw for FontMetrics but doesn't link it
 target_link_libraries(iex_musicxml PRIVATE muse_draw)
 
+# FluidSynth static library (for trumpet synth)
+set(MU_A_ROOT ${CMAKE_CURRENT_LIST_DIR}/thirdparty/musescore_a)
+set(FLUIDSYNTH_CMAKE_DIR ${MU_A_ROOT}/src/framework/audio/thirdparty/fluidsynth)
+include(${FLUIDSYNTH_CMAKE_DIR}/fluidsynth.cmake)
+
+add_library(fluidsynth_lib STATIC
+    ${FLUIDSYNTH_SRC}
+    src/vorbis_bridge.c
+)
+target_include_directories(fluidsynth_lib PUBLIC ${FLUIDSYNTH_INC})
+target_include_directories(fluidsynth_lib PRIVATE
+    ${MU_A_ROOT}/src/framework/audio/thirdparty
+)
+target_compile_definitions(fluidsynth_lib PUBLIC
+    ${FLUIDSYNTH_DEF}
+    EXTERN_VORBIS_SUPPORT=1
+)
+set_target_properties(fluidsynth_lib PROPERTIES COMPILE_FLAGS "-fPIC")
+
 # Exclude API v1 source files from engraving (they need full QML/MOC support)
 get_target_property(ENG_SOURCES engraving SOURCES)
 list(FILTER ENG_SOURCES EXCLUDE REGEX ".*/api/v1/.*")
@@ -148,6 +167,9 @@ add_executable(scoretracker
     src/syncpanel.cpp
     src/waveformwidget.h
     src/waveformwidget.mm
+    src/trumpetsynth.h
+    src/trumpetsynth.cpp
+    src/miniaudio_impl.c
 )
 
 qt_add_resources(scoretracker "icons"
@@ -172,6 +194,7 @@ target_include_directories(scoretracker PUBLIC
     ${MU_ROOT}/src
     ${MU_ROOT}/src/engraving
     ${MU_ROOT}
+    ${FLUIDSYNTH_INC}
 )
 
 target_compile_options(scoretracker PRIVATE ${PCH_FIX})
@@ -181,6 +204,7 @@ target_link_libraries(scoretracker
     muse_draw
     engraving
     iex_musicxml
+    fluidsynth_lib
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets

@@ -9,6 +9,7 @@
 #include <QSplitter>
 #include <QDockWidget>
 #include <QJsonObject>
+
 #include <memory>
 #include <vector>
 
@@ -31,6 +32,7 @@ class WaveformWidget;
 class PartPanel;
 class DisplaySettings;
 class TrackingSettings;
+class TrumpetSynth;
 
 class App : public QMainWindow
 {
@@ -57,6 +59,7 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
     void changeEvent(QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void keyReleaseEvent(QKeyEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
 
 private:
@@ -129,6 +132,9 @@ private:
     // Score
     mu::engraving::MasterScore* m_score = nullptr;
     std::shared_ptr<mu::engraving::rendering::IScoreRenderer> m_renderer;
+
+    TrumpetSynth* m_trumpetSynth = nullptr;
+    int m_keysHeld = 0;
 
     QString m_audioFilePath;
     QString m_beatDataPath;

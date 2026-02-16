@@ -100,6 +100,7 @@ void SyncTimer::setTime(double seconds)
     t = std::clamp(t, 0.0, 1.0);
 
     int interpTick = prevTick + static_cast<int>(t * (nextTick - prevTick));
+    m_lastTick = interpTick;
     Fraction tick = Fraction::fromTicks(interpTick);
 
     int pageIndex = 0;

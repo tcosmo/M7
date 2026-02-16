@@ -9,6 +9,7 @@
 #include "partpanel.h"
 #include "displaysettings.h"
 #include "trackingsettings.h"
+#include "trumpetsynth.h"
 #include "collapsiblesection.h"
 #include "theme.h"
 #include <QFile>
@@ -72,6 +73,7 @@ App::App(QWidget* parent)
     m_audioPlayer = new AudioPlayer(this);
     m_syncTimer = new SyncTimer(this);
     m_syncMode = new SyncMode(this);
+    m_trumpetSynth = new TrumpetSynth();
 
     setupUI();
     setupToolbar();
@@ -199,6 +201,7 @@ App::App(QWidget* parent)
 
 App::~App()
 {
+    delete m_trumpetSynth;
     delete m_score;
 }
 
@@ -697,6 +700,12 @@ bool App::loadScore(const QString& musicXmlPath)
     m_scoreWidget->setScore(m_score);
 
     m_syncTimer->setScore(m_score);
+
+    // Initialize trumpet synth
+    m_trumpetSynth->buildNoteTables(m_score);
+    QString sf3Path = QCoreApplication::applicationDirPath() + "/../../thirdparty/musescore_a/share/sound/MS Basic.sf3";
+    m_trumpetSynth->init(sf3Path);
+    m_scoreWidget->setHighlightElement(m_trumpetSynth->nextNoteElement());
 
     m_partPanel->setScore(m_score);
     m_partPanel->setRenderer(m_renderer.get());
@@ -1464,7 +1473,31 @@ void App::keyPressEvent(QKeyEvent* event)
             return;
         }
     }
+
+    // Tap-to-play: laptop keyboard as MIDI controller
+    // Overlap keys for legato, release all for noteoff
+    if (!m_syncMode->isActive() && playerIsPlaying()) {
+        if (!event->isAutoRepeat()) {
+            m_keysHeld++;
+            m_trumpetSynth->playNextNote();
+            m_scoreWidget->setHighlightElement(m_trumpetSynth->nextNoteElement());
+        }
+        return;
+    }
+
     QMainWindow::keyPressEvent(event);
+}
+
+void App::keyReleaseEvent(QKeyEvent* event)
+{
+    if (!event->isAutoRepeat() && !m_syncMode->isActive() && playerIsPlaying()) {
+        m_keysHeld = std::max(0, m_keysHeld - 1);
+        if (m_keysHeld == 0) {
+            m_trumpetSynth->stopNote();
+        }
+        return;
+    }
+    QMainWindow::keyReleaseEvent(event);
 }
 
 } // namespace scoretracker

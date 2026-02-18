@@ -75,6 +75,12 @@ App::App(QWidget* parent)
     m_syncMode = new SyncMode(this);
     m_playAlongSynth = new PlayAlongSynth();
 
+    m_trillTimer = new QTimer(this);
+    m_trillTimer->setInterval(90);
+    connect(m_trillTimer, &QTimer::timeout, this, [this]() {
+        m_playAlongSynth->trillToggle();
+    });
+
     setupUI();
     setupToolbar();
 
@@ -909,9 +915,16 @@ void App::onPositionChanged(double seconds)
         .arg(formatTime(seconds))
         .arg(formatTime(playerDuration())));
 
-    // Update sync timer -> cursor if tracking is on, or auto-scroll without tracking
-    if (m_trackingAction->isChecked() || m_trackingSettings->autoScrollEnabled()) {
+    // Update sync timer -> cursor if tracking is on, auto-scroll, or play mode
+    if (m_trackingAction->isChecked() || m_trackingSettings->autoScrollEnabled() || m_playModeActive) {
         m_syncTimer->setTime(seconds);
+    }
+
+    // Play mode: auto-advance past tied notes when cursor reaches them
+    if (m_playModeActive && playerIsPlaying()) {
+        if (m_playAlongSynth->advanceTiedNotes(m_syncTimer->currentTick())) {
+            m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+        }
     }
 
     // Update sync mode widgets
@@ -1187,6 +1200,7 @@ void App::enterPlayMode()
 void App::exitPlayMode()
 {
     m_playModeActive = false;
+    m_trillTimer->stop();
     m_playAlongSynth->stopNote();
     m_scoreWidget->setHighlightElement(nullptr);
     m_partPanel->setPlayModeActive(false);
@@ -1554,8 +1568,12 @@ void App::keyPressEvent(QKeyEvent* event)
     if (m_playModeActive && playerIsPlaying()) {
         if (!event->isAutoRepeat()) {
             m_keysHeld++;
+            m_trillTimer->stop();
             m_playAlongSynth->playNextNote();
             m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+            if (m_playAlongSynth->currentNoteHasTrill()) {
+                m_trillTimer->start();
+            }
         }
         return;
     }
@@ -1568,6 +1586,7 @@ void App::keyReleaseEvent(QKeyEvent* event)
     if (!event->isAutoRepeat() && m_playModeActive && playerIsPlaying()) {
         m_keysHeld = std::max(0, m_keysHeld - 1);
         if (m_keysHeld == 0) {
+            m_trillTimer->stop();
             m_playAlongSynth->stopNote();
         }
         return;

@@ -140,6 +140,7 @@ private:
     std::shared_ptr<mu::engraving::rendering::IScoreRenderer> m_renderer;
 
     PlayAlongSynth* m_playAlongSynth = nullptr;
+    QTimer* m_trillTimer = nullptr;
     int m_keysHeld = 0;
 
     QString m_audioFilePath;

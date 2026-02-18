@@ -15,6 +15,9 @@ struct NoteEvent {
     int midiPitch;
     int durationTicks;
     void* element = nullptr; // MuseScore Note* (opaque to avoid includes)
+    bool tiedBack = false;   // continuation of a tie (auto-advance, no keypress)
+    bool hasTrill = false;
+    int trillPitch = 0;      // MIDI pitch of upper trill note
 };
 
 struct Voice {
@@ -38,6 +41,10 @@ public:
     void stopNote();
     void stop();
 
+    // Auto-advance past tied notes when cursor reaches them
+    // Returns true if any advancement happened (caller should update highlight)
+    bool advanceTiedNotes(int currentTick);
+
     // Set the voice to play along with (clears previous, builds note table)
     void setVoice(mu::engraving::Part* part, int gmProgram, mu::engraving::Score* score);
 
@@ -52,6 +59,10 @@ public:
     // Returns the element (Note*) for the next note to be played, or nullptr
     void* nextNoteElement() const;
 
+    // Trill support
+    bool currentNoteHasTrill() const;
+    void trillToggle();
+
 private:
     static void buildNoteTableForPart(mu::engraving::Score* score, Voice& voice);
 
@@ -61,6 +72,7 @@ private:
     int m_sfontId = -1;
 
     double m_gain = 0.6;
+    bool m_trillOnUpper = false;
     std::vector<Voice> m_voices;
 };
 

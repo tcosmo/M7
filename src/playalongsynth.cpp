@@ -10,6 +10,8 @@
 #include "engraving/dom/segment.h"
 #include "engraving/dom/chord.h"
 #include "engraving/dom/note.h"
+#include "engraving/dom/spanner.h"
+#include "engraving/dom/spannermap.h"
 #include "engraving/types/types.h"
 
 #include <QDebug>
@@ -18,6 +20,51 @@
 using namespace mu::engraving;
 
 namespace scoretracker {
+
+// Compute the MIDI pitch one diatonic step above in the given key
+static int trillUpperPitch(int midiPitch, Key key)
+{
+    static const int scaleIntervals[7] = {0, 2, 4, 5, 7, 9, 11};
+    int tonic = ((static_cast<int>(key) * 7) % 12 + 12) % 12;
+    int pc = midiPitch % 12;
+
+    for (int i = 0; i < 7; ++i) {
+        int scalePc = (tonic + scaleIntervals[i]) % 12;
+        if (scalePc == pc) {
+            int nextPc = (tonic + scaleIntervals[(i + 1) % 7]) % 12;
+            int semitones = (nextPc - pc + 12) % 12;
+            return midiPitch + semitones;
+        }
+    }
+    // Not in scale — default to whole step up
+    return midiPitch + 2;
+}
+
+// Mark notes that fall under trill spanners
+static void annotateTrills(Score* score, const Part* part, std::vector<NoteEvent>& notes)
+{
+    if (notes.empty()) return;
+    int firstTick = notes.front().tick;
+    int lastTick = notes.back().tick + notes.back().durationTicks;
+    const auto& overlapping = score->spannerMap().findOverlapping(firstTick, lastTick);
+
+    for (const auto& iv : overlapping) {
+        Spanner* sp = iv.value;
+        if (!sp->isTrill()) continue;
+        int trillStart = sp->tick().ticks();
+        int trillEnd = sp->tick2().ticks();
+
+        // Get key at trill start from the part's first staff
+        Key key = part->staff(0)->key(Fraction::fromTicks(trillStart));
+
+        for (auto& ne : notes) {
+            if (ne.tick >= trillStart && ne.tick < trillEnd) {
+                ne.hasTrill = true;
+                ne.trillPitch = trillUpperPitch(ne.midiPitch, key);
+            }
+        }
+    }
+}
 
 // Accessor helpers for void* members
 static fluid_synth_t* fs(void* p) { return static_cast<fluid_synth_t*>(p); }
@@ -125,13 +172,16 @@ void PlayAlongSynth::setVoice(Part* part, int gmProg, Score* score)
             const auto& notes = chord->notes();
             if (!notes.empty()) {
                 Note* note = notes.front();
-                voice.notes.push_back({tick, note->pitch(), durTicks, note});
+                bool tied = note->tieBack() != nullptr;
+                voice.notes.push_back({tick, note->pitch(), durTicks, note, tied});
             }
         }
     }
 
     std::sort(voice.notes.begin(), voice.notes.end(),
               [](const NoteEvent& a, const NoteEvent& b) { return a.tick < b.tick; });
+
+    annotateTrills(score, part, voice.notes);
 
     m_voices.push_back(std::move(voice));
 
@@ -217,13 +267,16 @@ void PlayAlongSynth::buildNoteTableForPart(Score* score, Voice& voice)
             const auto& notes = chord->notes();
             if (!notes.empty()) {
                 Note* note = notes.front();
-                voice.notes.push_back({tick, note->pitch(), durTicks, note});
+                bool tied = note->tieBack() != nullptr;
+                voice.notes.push_back({tick, note->pitch(), durTicks, note, tied});
             }
         }
     }
 
     std::sort(voice.notes.begin(), voice.notes.end(),
               [](const NoteEvent& a, const NoteEvent& b) { return a.tick < b.tick; });
+
+    annotateTrills(score, matchedPart, voice.notes);
 
     qDebug() << "PlayAlongSynth: built" << voice.notes.size() << "notes for" << voice.partName;
 }
@@ -248,6 +301,7 @@ void PlayAlongSynth::playNextNote()
         v.lastPlayedNote = pitch;
         v.nextIndex++;
     }
+    m_trillOnUpper = false;
 }
 
 void PlayAlongSynth::stopNote()
@@ -284,6 +338,23 @@ void PlayAlongSynth::stop()
     }
 }
 
+bool PlayAlongSynth::advanceTiedNotes(int currentTick)
+{
+    bool advanced = false;
+    for (auto& v : m_voices) {
+        while (v.nextIndex < static_cast<int>(v.notes.size())) {
+            const auto& next = v.notes[v.nextIndex];
+            if (!next.tiedBack) break;          // not a tie — wait for keypress
+            if (next.tick > currentTick) break;  // cursor hasn't reached it yet
+            // Auto-advance: tied note reached by cursor
+            // No noteoff/noteon needed — same pitch sustains
+            v.nextIndex++;
+            advanced = true;
+        }
+    }
+    return advanced;
+}
+
 void* PlayAlongSynth::nextNoteElement() const
 {
     // Return the element from the first voice that still has notes
@@ -293,6 +364,38 @@ void* PlayAlongSynth::nextNoteElement() const
         }
     }
     return nullptr;
+}
+
+bool PlayAlongSynth::currentNoteHasTrill() const
+{
+    for (const auto& v : m_voices) {
+        int idx = v.nextIndex - 1;
+        if (idx >= 0 && idx < static_cast<int>(v.notes.size())) {
+            return v.notes[idx].hasTrill;
+        }
+    }
+    return false;
+}
+
+void PlayAlongSynth::trillToggle()
+{
+    if (!m_synth) return;
+    auto* s = fs(m_synth);
+
+    for (auto& v : m_voices) {
+        int idx = v.nextIndex - 1;
+        if (idx < 0 || idx >= static_cast<int>(v.notes.size())) continue;
+        const auto& ne = v.notes[idx];
+        if (!ne.hasTrill) continue;
+
+        int oldPitch = m_trillOnUpper ? ne.trillPitch : ne.midiPitch;
+        int newPitch = m_trillOnUpper ? ne.midiPitch : ne.trillPitch;
+
+        fluid_synth_noteoff(s, v.channel, oldPitch);
+        fluid_synth_noteon(s, v.channel, newPitch, 100);
+        v.lastPlayedNote = newPitch;
+    }
+    m_trillOnUpper = !m_trillOnUpper;
 }
 
 } // namespace scoretracker

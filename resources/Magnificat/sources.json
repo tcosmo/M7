@@ -5,13 +5,14 @@
     {
       "url": "https://www.youtube.com/watch?v=kYmaAS4NsPU",
       "label": "Oxford Scholar Cantorum",
+      "tuning": 0.10,
       "instrumentVolume": 74,
       "beats": "./beatdata.json"
     },
     {
       "url": "https://www.youtube.com/watch?v=fUt88ImPV-E",
       "label": "Jordi Savall",
-      "tuning": -1,
+      "tuning": -0.90,
       "instrumentVolume": 100
     },
     {
@@ -25,8 +26,26 @@
     {
       "url": "https://www.youtube.com/watch?v=41blIyHQ0hs",
       "label": "Nikolaus Harnoncourt",
-      "start": 7,
+      "tuning": -0.80,
+      "instrumentVolume": 104,
+      "start": 6,
       "end": 203
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=3EPk6zOaLH0",
+      "label": "Chœur du Concert D’Astrée ∙ Emmanuelle Haïm",
+      "tuning": 0.20,
+      "instrumentVolume": 114,
+      "start": 5,
+      "end": 177
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=s9UYuBxxqS8",
+      "label": "Ton Koopman, Amsterdam Baroque Orchestra & Choir",
+      "start": 15,
+      "end": 186,
+      "tuning": -0.80,
+      "instrumentVolume": 140
     }
   ]
 }

@@ -430,6 +430,10 @@ void App::setupUI()
         if (index < 0 || index >= m_sourceYouTubeUrls.size()) return;
         // Stop current playback
         playerPause();
+        // Apply start/end times before loading so loadYouTube can seek correctly
+        m_activeInterpretation = index;
+        m_interpStart = (index < m_sourceStartTimes.size()) ? m_sourceStartTimes[index] : 0;
+        m_interpEnd = (index < m_sourceEndTimes.size()) ? m_sourceEndTimes[index] : 0;
         loadYouTube(m_sourceYouTubeUrls[index]);
         // Apply per-interpretation tuning offset
         if (index < m_sourceTunings.size()) {
@@ -457,10 +461,6 @@ void App::setupUI()
             m_trackingAction->setChecked(false);
             m_trackingButton->setEnabled(false);
         }
-        // Apply start/end times
-        m_activeInterpretation = index;
-        m_interpStart = (index < m_sourceStartTimes.size()) ? m_sourceStartTimes[index] : 0;
-        m_interpEnd = (index < m_sourceEndTimes.size()) ? m_sourceEndTimes[index] : 0;
         // Reset tracker and synth to beginning
         m_playAlongSynth->resetPosition();
         m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
@@ -520,6 +520,7 @@ void App::setupToolbar()
     m_toolbar->widgetForAction(m_playPauseAction)->setCursor(Qt::PointingHandCursor);
 
     m_stopAction = m_toolbar->addAction("Restart");
+    m_stopAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
     connect(m_stopAction, &QAction::triggered, this, [this]() {
         playerSeekTo(0);
         m_playAlongSynth->resetPosition();
@@ -1282,14 +1283,12 @@ void App::loadYouTube(const QString& url)
     if (m_youtubePlayer) {
         m_youtubePlayer->load(url);
         // Seek to interpretation start once video is ready
-        if (m_interpStart > 0) {
-            auto conn = std::make_shared<QMetaObject::Connection>();
-            double startTime = m_interpStart;
-            *conn = connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this, conn, startTime]() {
-                m_youtubePlayer->seekTo(startTime);
-                disconnect(*conn);
-            });
-        }
+        auto conn = std::make_shared<QMetaObject::Connection>();
+        double startTime = m_interpStart;
+        *conn = connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this, conn, startTime]() {
+            m_youtubePlayer->seekTo(startTime);
+            disconnect(*conn);
+        });
         return;
     }
 
@@ -1832,30 +1831,29 @@ void App::keyPressEvent(QKeyEvent* event)
         }
     }
 
-    // Instrument panel shortcuts (only when panel is visible)
-    if (m_playModeActive && m_instrumentPanel && m_instrumentPanel->isVisible()) {
+    // Instrument volume: 1/& = down, 2/é = up (always available in play mode)
+    if (m_playModeActive && m_instrumentVolSlider) {
         QString t = event->text();
-        // 1/& = instrument volume down, 2/é = instrument volume up
-        if (m_instrumentVolSlider) {
-            if (t == "&" || event->key() == Qt::Key_1) {
-                m_instrumentVolSlider->setValue(std::max(0, m_instrumentVolSlider->value() - 5));
-                return;
-            }
-            if (t == "\xc3\xa9" || event->key() == Qt::Key_2) { // é in UTF-8
-                m_instrumentVolSlider->setValue(std::min(m_instrumentVolSlider->maximum(), m_instrumentVolSlider->value() + 5));
-                return;
-            }
+        if (t == "&" || event->key() == Qt::Key_1) {
+            m_instrumentVolSlider->setValue(std::max(0, m_instrumentVolSlider->value() - 5));
+            return;
         }
-        // 3/" = transpose down, 4/' = transpose up
-        if (m_transposeSpin) {
-            if (t == "\"" || event->key() == Qt::Key_3) {
-                m_transposeSpin->setValue(m_transposeSpin->value() - m_transposeSpin->singleStep());
-                return;
-            }
-            if (t == "'" || event->key() == Qt::Key_4) {
-                m_transposeSpin->setValue(m_transposeSpin->value() + m_transposeSpin->singleStep());
-                return;
-            }
+        if (t == "\xc3\xa9" || event->key() == Qt::Key_2) { // é in UTF-8
+            m_instrumentVolSlider->setValue(std::min(m_instrumentVolSlider->maximum(), m_instrumentVolSlider->value() + 5));
+            return;
+        }
+    }
+
+    // Transpose: 3/" = down, 4/' = up (only when instrument panel is visible)
+    if (m_playModeActive && m_instrumentPanel && m_instrumentPanel->isVisible() && m_transposeSpin) {
+        QString t = event->text();
+        if (t == "\"" || event->key() == Qt::Key_3) {
+            m_transposeSpin->setValue(m_transposeSpin->value() - m_transposeSpin->singleStep());
+            return;
+        }
+        if (t == "'" || event->key() == Qt::Key_4) {
+            m_transposeSpin->setValue(m_transposeSpin->value() + m_transposeSpin->singleStep());
+            return;
         }
     }
 

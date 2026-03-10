@@ -60,6 +60,7 @@ public:
     QPoint dotWidgetPos(int beatIndex) const;
     const std::vector<DotInfo>& dotInfos() const { return m_dotInfos; }
     void setHighlightElement(void* element); // MuseScore EngravingItem*
+    QRect highlightWidgetRect() const;
 
 signals:
     void beatClicked(int beatIndex);
@@ -147,6 +148,7 @@ public:
     int selectedBeatIndex() const;
     void ensureBeatVisible(int beatIndex);
     void setHighlightElement(void* element);
+    void setPlayModeActive(bool active);
 
 signals:
     void zoomChanged(double zoom);
@@ -162,6 +164,7 @@ protected:
 
 private:
     void ensureCursorVisible();
+    void ensureHighlightVisible();
     void applyZoom(double newZoom);
 
     ScoreCanvas* m_canvas = nullptr;
@@ -171,6 +174,7 @@ private:
     double m_scrollTrigger = 0.60;
     double m_scrollTarget = 0.0;
     int m_cursorAnchor = 1; // 0=Top, 1=Center, 2=Bottom
+    bool m_playModeActive = false;
 };
 
 } // namespace scoretracker

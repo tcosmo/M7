@@ -43,7 +43,7 @@ ScoreCanvas::ScoreCanvas(QWidget* parent)
 {
     setAutoFillBackground(true);
     QPalette pal = palette();
-    pal.setColor(QPalette::Window, QColor(200, 200, 200));
+    pal.setColor(QPalette::Window, Theme::scoreBg());
     setPalette(pal);
 }
 
@@ -341,6 +341,31 @@ void ScoreCanvas::setHighlightElement(void* element)
     update();
 }
 
+QRect ScoreCanvas::highlightWidgetRect() const
+{
+    if (!m_highlightElement || !m_score) return QRect();
+    auto* note = static_cast<mu::engraving::Note*>(m_highlightElement);
+    auto* chord = note->chord();
+    if (!chord) return QRect();
+
+    muse::RectF bbox = chord->canvasBoundingRect();
+    auto* pg = static_cast<mu::engraving::Page*>(
+        chord->findAncestor(mu::engraving::ElementType::PAGE));
+    int pageIdx = pg ? pg->no() : 0;
+    double pageX = pg ? pg->pos().x() : 0;
+    double pageY = pg ? pg->pos().y() : 0;
+    muse::RectF pageRel(bbox.x() - pageX, bbox.y() - pageY, bbox.width(), bbox.height());
+    muse::RectF mapped = mapToRenderCoords(pageRel, pageIdx);
+
+    double s = scale();
+    return QRect(
+        static_cast<int>(mapped.x() * s),
+        static_cast<int>(mapped.y() * s),
+        static_cast<int>(mapped.width() * s) + 10,
+        static_cast<int>(mapped.height() * s) + 10
+    );
+}
+
 void ScoreCanvas::setSyncMode(scoretracker::SyncMode* syncMode)
 {
     m_syncMode = syncMode;
@@ -611,7 +636,7 @@ ScoreWidget::ScoreWidget(QWidget* parent)
     : QScrollArea(parent)
 {
     QPalette pal = palette();
-    pal.setColor(QPalette::Window, QColor(200, 200, 200));
+    pal.setColor(QPalette::Window, Theme::scoreBg());
     setPalette(pal);
     setAutoFillBackground(true);
 
@@ -852,11 +877,51 @@ void ScoreWidget::ensureBeatVisible(int beatIndex)
 void ScoreWidget::setHighlightElement(void* element)
 {
     m_canvas->setHighlightElement(element);
+    ensureHighlightVisible();
+}
+
+void ScoreWidget::ensureHighlightVisible()
+{
+    if (!m_autoScroll) return;
+
+    QRect cr = m_canvas->highlightWidgetRect();
+    if (cr.isNull()) return;
+
+    int vpH = viewport()->height();
+    int vpW = viewport()->width();
+    int margin = 40;
+
+    // Vertical: scroll when the note passes the trigger line
+    int scrollY = verticalScrollBar()->value();
+    int triggerY = static_cast<int>(vpH * m_scrollTrigger);
+    int targetY = static_cast<int>(vpH * m_scrollTarget);
+    int noteInVP = cr.top() + cr.height() / 2 - scrollY;
+
+    if (noteInVP < margin) {
+        verticalScrollBar()->setValue(cr.top() - margin);
+    } else if (noteInVP > triggerY) {
+        verticalScrollBar()->setValue(cr.top() - targetY);
+    }
+
+    // Horizontal
+    int scrollX = horizontalScrollBar()->value();
+    if (cr.left() < scrollX + margin) {
+        horizontalScrollBar()->setValue(cr.left() - margin);
+    } else if (cr.right() > scrollX + vpW - margin) {
+        horizontalScrollBar()->setValue(cr.right() - vpW + margin);
+    }
+}
+
+void ScoreWidget::setPlayModeActive(bool active)
+{
+    m_playModeActive = active;
 }
 
 void ScoreWidget::ensureCursorVisible()
 {
     if (!m_autoScroll) return;
+    // In play mode, scrolling is driven by the next note highlight instead
+    if (m_playModeActive) return;
 
     QRect cr = m_canvas->cursorWidgetRect();
     if (cr.isNull()) return;

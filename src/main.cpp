@@ -1,7 +1,10 @@
 #include <QApplication>
 #include <QDebug>
 #include <QFileInfo>
+#include <QPalette>
+#include <QStyleFactory>
 
+#include "theme.h"
 #include "modularity/ioc.h"
 #include "iapplication.h"
 #include "io/ifilesystem.h"
@@ -72,8 +75,8 @@ public:
     StandaloneApp()
         : m_ctx(std::make_shared<muse::modularity::Context>()) {}
 
-    muse::String name() const override { return muse::String(u"scoretracker"); }
-    muse::String title() const override { return muse::String(u"ScoreTracker"); }
+    muse::String name() const override { return muse::String(u"jamjammin"); }
+    muse::String title() const override { return muse::String(u"JamJammin'"); }
     bool unstable() const override { return false; }
     muse::Version version() const override { return muse::Version(0, 1, 0); }
     muse::Version fullVersion() const override { return version(); }
@@ -103,8 +106,27 @@ private:
 int main(int argc, char* argv[])
 {
     QApplication qapp(argc, argv);
-    qapp.setApplicationName("ScoreTracker");
+    qapp.setApplicationName("JamJammin");
     qapp.setOrganizationName("MMMM");
+
+    // Force dark Discord-style palette — no light mode
+    qapp.setStyle(QStyleFactory::create("Fusion"));
+    QPalette darkPal;
+    darkPal.setColor(QPalette::Window,          scoretracker::Theme::surfaceBg());
+    darkPal.setColor(QPalette::WindowText,      scoretracker::Theme::textPrimary());
+    darkPal.setColor(QPalette::Base,            scoretracker::Theme::inputBg());
+    darkPal.setColor(QPalette::AlternateBase,   scoretracker::Theme::panelBg());
+    darkPal.setColor(QPalette::Text,            scoretracker::Theme::textPrimary());
+    darkPal.setColor(QPalette::Button,          scoretracker::Theme::panelBg());
+    darkPal.setColor(QPalette::ButtonText,      scoretracker::Theme::textPrimary());
+    darkPal.setColor(QPalette::BrightText,      Qt::white);
+    darkPal.setColor(QPalette::Highlight,       scoretracker::Theme::accent());
+    darkPal.setColor(QPalette::HighlightedText, Qt::white);
+    darkPal.setColor(QPalette::Disabled, QPalette::Text,       scoretracker::Theme::textDisabled());
+    darkPal.setColor(QPalette::Disabled, QPalette::ButtonText, scoretracker::Theme::textDisabled());
+    darkPal.setColor(QPalette::Disabled, QPalette::WindowText, scoretracker::Theme::textDisabled());
+    qapp.setPalette(darkPal);
+    qapp.setStyleSheet(scoretracker::Theme::globalStyleSheet());
 
     // Parse arguments
     QString musicXmlPath;

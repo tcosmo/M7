@@ -67,7 +67,7 @@ static LayoutMode comboIndexToLayoutMode(int index)
 App::App(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle("ScoreTracker");
+    setWindowTitle("JamJammin'");
     resize(1250, 850);
 
     m_audioPlayer = new AudioPlayer(this);
@@ -127,33 +127,17 @@ App::App(QWidget* parent)
     });
     connect(m_trackingAction, &QAction::toggled, [this](bool on) {
         m_trackingSettings->setTrackingEnabled(on);
-        if (!on) {
-            // Hide cursor visually
-            m_scoreWidget->setCursorVisible(false);
-            if (!m_userForcedAutoScroll) {
-                // Programmatically untick auto-scroll without saving
-                m_trackingSettings->blockSignals(true);
-                m_trackingSettings->setAutoScrollEnabled(false);
-                m_trackingSettings->blockSignals(false);
-                m_scoreWidget->setAutoScrollEnabled(false);
-                m_scoreWidget->setCursorRect(muse::RectF(), -1);
-            }
-        } else {
-            m_scoreWidget->setCursorVisible(true);
+        m_scoreWidget->setCursorVisible(on);
+        // When tracking is off but auto-scroll is on, feed current position
+        // so auto-scroll still works with an invisible cursor
+        if (!on && m_trackingSettings->autoScrollEnabled() && playerDuration() > 0) {
+            m_syncTimer->setTime(playerCurrentTime());
         }
     });
 
     connect(m_trackingSettings, &TrackingSettings::settingChanged, [this]() {
         bool autoScroll = m_trackingSettings->autoScrollEnabled();
         bool tracking = m_trackingSettings->trackingEnabled();
-
-        // Track user forcing auto-scroll while tracking is off
-        if (!tracking && autoScroll) {
-            m_userForcedAutoScroll = true;
-        }
-        if (!autoScroll) {
-            m_userForcedAutoScroll = false;
-        }
 
         m_scoreWidget->setAutoScrollEnabled(autoScroll);
         m_scoreWidget->setShowTriggerLine(m_trackingSettings->showTriggerLine());
@@ -166,7 +150,6 @@ App::App(QWidget* parent)
         // When auto-scroll enabled without tracking, use invisible cursor
         if (!tracking && autoScroll) {
             m_scoreWidget->setCursorVisible(false);
-            // Feed current position to sync timer so cursor position is computed
             if (playerDuration() > 0) {
                 m_syncTimer->setTime(playerCurrentTime());
             }
@@ -199,10 +182,10 @@ App::App(QWidget* parent)
         m_scoreWidget->setCursorAnchor(m_trackingSettings->cursorAnchor());
     }
 
-    // Set initial overlay width and position sidebar
-    int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
-    m_scoreWidget->setOverlayWidth(m_sidebarWidth + scrollbarW);
-    QTimer::singleShot(0, this, &App::repositionSidebar);
+    // Set initial splitter sizes: score takes remaining, sidebar gets fixed width
+    QTimer::singleShot(0, this, [this]() {
+        m_mainSplitter->setSizes({width() - m_sidebarWidth, m_sidebarWidth});
+    });
 }
 
 App::~App()
@@ -218,7 +201,7 @@ void App::setupUI()
     m_centralSplitter->setChildrenCollapsible(false);
     m_centralSplitter->setHandleWidth(5);
     m_centralSplitter->setStyleSheet(
-        "QSplitter::handle:vertical { background: #555; border-top: 1px solid #666; border-bottom: 1px solid #333; }");
+        "QSplitter::handle:vertical { background: #202225; }");
 
     m_waveformWidget = new WaveformWidget(m_centralSplitter);
     m_waveformWidget->hide();
@@ -265,10 +248,8 @@ void App::setupUI()
     m_centralSplitter->setStretchFactor(0, 0); // waveform: don't stretch
     m_centralSplitter->setStretchFactor(1, 1); // score: stretch
 
-    setCentralWidget(m_centralSplitter);
-
-    // Sidebar overlays the score on the right edge
-    m_sidebarWidget = new QWidget(this);
+    // Sidebar sits beside the score in a horizontal splitter
+    m_sidebarWidget = new QWidget();
     m_sidebarWidget->setAutoFillBackground(true);
     m_sidebarWidget->setFocusPolicy(Qt::ClickFocus);
 
@@ -311,101 +292,30 @@ void App::setupUI()
 
     sidebarLayout->addWidget(m_sidebarSplitter);
 
-    // Drag handle on the left edge of the sidebar
-    m_sidebarHandle = new QWidget(this);
-    m_sidebarHandle->setFixedWidth(5);
-    m_sidebarHandle->setCursor(Qt::SplitHCursor);
-    m_sidebarHandle->installEventFilter(this);
-}
-
-void App::repositionSidebar()
-{
-    if (!m_sidebarWidget) return;
-    QRect cr = centralWidget()->geometry();
-    int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
-    if (m_sidebarWidget->isVisible()) {
-        int x = cr.right() - m_sidebarWidth - scrollbarW + 1;
-        m_sidebarWidget->setGeometry(x, cr.top(), m_sidebarWidth, cr.height());
-        m_sidebarHandle->setGeometry(x - 5, cr.top(), 5, cr.height());
-        m_sidebarHandle->show();
-        m_sidebarWidget->raise();
-        m_sidebarHandle->raise();
-    } else if (!m_sidebarDragging) {
-        m_sidebarHandle->hide();
-    }
+    // Horizontal splitter: score (left) + sidebar (right)
+    m_mainSplitter = new QSplitter(Qt::Horizontal, this);
+    m_mainSplitter->setChildrenCollapsible(false);
+    m_mainSplitter->addWidget(m_centralSplitter);
+    m_mainSplitter->addWidget(m_sidebarWidget);
+    m_mainSplitter->setStretchFactor(0, 1); // score stretches
+    m_mainSplitter->setStretchFactor(1, 0); // sidebar fixed
+    setCentralWidget(m_mainSplitter);
 }
 
 void App::resizeEvent(QResizeEvent* event)
 {
     QMainWindow::resizeEvent(event);
-    repositionSidebar();
     repositionSyncSidebar();
 }
 
 bool App::eventFilter(QObject* obj, QEvent* event)
 {
-    if (obj == m_sidebarHandle) {
-        if (event->type() == QEvent::MouseButtonPress) {
-            auto* me = static_cast<QMouseEvent*>(event);
-            m_sidebarDragging = true;
-            m_dragStartX = me->globalPosition().toPoint().x();
-            m_dragStartWidth = m_sidebarWidth;
-            return true;
-        }
-        if (event->type() == QEvent::MouseMove && m_sidebarDragging) {
-            auto* me = static_cast<QMouseEvent*>(event);
-            int dx = me->globalPosition().toPoint().x() - m_dragStartX;
-            int newWidth = m_dragStartWidth - dx;
-            static const int MIN_WIDTH = 280;
-            static const int MAX_WIDTH = 500;
-            static const int COLLAPSE_THRESHOLD = 120;
-            int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
-            if (newWidth < COLLAPSE_THRESHOLD) {
-                // Collapse but keep dragging
-                if (m_sidebarWidget->isVisible()) {
-                    m_sidebarWidget->setVisible(false);
-                    m_scoreWidget->setOverlayWidth(0);
-                    m_sidebarHandle->raise();
-                    m_sidebarAction->blockSignals(true);
-                    m_sidebarAction->setChecked(false);
-                    m_sidebarAction->blockSignals(false);
-                }
-            } else {
-                // Uncollapse if needed
-                if (!m_sidebarWidget->isVisible()) {
-                    m_sidebarWidget->setVisible(true);
-                    m_scoreWidget->setOverlayWidth(m_sidebarWidth + scrollbarW);
-                    m_sidebarAction->blockSignals(true);
-                    m_sidebarAction->setChecked(true);
-                    m_sidebarAction->blockSignals(false);
-                }
-                m_sidebarWidth = std::clamp(newWidth, MIN_WIDTH, MAX_WIDTH);
-                m_scoreWidget->setOverlayWidth(m_sidebarWidth + scrollbarW);
-                repositionSidebar();
-            }
-            return true;
-        }
-        if (event->type() == QEvent::MouseButtonRelease) {
-            m_sidebarDragging = false;
-            // Only refit when sidebar was collapsed by dragging
-            if (!m_sidebarWidget->isVisible()) {
-                m_scoreWidget->zoomToFit();
-            }
-            return true;
-        }
-    }
     return QMainWindow::eventFilter(obj, event);
 }
 
 void App::setSidebarVisible(bool visible)
 {
-    int scrollbarW = m_scoreWidget->verticalScrollBar()->sizeHint().width();
     m_sidebarWidget->setVisible(visible);
-    m_scoreWidget->setOverlayWidth(visible ? m_sidebarWidth + scrollbarW : 0);
-    repositionSidebar();
-    if (!visible) {
-        m_scoreWidget->zoomToFit();
-    }
 }
 
 void App::setupToolbar()
@@ -499,7 +409,7 @@ void App::setupToolbar()
     });
     connect(m_trackingAction, &QAction::toggled, [this](bool on) {
         updateTrackingIcon();
-        if (!on) {
+        if (!on && !m_trackingSettings->autoScrollEnabled()) {
             m_scoreWidget->setCursorRect(muse::RectF(), -1);
         }
     });
@@ -514,7 +424,7 @@ void App::setupToolbar()
     m_playModeButton->setCheckable(true);
     m_playModeButton->setStyleSheet(
         "QPushButton { padding: 2px 8px; font-size: 12px; border: none; background: transparent; }"
-        "QPushButton:checked { color: #1e78ff; font-weight: bold; }");
+        "QPushButton:checked { color: #E07A2F; font-weight: bold; }");
     {
         QFont boldFont = m_playModeButton->font();
         boldFont.setPointSize(12);
@@ -526,29 +436,6 @@ void App::setupToolbar()
     connect(m_playModeButton, &QPushButton::toggled, this, [this](bool on) {
         if (on) enterPlayMode();
         else exitPlayMode();
-    });
-
-    m_toolbar->addSeparator();
-
-    // Sync mode button
-    m_syncModeButton = new QPushButton("Sync Mode", this);
-    m_syncModeButton->setFlat(true);
-    m_syncModeButton->setCursor(Qt::PointingHandCursor);
-    m_syncModeButton->setFocusPolicy(Qt::NoFocus);
-    m_syncModeButton->setCheckable(true);
-    m_syncModeButton->setStyleSheet(
-        "QPushButton { padding: 2px 8px; font-size: 12px; border: none; background: transparent; }"
-        "QPushButton:checked { color: #1e78ff; font-weight: bold; }");
-    // Size to bold metrics so toggling doesn't crop
-    QFont boldFont = m_syncModeButton->font();
-    boldFont.setPointSize(12);
-    boldFont.setBold(true);
-    int boldWidth = QFontMetrics(boldFont).horizontalAdvance("Sync Mode") + 20;
-    m_syncModeButton->setMinimumWidth(boldWidth);
-    m_toolbar->addWidget(m_syncModeButton);
-    connect(m_syncModeButton, &QPushButton::toggled, this, [this](bool on) {
-        if (on) enterSyncMode();
-        else exitSyncMode();
     });
 
     m_toolbar->addSeparator();
@@ -762,7 +649,7 @@ bool App::loadScore(const QString& musicXmlPath)
     if (remaining < 0) remaining = 0;
     m_sidebarSplitter->setSizes({partsHeight, trackingHeight, displayHeight, remaining});
 
-    setWindowTitle(QString("ScoreTracker - %1").arg(fi.fileName()));
+    setWindowTitle(QString("JamJammin' - %1").arg(fi.fileName()));
 
     // Fit score to viewport after layout settles
     QTimer::singleShot(0, m_scoreWidget, &ScoreWidget::zoomToFit);
@@ -777,8 +664,8 @@ void App::setVisibleParts(const QList<int>& partNumbers)
 
 void App::startSyncMode()
 {
-    m_syncModeButton->setChecked(true);
-    // When launched via --sync, start with tracking off
+    // Sync mode archived — enter directly via CLI flag
+    enterSyncMode();
     m_trackingAction->setChecked(false);
 }
 
@@ -969,8 +856,8 @@ void App::updateTrackingIcon()
     QPainter p(&px);
     p.setRenderHint(QPainter::Antialiasing);
     if (on) {
-        p.setBrush(QColor("#4CAF50"));
-        p.setPen(QPen(QColor("#4CAF50"), 1.5));
+        p.setBrush(Theme::green());
+        p.setPen(QPen(Theme::green(), 1.5));
     } else {
         p.setBrush(Qt::NoBrush);
         p.setPen(QPen(Theme::textHint(), 1.5));
@@ -1189,12 +1076,12 @@ void App::loadYouTube(const QString& url)
 
 void App::enterPlayMode()
 {
-    if (m_syncModeButton->isChecked()) {
-        m_syncModeButton->setChecked(false);
+    if (m_syncMode->isActive()) {
+        exitSyncMode();
     }
     m_playModeActive = true;
     m_partPanel->setPlayModeActive(true);
-    m_syncModeButton->setEnabled(false);
+    m_scoreWidget->setPlayModeActive(true);
 }
 
 void App::exitPlayMode()
@@ -1203,8 +1090,8 @@ void App::exitPlayMode()
     m_trillTimer->stop();
     m_playAlongSynth->stopNote();
     m_scoreWidget->setHighlightElement(nullptr);
+    m_scoreWidget->setPlayModeActive(false);
     m_partPanel->setPlayModeActive(false);
-    m_syncModeButton->setEnabled(true);
     m_keysHeld = 0;
 }
 

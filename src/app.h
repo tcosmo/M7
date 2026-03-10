@@ -68,7 +68,6 @@ private:
     void setupToolbar();
     void setupUI();
     void setSidebarVisible(bool visible);
-    void repositionSidebar();
     void updateTrackingIcon();
     QString formatTime(double seconds) const;
 
@@ -93,7 +92,7 @@ private:
     // UI
     ScoreWidget* m_scoreWidget = nullptr;
     QWidget* m_sidebarWidget = nullptr;
-    QWidget* m_sidebarHandle = nullptr;
+    QSplitter* m_mainSplitter = nullptr;
     QSplitter* m_sidebarSplitter = nullptr;
     PartPanel* m_partPanel = nullptr;
     DisplaySettings* m_displaySettings = nullptr;
@@ -120,7 +119,8 @@ private:
     SyncMode* m_syncMode = nullptr;
     bool m_playModeActive = false;
     QPushButton* m_playModeButton = nullptr;
-    QPushButton* m_syncModeButton = nullptr;
+    // Sync mode archived — button removed from toolbar but code retained
+    // QPushButton* m_syncModeButton = nullptr;
     QWidget* m_syncSidebarWidget = nullptr;
     QWidget* m_syncSidebarHandle = nullptr;
     SyncPanel* m_syncPanel = nullptr;
@@ -146,11 +146,7 @@ private:
     QString m_audioFilePath;
     QString m_beatDataPath;
     bool m_sliderDragging = false;
-    bool m_userForcedAutoScroll = false;
     int m_sidebarWidth = 300;
-    bool m_sidebarDragging = false;
-    int m_dragStartX = 0;
-    int m_dragStartWidth = 0;
 };
 
 } // namespace scoretracker

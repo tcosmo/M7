@@ -3,6 +3,7 @@
 #import <AVFoundation/AVFoundation.h>
 #include <QDebug>
 #include <QUrl>
+#include <algorithm>
 
 namespace scoretracker {
 
@@ -140,6 +141,20 @@ double AudioPlayer::duration() const
 bool AudioPlayer::isPlaying() const
 {
     return m_playing;
+}
+
+void AudioPlayer::setVolume(double volume)
+{
+    m_volume = std::clamp(volume, 0.0, 1.0);
+    if (m_player) {
+        AVAudioPlayer* player = (AVAudioPlayer*)m_player;
+        player.volume = static_cast<float>(m_volume);
+    }
+}
+
+double AudioPlayer::volume() const
+{
+    return m_volume;
 }
 
 } // namespace scoretracker

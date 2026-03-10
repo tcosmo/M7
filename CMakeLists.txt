@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(scoretracker LANGUAGES CXX C OBJCXX)
+project(jamjammin LANGUAGES CXX C OBJCXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
@@ -141,7 +141,7 @@ set_source_files_properties(
 find_library(AppKit_Lib NAMES AppKit)
 target_link_libraries(muse_global PRIVATE ${AppKit_Lib})
 
-add_executable(scoretracker
+add_executable(jamjammin
     src/main.cpp
     src/app.h
     src/app.cpp
@@ -169,10 +169,13 @@ add_executable(scoretracker
     src/waveformwidget.mm
     src/playalongsynth.h
     src/playalongsynth.cpp
+    src/worldmodel.h
+    src/worldbrowser.h
+    src/worldbrowser.cpp
     src/miniaudio_impl.c
 )
 
-qt_add_resources(scoretracker "icons"
+qt_add_resources(jamjammin "icons"
     PREFIX "/"
     FILES
         src/icons/youtube.png
@@ -182,9 +185,9 @@ set_target_properties(engraving PROPERTIES COMPILE_FLAGS "-fPIC")
 set_target_properties(muse_global PROPERTIES COMPILE_FLAGS "-fPIC")
 set_target_properties(muse_draw PROPERTIES COMPILE_FLAGS "-fPIC")
 set_target_properties(iex_musicxml PROPERTIES COMPILE_FLAGS "-fPIC")
-set_target_properties(scoretracker PROPERTIES COMPILE_FLAGS "-fPIC")
+set_target_properties(jamjammin PROPERTIES COMPILE_FLAGS "-fPIC")
 
-target_include_directories(scoretracker PUBLIC
+target_include_directories(jamjammin PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_LIST_DIR}/src
     ${CMAKE_CURRENT_LIST_DIR}/thirdparty
@@ -197,9 +200,9 @@ target_include_directories(scoretracker PUBLIC
     ${FLUIDSYNTH_INC}
 )
 
-target_compile_options(scoretracker PRIVATE ${PCH_FIX})
+target_compile_options(jamjammin PRIVATE ${PCH_FIX})
 
-target_link_libraries(scoretracker
+target_link_libraries(jamjammin
     muse_global
     muse_draw
     engraving

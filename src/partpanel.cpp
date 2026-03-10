@@ -1198,6 +1198,19 @@ void PartPanel::showOnlyParts(const QList<int>& partNumbers)
     relayout();
 }
 
+void PartPanel::activatePlayAlong(int rowIndex, int gmProgram)
+{
+    if (rowIndex < 0 || rowIndex >= static_cast<int>(m_rows.size())) return;
+
+    auto* target = m_rows[rowIndex];
+    for (auto* r : m_rows)
+        r->setPlayAlongActive(r == target);
+    if (!target->isPartVisible()) {
+        target->setPartVisible(true);
+        relayout();
+    }
+}
+
 void PartPanel::updateRow(int index, bool visible)
 {
     if (index < 0 || index >= static_cast<int>(m_rows.size())) return;

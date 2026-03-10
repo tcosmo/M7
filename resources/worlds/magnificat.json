@@ -1,0 +1,81 @@
+{
+  "id": "magnificat",
+  "title": "Magnificat in D major",
+  "composer": "J. S. Bach",
+  "catalogue": "BWV 243",
+  "cover": "../Magnificat/Magnificat_cover.jpg",
+  "sections": [
+    {
+      "id": "magnificat",
+      "title": "1. Magnificat",
+      "score": "../Magnificat/Magnificat.musicxml",
+      "sources": "../Magnificat/sources.json",
+      "beats": "../Magnificat/beatdata.json",
+      "levels": [
+        {
+          "id": "continuo",
+          "title": "Organo e Continuo",
+          "description": "Hold down the bass line",
+          "parts": [17],
+          "playPart": 17,
+          "gmProgram": 34
+        }
+      ]
+    },
+    {
+      "id": "et-exsultavit",
+      "title": "2. Et exsultavit",
+      "levels": []
+    },
+    {
+      "id": "quia-respexit",
+      "title": "3. Quia respexit",
+      "levels": []
+    },
+    {
+      "id": "omnes-generationes",
+      "title": "4. Omnes generationes",
+      "levels": []
+    },
+    {
+      "id": "quia-fecit",
+      "title": "5. Quia fecit mihi magna",
+      "levels": []
+    },
+    {
+      "id": "et-misericordia",
+      "title": "6. Et misericordia",
+      "levels": []
+    },
+    {
+      "id": "fecit-potentiam",
+      "title": "7. Fecit potentiam",
+      "levels": []
+    },
+    {
+      "id": "deposuit",
+      "title": "8. Deposuit potentes",
+      "levels": []
+    },
+    {
+      "id": "esurientes",
+      "title": "9. Esurientes implevit",
+      "levels": []
+    },
+    {
+      "id": "suscepit-israel",
+      "title": "10. Suscepit Israel",
+      "levels": []
+    },
+    {
+      "id": "sicut-locutus",
+      "title": "11. Sicut locutus est",
+      "levels": []
+    },
+    {
+      "id": "gloria-patri",
+      "title": "12. Gloria Patri",
+      "levels": []
+    }
+  ]
+}

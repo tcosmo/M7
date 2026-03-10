@@ -2,6 +2,7 @@
 #include <QDebug>
 #include <QFileInfo>
 #include <QPalette>
+#include <QStackedWidget>
 #include <QStyleFactory>
 
 #include "theme.h"
@@ -166,20 +167,6 @@ int main(int argc, char* argv[])
         }
     }
 
-    if (musicXmlPath.isEmpty()) {
-        qWarning() << "Usage: scoretracker <musicxml-file> [audio-file] [--youtube url] [--sources path] [--beats beatdata.json] [--parts 1,4,5] [--sync]";
-        qWarning() << "  musicxml-file: Path to MusicXML score (.musicxml, .xml, .mxl)";
-        qWarning() << "  audio-file:    Path to audio recording (.m4a, .mp3, .wav)";
-        qWarning() << "  --youtube:     YouTube video URL (mutually exclusive with audio-file)";
-        qWarning() << "  --sources:     Path to sources.json (overrides --youtube)";
-        qWarning() << "  --beats:       Path to beat data JSON file";
-        qWarning() << "  --parts:       Comma-separated 1-based part numbers to show";
-        qWarning() << "  --sync:        Start in sync mode";
-        qWarning() << "  --play:        Start in play mode";
-        qWarning() << "  --file:        Prefer file source over YouTube";
-        return 1;
-    }
-
     // Set up IoC manually (since we skip GlobalModule)
     auto* ioc = muse::modularity::globalIoc();
 
@@ -226,6 +213,19 @@ int main(int argc, char* argv[])
     // Create and show the app
     scoretracker::App app;
 
+    // Load worlds from resources directory
+    QString worldsDir = QCoreApplication::applicationDirPath() + "/../../resources/worlds";
+    app.loadWorlds(worldsDir);
+
+    if (musicXmlPath.isEmpty()) {
+        // No CLI args — show world browser
+        app.show();
+        int ret = qapp.exec();
+        engravingModule.onDeinit();
+        engravingModule.onDestroy();
+        return ret;
+    }
+
     if (!app.loadScore(musicXmlPath)) {
         qWarning() << "Failed to load score:" << musicXmlPath;
         return 1;
@@ -257,6 +257,8 @@ int main(int argc, char* argv[])
     }
 
     app.show();
+    // CLI mode: jump straight to score view
+    app.findChild<QStackedWidget*>()->setCurrentIndex(1);
 
     if (startSyncMode) {
         app.startSyncMode();

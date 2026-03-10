@@ -64,6 +64,7 @@ YouTubePlayer::YouTubePlayer(QObject* parent)
 {
     m_view = new QWebEngineView();
     m_view->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    connect(m_view, &QObject::destroyed, this, [this]() { m_view = nullptr; });
 
     // Allow programmatic playback without user gesture (Space key from toolbar)
     m_view->page()->settings()->setAttribute(
@@ -166,7 +167,10 @@ YouTubePlayer::YouTubePlayer(QObject* parent)
 
 YouTubePlayer::~YouTubePlayer()
 {
-    delete m_view;
+    // m_view may be owned by a parent widget (WorldSidebar); only delete if orphaned
+    if (m_view && !m_view->parent()) {
+        delete m_view;
+    }
 }
 
 void YouTubePlayer::load(const QString& url)
@@ -231,6 +235,14 @@ void YouTubePlayer::setPlaybackRate(double rate)
     qDebug() << "YT: setPlaybackRate(" << rate << ")";
     m_view->page()->runJavaScript(
         QString("player.setPlaybackRate(%1);").arg(rate, 0, 'f', 2));
+}
+
+void YouTubePlayer::setVolume(int volume)
+{
+    m_volume = std::clamp(volume, 0, 100);
+    if (!m_ready) return;
+    m_view->page()->runJavaScript(
+        QString("player.setVolume(%1);").arg(m_volume));
 }
 
 QString YouTubePlayer::extractVideoId(const QString& url)

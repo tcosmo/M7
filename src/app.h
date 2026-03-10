@@ -6,12 +6,17 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QLabel>
+#include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QSplitter>
-#include <QDockWidget>
+#include <QStackedWidget>
 #include <QJsonObject>
+#include <QStringList>
 
 #include <memory>
 #include <vector>
+
+#include "worldmodel.h"
 
 namespace mu::engraving {
 class MasterScore;
@@ -33,6 +38,8 @@ class PartPanel;
 class DisplaySettings;
 class TrackingSettings;
 class PlayAlongSynth;
+class WorldSidebar;
+class LevelBrowser;
 
 class App : public QMainWindow
 {
@@ -51,6 +58,8 @@ public:
     void startSyncMode();
     void startPlayMode();
     void selectFileSource();
+    void loadWorlds(const QString& worldsDir);
+    void showWorldBrowser();
 
 private slots:
     void togglePlayPause();
@@ -73,6 +82,7 @@ private:
 
     void enterPlayMode();
     void exitPlayMode();
+    void loadLevel(int worldIndex, int sectionIndex, int levelIndex);
     void enterSyncMode();
     void exitSyncMode();
     void setupSyncSidebar();
@@ -106,15 +116,28 @@ private:
     QSlider* m_seekSlider = nullptr;
     QLabel* m_timeLabel = nullptr;
     QLabel* m_zoomLabel = nullptr;
+    QAction* m_instrumentAction = nullptr;
+    QWidget* m_instrumentPanel = nullptr;
+    QComboBox* m_instrumentCombo = nullptr;
+    QDoubleSpinBox* m_transposeSpin = nullptr;
+    QSlider* m_instrumentVolSlider = nullptr;
 
     // Backend
     AudioPlayer* m_audioPlayer = nullptr;
     YouTubePlayer* m_youtubePlayer = nullptr;
-    QDockWidget* m_videoDock = nullptr;
-    QPushButton* m_sourceButton = nullptr;
-    QAction* m_sourceButtonAction = nullptr;
     QPushButton* m_speedButton = nullptr;
     bool m_useYouTube = false;
+    QStringList m_sourceYouTubeUrls;
+    QStringList m_sourceLabels;
+    QList<double> m_sourceTunings; // per-interpretation pitch offset in semitones (fractional OK)
+    QList<int> m_sourceInstrumentVols; // per-interpretation instrument volume (0–100), -1 = use default
+    QStringList m_sourceBeatsFiles;    // per-interpretation beats JSON path, empty = no beats
+    QList<double> m_sourceStartTimes;  // per-interpretation start offset in seconds, 0 = from beginning
+    QList<double> m_sourceEndTimes;    // per-interpretation end time in seconds, 0 = no limit
+    int m_activeInterpretation = 0;
+    double m_interpStart = 0;          // active interpretation start offset
+    double m_interpEnd = 0;            // active interpretation end time (0 = no limit)
+    QString m_sourceAudioFile;
     SyncTimer* m_syncTimer = nullptr;
     SyncMode* m_syncMode = nullptr;
     bool m_playModeActive = false;
@@ -147,6 +170,13 @@ private:
     QString m_beatDataPath;
     bool m_sliderDragging = false;
     int m_sidebarWidth = 300;
+
+    // Worlds
+    WorldSidebar* m_worldSidebar = nullptr;
+    LevelBrowser* m_levelBrowser = nullptr;
+    QStackedWidget* m_centralStack = nullptr;  // switches between level browser and score view
+    QList<World> m_worlds;
+    int m_currentWorldIndex = -1;
 };
 
 } // namespace scoretracker

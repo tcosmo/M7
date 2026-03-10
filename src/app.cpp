@@ -11,6 +11,7 @@
 #include "trackingsettings.h"
 #include "playalongsynth.h"
 #include "collapsiblesection.h"
+#include "worldbrowser.h"
 #include "theme.h"
 #include <QFile>
 #include <QJsonDocument>
@@ -38,12 +39,16 @@
 #include <QDebug>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QApplication>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QDoubleSpinBox>
+#include <QLineEdit>
 #include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -244,9 +249,106 @@ void App::setupUI()
         }
     });
 
+    // Instrument panel (hidden by default, shown via toolbar button)
+    m_instrumentPanel = new QWidget();
+    m_instrumentPanel->setFixedHeight(80);
+    {
+        auto* ipLayout = new QHBoxLayout(m_instrumentPanel);
+        ipLayout->setContentsMargins(16, 8, 16, 8);
+        ipLayout->setSpacing(16);
+
+        auto* instrLabel = new QLabel("Instrument");
+        instrLabel->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold;").arg(Theme::textPrimary().name()));
+        ipLayout->addWidget(instrLabel);
+
+        m_instrumentCombo = new QComboBox();
+        auto* instrCombo = m_instrumentCombo;
+        instrCombo->addItem("Acoustic Grand Piano", 0);
+        instrCombo->addItem("Nylon Guitar",         24);
+        instrCombo->addItem("Steel Guitar",          25);
+        instrCombo->addItem("Acoustic Bass",         32);
+        instrCombo->addItem("Electric Bass (finger)", 33);
+        instrCombo->addItem("Electric Bass (pick)",  34);
+        instrCombo->addItem("Violin",                40);
+        instrCombo->addItem("Cello",                 42);
+        instrCombo->addItem("Orchestral Harp",       46);
+        instrCombo->addItem("String Ensemble",       48);
+        instrCombo->addItem("Trumpet",               56);
+        instrCombo->addItem("French Horn",           60);
+        instrCombo->addItem("Oboe",                  68);
+        instrCombo->addItem("Clarinet",              71);
+        instrCombo->addItem("Flute",                 73);
+        instrCombo->addItem("Recorder",              74);
+        instrCombo->setMinimumWidth(180);
+        // Select current GM program
+        int curProg = m_playAlongSynth->gmProgram();
+        for (int i = 0; i < instrCombo->count(); ++i) {
+            if (instrCombo->itemData(i).toInt() == curProg) {
+                instrCombo->setCurrentIndex(i);
+                break;
+            }
+        }
+        connect(instrCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [this, instrCombo](int idx) {
+            m_playAlongSynth->setGmProgram(instrCombo->itemData(idx).toInt());
+        });
+        ipLayout->addWidget(instrCombo);
+
+        ipLayout->addSpacing(16);
+
+        auto* pitchLabel = new QLabel("Transpose");
+        pitchLabel->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold;").arg(Theme::textPrimary().name()));
+        ipLayout->addWidget(pitchLabel);
+
+        m_transposeSpin = new QDoubleSpinBox();
+        m_transposeSpin->setRange(-24.0, 24.0);
+        m_transposeSpin->setValue(0.0);
+        m_transposeSpin->setSingleStep(0.05);
+        m_transposeSpin->setDecimals(2);
+        m_transposeSpin->setSuffix(" semitones");
+        m_transposeSpin->setMinimumWidth(140);
+        m_transposeSpin->setFocusPolicy(Qt::NoFocus);
+        if (auto* le = m_transposeSpin->findChild<QLineEdit*>()) {
+            le->setReadOnly(true);
+            le->setFocusPolicy(Qt::NoFocus);
+        }
+        connect(m_transposeSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                this, [this](double val) {
+            m_playAlongSynth->setPitchOffset(val);
+        });
+        ipLayout->addWidget(m_transposeSpin);
+
+        ipLayout->addSpacing(16);
+
+        auto* instVolLabel = new QLabel("Instrument Vol.");
+        instVolLabel->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold;").arg(Theme::textPrimary().name()));
+        ipLayout->addWidget(instVolLabel);
+
+        m_instrumentVolSlider = new QSlider(Qt::Horizontal);
+        m_instrumentVolSlider->setRange(0, 150);
+        m_instrumentVolSlider->setValue(60);
+        m_instrumentVolSlider->setMinimumWidth(120);
+        m_instrumentVolSlider->setToolTip(QString("Instrument volume: %1%").arg(60));
+        connect(m_instrumentVolSlider, &QSlider::valueChanged, this, [this](int val) {
+            m_instrumentVolSlider->setToolTip(QString("Instrument volume: %1%").arg(val));
+            m_playAlongSynth->setGain(val / 100.0);
+        });
+        ipLayout->addWidget(m_instrumentVolSlider);
+
+        ipLayout->addStretch();
+
+        QPalette pal = m_instrumentPanel->palette();
+        pal.setColor(QPalette::Window, Theme::panelBg());
+        m_instrumentPanel->setPalette(pal);
+        m_instrumentPanel->setAutoFillBackground(true);
+    }
+    m_centralSplitter->addWidget(m_instrumentPanel);
+    m_instrumentPanel->hide();
+
     // Score gets most of the space by default
     m_centralSplitter->setStretchFactor(0, 0); // waveform: don't stretch
     m_centralSplitter->setStretchFactor(1, 1); // score: stretch
+    m_centralSplitter->setStretchFactor(2, 0); // instrument panel: don't stretch
 
     // Sidebar sits beside the score in a horizontal splitter
     m_sidebarWidget = new QWidget();
@@ -292,14 +394,102 @@ void App::setupUI()
 
     sidebarLayout->addWidget(m_sidebarSplitter);
 
-    // Horizontal splitter: score (left) + sidebar (right)
-    m_mainSplitter = new QSplitter(Qt::Horizontal, this);
+    // Score view: score (left) + right sidebar (right)
+    m_mainSplitter = new QSplitter(Qt::Horizontal);
     m_mainSplitter->setChildrenCollapsible(false);
     m_mainSplitter->addWidget(m_centralSplitter);
     m_mainSplitter->addWidget(m_sidebarWidget);
     m_mainSplitter->setStretchFactor(0, 1); // score stretches
     m_mainSplitter->setStretchFactor(1, 0); // sidebar fixed
-    setCentralWidget(m_mainSplitter);
+
+    // Level browser (shown when picking levels)
+    m_levelBrowser = new LevelBrowser();
+    connect(m_levelBrowser, &LevelBrowser::levelSelected, this, [this](int si, int li) {
+        loadLevel(m_currentWorldIndex, si, li);
+    });
+    connect(m_levelBrowser, &LevelBrowser::resumeRequested, this, [this]() {
+        m_centralStack->setCurrentIndex(1);
+    });
+
+    // Central stacked widget: 0 = level browser, 1 = score view
+    m_centralStack = new QStackedWidget();
+    m_centralStack->addWidget(m_levelBrowser);
+    m_centralStack->addWidget(m_mainSplitter);
+    m_centralStack->setCurrentIndex(0);
+
+    // World sidebar on the left
+    m_worldSidebar = new WorldSidebar();
+    connect(m_worldSidebar, &WorldSidebar::worldSelected, this, [this](int index) {
+        m_currentWorldIndex = index;
+        if (index >= 0 && index < m_worlds.size()) {
+            m_levelBrowser->setWorld(m_worlds[index]);
+            m_centralStack->setCurrentIndex(0);
+        }
+    });
+    connect(m_worldSidebar, &WorldSidebar::interpretationSelected, this, [this](int index) {
+        if (index < 0 || index >= m_sourceYouTubeUrls.size()) return;
+        // Stop current playback
+        playerPause();
+        loadYouTube(m_sourceYouTubeUrls[index]);
+        // Apply per-interpretation tuning offset
+        if (index < m_sourceTunings.size()) {
+            double tuning = m_sourceTunings[index];
+            m_playAlongSynth->setPitchOffset(tuning);
+            if (m_transposeSpin) {
+                m_transposeSpin->blockSignals(true);
+                m_transposeSpin->setValue(tuning);
+                m_transposeSpin->blockSignals(false);
+            }
+        }
+        // Apply per-interpretation instrument volume
+        if (index < m_sourceInstrumentVols.size() && m_sourceInstrumentVols[index] >= 0 && m_instrumentVolSlider) {
+            m_instrumentVolSlider->setValue(m_sourceInstrumentVols[index]);
+        }
+        // Load per-interpretation beats or disable tracking
+        if (index < m_sourceBeatsFiles.size() && !m_sourceBeatsFiles[index].isEmpty()) {
+            loadBeatData(m_sourceBeatsFiles[index]);
+            m_trackingButton->setEnabled(true);
+        } else {
+            m_syncTimer->setBeatTimes({}, 0);
+            m_syncTimer->setBeatTicks({});
+            m_syncTimer->setMeasureStarts({});
+            m_beatDataPath.clear();
+            m_trackingAction->setChecked(false);
+            m_trackingButton->setEnabled(false);
+        }
+        // Apply start/end times
+        m_activeInterpretation = index;
+        m_interpStart = (index < m_sourceStartTimes.size()) ? m_sourceStartTimes[index] : 0;
+        m_interpEnd = (index < m_sourceEndTimes.size()) ? m_sourceEndTimes[index] : 0;
+        // Reset tracker and synth to beginning
+        m_playAlongSynth->resetPosition();
+        m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+        m_syncTimer->setTime(0);
+        onPositionChanged(0);
+        m_playPauseAction->setText("Play");
+    });
+    connect(m_worldSidebar, &WorldSidebar::volumeChanged, this, [this](int val) {
+        double vol = val / 100.0;
+        if (m_useYouTube && m_youtubePlayer) {
+            m_youtubePlayer->setVolume(std::min(val, 100));
+        } else if (m_audioPlayer) {
+            m_audioPlayer->setVolume(std::min(vol, 1.0));
+        }
+    });
+
+    // Top-level layout: world sidebar | central stack
+    auto* topSplitter = new QSplitter(Qt::Horizontal, this);
+    topSplitter->setChildrenCollapsible(false);
+    topSplitter->addWidget(m_worldSidebar);
+    topSplitter->addWidget(m_centralStack);
+    topSplitter->setStretchFactor(0, 0);
+    topSplitter->setStretchFactor(1, 1);
+    // Make the world sidebar handle invisible (fixed width)
+    if (auto* h = topSplitter->handle(1)) {
+        h->setDisabled(true);
+        h->setFixedWidth(0);
+    }
+    setCentralWidget(topSplitter);
 }
 
 void App::resizeEvent(QResizeEvent* event)
@@ -329,8 +519,16 @@ void App::setupToolbar()
     connect(m_playPauseAction, &QAction::triggered, this, &App::togglePlayPause);
     m_toolbar->widgetForAction(m_playPauseAction)->setCursor(Qt::PointingHandCursor);
 
-    m_stopAction = m_toolbar->addAction("Stop");
-    connect(m_stopAction, &QAction::triggered, this, [this]() { playerStop(); });
+    m_stopAction = m_toolbar->addAction("Restart");
+    connect(m_stopAction, &QAction::triggered, this, [this]() {
+        playerSeekTo(0);
+        m_playAlongSynth->resetPosition();
+        m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+        m_syncTimer->setTime(0);
+        onPositionChanged(0);
+        playerPlay();
+        m_playPauseAction->setText("Pause");
+    });
     m_toolbar->widgetForAction(m_stopAction)->setCursor(Qt::PointingHandCursor);
 
     m_toolbar->addSeparator();
@@ -350,18 +548,6 @@ void App::setupToolbar()
     m_timeLabel = new QLabel("0:00 / 0:00", this);
     m_timeLabel->setMinimumWidth(120);
     m_toolbar->addWidget(m_timeLabel);
-
-    // Source button (hidden until loadSources is called)
-    m_sourceButton = new QPushButton("Source", this);
-    m_sourceButton->setFlat(true);
-    m_sourceButton->setCursor(Qt::PointingHandCursor);
-    m_sourceButton->setFocusPolicy(Qt::NoFocus);
-    m_sourceButton->setStyleSheet(
-        "QPushButton { padding: 2px 4px; }"
-        "QPushButton:pressed { background: transparent; padding: 2px 4px; }");
-    m_sourceButton->setMenu(new QMenu(m_sourceButton));
-    m_sourceButtonAction = m_toolbar->addWidget(m_sourceButton);
-    m_sourceButtonAction->setVisible(false);
 
     m_toolbar->addSeparator();
 
@@ -401,7 +587,7 @@ void App::setupToolbar()
     updateTrackingIcon();
     m_trackingButton->setFixedSize(m_trackingButton->sizeHint());
 
-    m_trackingButton->setShortcut(QKeySequence(Qt::Key_T));
+    m_trackingButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_T));
     m_toolbar->addWidget(m_trackingButton);
 
     connect(m_trackingButton, &QPushButton::clicked, [this]() {
@@ -414,25 +600,10 @@ void App::setupToolbar()
         }
     });
 
-    m_toolbar->addSeparator();
-
-    // Play Mode button
-    m_playModeButton = new QPushButton("Play Mode", this);
-    m_playModeButton->setFlat(true);
-    m_playModeButton->setCursor(Qt::PointingHandCursor);
-    m_playModeButton->setFocusPolicy(Qt::NoFocus);
+    // Play Mode — hidden toggle (activated programmatically by loadLevel)
+    m_playModeButton = new QPushButton(this);
     m_playModeButton->setCheckable(true);
-    m_playModeButton->setStyleSheet(
-        "QPushButton { padding: 2px 8px; font-size: 12px; border: none; background: transparent; }"
-        "QPushButton:checked { color: #E07A2F; font-weight: bold; }");
-    {
-        QFont boldFont = m_playModeButton->font();
-        boldFont.setPointSize(12);
-        boldFont.setBold(true);
-        int boldWidth = QFontMetrics(boldFont).horizontalAdvance("Play Mode") + 20;
-        m_playModeButton->setMinimumWidth(boldWidth);
-    }
-    m_toolbar->addWidget(m_playModeButton);
+    m_playModeButton->hide();
     connect(m_playModeButton, &QPushButton::toggled, this, [this](bool on) {
         if (on) enterPlayMode();
         else exitPlayMode();
@@ -469,6 +640,16 @@ void App::setupToolbar()
 
     m_toolbar->addSeparator();
 
+    m_instrumentAction = m_toolbar->addAction("Instrument");
+    m_instrumentAction->setCheckable(true);
+    m_instrumentAction->setEnabled(false); // enabled when entering play mode
+    auto* instrWidget = m_toolbar->widgetForAction(m_instrumentAction);
+    instrWidget->setCursor(Qt::PointingHandCursor);
+    instrWidget->setStyleSheet("font-size: 12px;");
+    connect(m_instrumentAction, &QAction::toggled, [this](bool on) {
+        m_instrumentPanel->setVisible(on);
+    });
+
     m_sidebarAction = m_toolbar->addAction("Sidebar");
     m_sidebarAction->setCheckable(true);
     m_sidebarAction->setChecked(true);
@@ -504,6 +685,15 @@ bool App::loadScore(const QString& musicXmlPath)
     if (!fi.exists()) {
         qWarning() << "MusicXML file not found:" << musicXmlPath;
         return false;
+    }
+
+    // Disconnect old part-panel signals to avoid duplicate/stale connections
+    disconnect(m_partPanel, nullptr, this, nullptr);
+
+    // Clean up old score
+    if (m_score) {
+        delete m_score;
+        m_score = nullptr;
     }
 
     // Resolve the renderer from IoC
@@ -676,14 +866,15 @@ void App::startPlayMode()
 
 void App::selectFileSource()
 {
-    if (!m_useYouTube || !m_sourceButton || !m_sourceButton->menu()) return;
-    for (auto* action : m_sourceButton->menu()->actions()) {
-        if (action->text() == "File") {
-            action->trigger();
-            playerPause();
-            break;
-        }
+    if (!m_useYouTube || m_sourceAudioFile.isEmpty()) return;
+    if (m_youtubePlayer) {
+        m_youtubePlayer->pause();
+        m_speedButton->setEnabled(false);
+        m_speedButton->setText("Speed: 1x");
     }
+    m_useYouTube = false;
+    loadAudio(m_sourceAudioFile);
+    playerPause();
 }
 
 bool App::loadBeatData(const QString& jsonPath)
@@ -786,11 +977,21 @@ void App::onSeekSliderMoved(int value)
 
 void App::onPositionChanged(double seconds)
 {
+    // Adjust for interpretation start offset when coming from raw player position
+    double adjusted = std::max(0.0, seconds - m_interpStart);
+
+    // Auto-pause at interpretation end
+    if (m_interpEnd > 0 && seconds >= m_interpEnd && playerIsPlaying()) {
+        playerPause();
+        m_playPauseAction->setText("Play");
+        return;
+    }
+
     // Update slider position
     if (!m_sliderDragging) {
         double duration = playerDuration();
         if (duration > 0) {
-            int sliderVal = static_cast<int>((seconds / duration) * m_seekSlider->maximum());
+            int sliderVal = static_cast<int>((adjusted / duration) * m_seekSlider->maximum());
             m_seekSlider->blockSignals(true);
             m_seekSlider->setValue(sliderVal);
             m_seekSlider->blockSignals(false);
@@ -799,12 +1000,12 @@ void App::onPositionChanged(double seconds)
 
     // Update time label
     m_timeLabel->setText(QString("%1 / %2")
-        .arg(formatTime(seconds))
+        .arg(formatTime(adjusted))
         .arg(formatTime(playerDuration())));
 
     // Update sync timer -> cursor if tracking is on, auto-scroll, or play mode
     if (m_trackingAction->isChecked() || m_trackingSettings->autoScrollEnabled() || m_playModeActive) {
-        m_syncTimer->setTime(seconds);
+        m_syncTimer->setTime(adjusted);
     }
 
     // Play mode: auto-advance past tied notes when cursor reaches them
@@ -885,6 +1086,20 @@ void App::changeEvent(QEvent* event)
 
 void App::playerPlay()
 {
+    // Ensure we're at or past the interpretation start
+    if (m_interpStart > 0) {
+        double rawTime;
+        if (m_useYouTube && m_youtubePlayer)
+            rawTime = m_youtubePlayer->currentTime();
+        else
+            rawTime = m_audioPlayer->currentTime();
+        if (rawTime < m_interpStart) {
+            if (m_useYouTube && m_youtubePlayer)
+                m_youtubePlayer->seekTo(m_interpStart);
+            else
+                m_audioPlayer->seekTo(m_interpStart);
+        }
+    }
     if (m_useYouTube && m_youtubePlayer)
         m_youtubePlayer->play();
     else
@@ -909,24 +1124,32 @@ void App::playerStop()
 
 void App::playerSeekTo(double seconds)
 {
+    double raw = seconds + m_interpStart;
     if (m_useYouTube && m_youtubePlayer)
-        m_youtubePlayer->seekTo(seconds);
+        m_youtubePlayer->seekTo(raw);
     else
-        m_audioPlayer->seekTo(seconds);
+        m_audioPlayer->seekTo(raw);
 }
 
 double App::playerCurrentTime() const
 {
+    double raw;
     if (m_useYouTube && m_youtubePlayer)
-        return m_youtubePlayer->currentTime();
-    return m_audioPlayer->currentTime();
+        raw = m_youtubePlayer->currentTime();
+    else
+        raw = m_audioPlayer->currentTime();
+    return std::max(0.0, raw - m_interpStart);
 }
 
 double App::playerDuration() const
 {
+    double raw;
     if (m_useYouTube && m_youtubePlayer)
-        return m_youtubePlayer->duration();
-    return m_audioPlayer->duration();
+        raw = m_youtubePlayer->duration();
+    else
+        raw = m_audioPlayer->duration();
+    double end = (m_interpEnd > 0) ? m_interpEnd : raw;
+    return std::max(0.0, end - m_interpStart);
 }
 
 bool App::playerIsPlaying() const
@@ -951,59 +1174,103 @@ void App::loadSources(const QString& jsonPath)
     }
 
     QJsonObject obj = doc.object();
-    QMenu* menu = m_sourceButton->menu();
-    menu->clear();
-
     QDir sourceDir = QFileInfo(jsonPath).absoluteDir();
-    QString youtubeUrl;
-    QString audioFile;
+
+    m_sourceYouTubeUrls.clear();
+    m_sourceLabels.clear();
+    m_sourceTunings.clear();
+    m_sourceInstrumentVols.clear();
+    m_sourceBeatsFiles.clear();
+    m_sourceStartTimes.clear();
+    m_sourceEndTimes.clear();
+    m_sourceAudioFile.clear();
 
     if (obj.contains("file")) {
-        audioFile = sourceDir.absoluteFilePath(obj.value("file").toString());
-        auto* action = menu->addAction("File");
-        connect(action, &QAction::triggered, this, [this, audioFile]() {
-            double pos = playerCurrentTime();
-            if (m_useYouTube && m_youtubePlayer) {
-                m_youtubePlayer->pause();
-                m_videoDock->hide();
-                m_speedButton->setEnabled(false);
-                m_speedButton->setText("Speed: 1x");
-            }
-            m_useYouTube = false;
-            loadAudio(audioFile);
-            m_audioPlayer->seekTo(pos);
-            m_audioPlayer->play();
-        });
+        m_sourceAudioFile = sourceDir.absoluteFilePath(obj.value("file").toString());
     }
 
+    // YouTube sources — single string or array of {url, label} objects
     if (obj.contains("youtube")) {
-        youtubeUrl = obj.value("youtube").toString();
-        auto* action = menu->addAction(QIcon(":/src/icons/youtube.png"), "YouTube");
-        connect(action, &QAction::triggered, this, [this, youtubeUrl]() {
-            double pos = playerCurrentTime();
-            if (!m_useYouTube) {
-                m_audioPlayer->pause();
+        QJsonValue ytVal = obj.value("youtube");
+        if (ytVal.isArray()) {
+            QJsonArray ytArr = ytVal.toArray();
+            for (const auto& item : ytArr) {
+                if (item.isObject()) {
+                    QJsonObject ytObj = item.toObject();
+                    m_sourceYouTubeUrls.append(ytObj["url"].toString());
+                    m_sourceLabels.append(ytObj.value("label").toString("YouTube"));
+                    m_sourceTunings.append(ytObj.value("tuning").toDouble(0));
+                    m_sourceInstrumentVols.append(ytObj.contains("instrumentVolume") ? ytObj["instrumentVolume"].toInt() : -1);
+                    m_sourceBeatsFiles.append(ytObj.contains("beats") ? sourceDir.absoluteFilePath(ytObj["beats"].toString()) : QString());
+                    m_sourceStartTimes.append(ytObj.value("start").toDouble(0));
+                    m_sourceEndTimes.append(ytObj.value("end").toDouble(0));
+                } else if (item.isString()) {
+                    m_sourceYouTubeUrls.append(item.toString());
+                    m_sourceLabels.append("YouTube");
+                    m_sourceTunings.append(0.0);
+                    m_sourceInstrumentVols.append(-1);
+                    m_sourceBeatsFiles.append(QString());
+                    m_sourceStartTimes.append(0);
+                    m_sourceEndTimes.append(0);
+                }
             }
-            loadYouTube(youtubeUrl);
-            // Seek once video is ready (seekTo requires m_ready)
-            auto conn = std::make_shared<QMetaObject::Connection>();
-            *conn = connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this, pos, conn]() {
-                m_youtubePlayer->seekTo(pos);
-                disconnect(*conn);
-            });
-            m_playPauseAction->setText("Play");
-        });
+        } else {
+            m_sourceYouTubeUrls.append(ytVal.toString());
+            m_sourceLabels.append("YouTube");
+            m_sourceTunings.append(0.0);
+            m_sourceInstrumentVols.append(-1);
+            m_sourceBeatsFiles.append(QString());
+            m_sourceStartTimes.append(0);
+            m_sourceEndTimes.append(0);
+        }
     }
 
-    if (!menu->actions().isEmpty()) {
-        m_sourceButtonAction->setVisible(true);
+    // Show interpretation list in the world sidebar
+    if (m_sourceLabels.size() > 1) {
+        m_worldSidebar->setInterpretations(m_sourceLabels, 0);
+    } else {
+        m_worldSidebar->clearInterpretations();
     }
 
-    // Auto-load: YouTube if present, otherwise file
-    if (!youtubeUrl.isEmpty()) {
-        loadYouTube(youtubeUrl);
-    } else if (!audioFile.isEmpty()) {
-        loadAudio(audioFile);
+    // Show volume slider when sources are available
+    m_worldSidebar->showVolumeSlider(!m_sourceYouTubeUrls.isEmpty() || !m_sourceAudioFile.isEmpty());
+
+    // Apply initial tuning and balance
+    if (!m_sourceTunings.isEmpty()) {
+        double tuning = m_sourceTunings.first();
+        m_playAlongSynth->setPitchOffset(tuning);
+        if (m_transposeSpin) {
+            m_transposeSpin->blockSignals(true);
+            m_transposeSpin->setValue(tuning);
+            m_transposeSpin->blockSignals(false);
+        }
+    }
+    if (!m_sourceInstrumentVols.isEmpty() && m_sourceInstrumentVols.first() >= 0 && m_instrumentVolSlider) {
+        m_instrumentVolSlider->setValue(m_sourceInstrumentVols.first());
+    }
+
+    // Apply initial start/end times
+    m_activeInterpretation = 0;
+    m_interpStart = m_sourceStartTimes.isEmpty() ? 0 : m_sourceStartTimes.first();
+    m_interpEnd = m_sourceEndTimes.isEmpty() ? 0 : m_sourceEndTimes.first();
+
+    // Load per-interpretation beats (overrides section-level beats)
+    if (!m_sourceBeatsFiles.isEmpty() && !m_sourceBeatsFiles.first().isEmpty()) {
+        loadBeatData(m_sourceBeatsFiles.first());
+        m_trackingButton->setEnabled(true);
+    } else if (!m_sourceBeatsFiles.isEmpty()) {
+        // First interpretation has no beats — check if section already loaded beats
+        if (m_beatDataPath.isEmpty()) {
+            m_trackingAction->setChecked(false);
+            m_trackingButton->setEnabled(false);
+        }
+    }
+
+    // Auto-load: first YouTube if present, otherwise file
+    if (!m_sourceYouTubeUrls.isEmpty()) {
+        loadYouTube(m_sourceYouTubeUrls.first());
+    } else if (!m_sourceAudioFile.isEmpty()) {
+        loadAudio(m_sourceAudioFile);
     }
 }
 
@@ -1011,10 +1278,18 @@ void App::loadYouTube(const QString& url)
 {
     m_useYouTube = true;
 
-    // If player already exists, just show dock and reload
+    // If player already exists, just reload
     if (m_youtubePlayer) {
-        m_videoDock->show();
         m_youtubePlayer->load(url);
+        // Seek to interpretation start once video is ready
+        if (m_interpStart > 0) {
+            auto conn = std::make_shared<QMetaObject::Connection>();
+            double startTime = m_interpStart;
+            *conn = connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this, conn, startTime]() {
+                m_youtubePlayer->seekTo(startTime);
+                disconnect(*conn);
+            });
+        }
         return;
     }
 
@@ -1044,20 +1319,15 @@ void App::loadYouTube(const QString& url)
         m_timeLabel->setText(QString("0:00 / %1").arg(formatTime(duration)));
     });
 
-    // Fixed left-side dock for video — 200x200 minimum per YouTube API TOS
+    // Place video in the world sidebar (bottom)
     auto* videoWidget = m_youtubePlayer->videoWidget();
-    videoWidget->setFixedSize(200, 200);
 
     QPalette videoPal = videoWidget->palette();
     videoPal.setColor(QPalette::Window, Qt::black);
     videoWidget->setPalette(videoPal);
     videoWidget->setAutoFillBackground(true);
 
-    m_videoDock = new QDockWidget("Video", this);
-    m_videoDock->setWidget(videoWidget);
-    m_videoDock->setFeatures(QDockWidget::NoDockWidgetFeatures);
-    m_videoDock->setFixedWidth(200);
-    addDockWidget(Qt::LeftDockWidgetArea, m_videoDock);
+    m_worldSidebar->setVideoWidget(videoWidget);
 
     // Enable speed button and wire it to the YouTube player
     connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this]() {
@@ -1082,6 +1352,20 @@ void App::enterPlayMode()
     m_playModeActive = true;
     m_partPanel->setPlayModeActive(true);
     m_scoreWidget->setPlayModeActive(true);
+    m_instrumentAction->setEnabled(true);
+
+    // Sync instrument combo with current synth program
+    if (m_instrumentCombo) {
+        int curProg = m_playAlongSynth->gmProgram();
+        m_instrumentCombo->blockSignals(true);
+        for (int i = 0; i < m_instrumentCombo->count(); ++i) {
+            if (m_instrumentCombo->itemData(i).toInt() == curProg) {
+                m_instrumentCombo->setCurrentIndex(i);
+                break;
+            }
+        }
+        m_instrumentCombo->blockSignals(false);
+    }
 }
 
 void App::exitPlayMode()
@@ -1093,6 +1377,8 @@ void App::exitPlayMode()
     m_scoreWidget->setPlayModeActive(false);
     m_partPanel->setPlayModeActive(false);
     m_keysHeld = 0;
+    m_instrumentAction->setChecked(false);
+    m_instrumentAction->setEnabled(false);
 }
 
 void App::enterSyncMode()
@@ -1122,14 +1408,8 @@ void App::enterSyncMode()
     m_savedBeatsPerMeasure = m_syncTimer->beatsPerMeasure();
 
     // Switch to file source if currently using YouTube (without auto-playing)
-    if (m_useYouTube && m_sourceButton && m_sourceButton->menu()) {
-        for (auto* action : m_sourceButton->menu()->actions()) {
-            if (action->text() == "File") {
-                action->trigger();
-                playerPause();
-                break;
-            }
-        }
+    if (m_useYouTube && !m_sourceAudioFile.isEmpty()) {
+        selectFileSource();
     }
 
     m_syncMode->enter(m_score, m_renderer.get());
@@ -1409,8 +1689,110 @@ void App::updateSyncTimerFromSyncMode()
     m_syncTimer->setMeasureIndices(measureIndices);
 }
 
+void App::loadWorlds(const QString& worldsDir)
+{
+    m_worlds = scoretracker::loadWorlds(worldsDir);
+    m_worldSidebar->setWorlds(m_worlds);
+}
+
+void App::showWorldBrowser()
+{
+    // Exit play mode if active
+    if (m_playModeActive) {
+        m_playModeButton->setChecked(false);
+    }
+    m_centralStack->setCurrentIndex(0);
+}
+
+void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
+{
+    if (worldIndex < 0 || worldIndex >= m_worlds.size()) return;
+    const auto& world = m_worlds[worldIndex];
+    if (sectionIndex < 0 || sectionIndex >= world.sections.size()) return;
+    const auto& section = world.sections[sectionIndex];
+    if (levelIndex < 0 || levelIndex >= section.levels.size()) return;
+
+    // Exit current play mode if active
+    if (m_playModeActive) {
+        m_playModeButton->setChecked(false);
+    }
+
+    // Save window geometry before the heavy load
+    QRect savedGeometry = geometry();
+
+    // Show loading overlay on the level browser
+    m_levelBrowser->showLoading(true);
+    QApplication::processEvents();
+
+    // Defer the heavy work so the loading overlay paints first
+    QTimer::singleShot(0, this, [=]() {
+        const auto& lvlSection = m_worlds[worldIndex].sections[sectionIndex];
+        const auto& level = lvlSection.levels[levelIndex];
+
+        // Load the score
+        if (!lvlSection.scorePath.isEmpty()) {
+            loadScore(lvlSection.scorePath);
+        }
+
+        // Load beat data
+        if (!lvlSection.beatsPath.isEmpty()) {
+            loadBeatData(lvlSection.beatsPath);
+        }
+
+        // Load audio sources
+        if (!lvlSection.sourcesPath.isEmpty()) {
+            loadSources(lvlSection.sourcesPath);
+        }
+
+        // Hide the right sidebar by default for levels
+        m_sidebarAction->setChecked(false);
+
+        // Mark this level as current in the browser
+        m_levelBrowser->setCurrentLevel(sectionIndex, levelIndex);
+
+        // Switch to score view
+        m_centralStack->setCurrentIndex(1);
+
+        // Enter play mode first (this auto-selects row 0 for play-along)
+        m_playModeButton->setChecked(true);
+
+        // Now override: show only the relevant parts and activate the correct play-along
+        if (!level.parts.isEmpty()) {
+            setVisibleParts(level.parts);
+        }
+
+        if (level.playPart > 0) {
+            auto* score = m_score;
+            if (score) {
+                const auto& parts = score->parts();
+                int partIdx = level.playPart - 1; // 0-based
+                if (partIdx >= 0 && partIdx < static_cast<int>(parts.size())) {
+                    m_partPanel->activatePlayAlong(partIdx, level.gmProgram);
+                    m_playAlongSynth->setVoice(parts[partIdx], level.gmProgram, score);
+                    m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+                }
+            }
+        }
+
+        m_levelBrowser->showLoading(false);
+
+        // Restore window geometry after all deferred layout work (zoomToFit etc.) settles
+        QTimer::singleShot(0, this, [this, savedGeometry]() {
+            move(savedGeometry.topLeft());
+        });
+    });
+}
+
 void App::keyPressEvent(QKeyEvent* event)
 {
+    // Escape returns to world browser from score view
+    if (event->key() == Qt::Key_Escape && m_centralStack->currentIndex() == 1
+        && !m_syncMode->isActive()) {
+        playerPause();
+        showWorldBrowser();
+        return;
+    }
+
     if (m_syncMode->isActive()) {
         // Delete/Backspace: unsync the selected or next-to-tap beat
         if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
@@ -1450,10 +1832,39 @@ void App::keyPressEvent(QKeyEvent* event)
         }
     }
 
-    // Tap-to-play: laptop keyboard as MIDI controller
+    // Instrument panel shortcuts (only when panel is visible)
+    if (m_playModeActive && m_instrumentPanel && m_instrumentPanel->isVisible()) {
+        QString t = event->text();
+        // 1/& = instrument volume down, 2/é = instrument volume up
+        if (m_instrumentVolSlider) {
+            if (t == "&" || event->key() == Qt::Key_1) {
+                m_instrumentVolSlider->setValue(std::max(0, m_instrumentVolSlider->value() - 5));
+                return;
+            }
+            if (t == "\xc3\xa9" || event->key() == Qt::Key_2) { // é in UTF-8
+                m_instrumentVolSlider->setValue(std::min(m_instrumentVolSlider->maximum(), m_instrumentVolSlider->value() + 5));
+                return;
+            }
+        }
+        // 3/" = transpose down, 4/' = transpose up
+        if (m_transposeSpin) {
+            if (t == "\"" || event->key() == Qt::Key_3) {
+                m_transposeSpin->setValue(m_transposeSpin->value() - m_transposeSpin->singleStep());
+                return;
+            }
+            if (t == "'" || event->key() == Qt::Key_4) {
+                m_transposeSpin->setValue(m_transposeSpin->value() + m_transposeSpin->singleStep());
+                return;
+            }
+        }
+    }
+
+    // Tap-to-play: laptop keyboard as MIDI controller (letter keys only)
     // Overlap keys for legato, release all for noteoff
     if (m_playModeActive && playerIsPlaying()) {
-        if (!event->isAutoRepeat()) {
+        int key = event->key();
+        bool isLetter = (key >= Qt::Key_A && key <= Qt::Key_Z);
+        if (isLetter && !event->isAutoRepeat()) {
             m_keysHeld++;
             m_trillTimer->stop();
             m_playAlongSynth->playNextNote();
@@ -1462,7 +1873,7 @@ void App::keyPressEvent(QKeyEvent* event)
                 m_trillTimer->start();
             }
         }
-        return;
+        if (isLetter) return;
     }
 
     QMainWindow::keyPressEvent(event);
@@ -1470,7 +1881,9 @@ void App::keyPressEvent(QKeyEvent* event)
 
 void App::keyReleaseEvent(QKeyEvent* event)
 {
-    if (!event->isAutoRepeat() && m_playModeActive && playerIsPlaying()) {
+    int key = event->key();
+    bool isLetter = (key >= Qt::Key_A && key <= Qt::Key_Z);
+    if (isLetter && !event->isAutoRepeat() && m_playModeActive && playerIsPlaying()) {
         m_keysHeld = std::max(0, m_keysHeld - 1);
         if (m_keysHeld == 0) {
             m_trillTimer->stop();

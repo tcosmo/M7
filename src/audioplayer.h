@@ -22,6 +22,8 @@ public:
     double currentTime() const;
     double duration() const;
     bool isPlaying() const;
+    void setVolume(double volume); // 0.0 – 1.0
+    double volume() const;
 
 signals:
     void positionChanged(double seconds);
@@ -38,6 +40,7 @@ private:
     double m_duration = 0.0;
     double m_pendingSeek = 0.0;
     bool m_hasPendingSeek = false;
+    double m_volume = 1.0;
 };
 
 } // namespace scoretracker

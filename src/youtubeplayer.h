@@ -64,6 +64,8 @@ public:
     void stop();
     void seekTo(double seconds);
     void setPlaybackRate(double rate);
+    void setVolume(int volume); // 0–100
+    int volume() const { return m_volume; }
 
     double currentTime() const { return m_currentTime; }
     double duration() const { return m_duration; }
@@ -91,6 +93,7 @@ private:
     double m_currentTime = 0.0;
     double m_duration = 0.0;
     double m_playbackRate = 1.0;
+    int m_volume = 100;
     bool m_playing = false;
     bool m_ready = false;
     bool m_pendingPlay = false;

@@ -222,6 +222,26 @@ double PlayAlongSynth::gain() const
     return m_gain;
 }
 
+void PlayAlongSynth::setPitchOffset(double semitones)
+{
+    m_pitchOffset = semitones;
+    // Apply fractional part as pitch bend (default range ±2 semitones)
+    if (m_synth) {
+        double frac = semitones - static_cast<int>(semitones);
+        // Pitch bend: 8192 = center, range is ±2 semitones = ±8192
+        int bend = 8192 + static_cast<int>(frac * 8192.0 / 2.0);
+        bend = std::clamp(bend, 0, 16383);
+        for (const auto& v : m_voices) {
+            fluid_synth_pitch_bend(fs(m_synth), v.channel, bend);
+        }
+    }
+}
+
+double PlayAlongSynth::pitchOffset() const
+{
+    return m_pitchOffset;
+}
+
 void PlayAlongSynth::buildNoteTables(Score* score)
 {
     if (!score) return;
@@ -290,7 +310,8 @@ void PlayAlongSynth::playNextNote()
     for (auto& v : m_voices) {
         if (v.nextIndex >= static_cast<int>(v.notes.size())) continue;
 
-        int pitch = v.notes[v.nextIndex].midiPitch;
+        int pitch = v.notes[v.nextIndex].midiPitch + static_cast<int>(m_pitchOffset);
+        pitch = std::clamp(pitch, 0, 127);
 
         // Turn off previous note on this channel
         if (v.lastPlayedNote >= 0) {
@@ -315,6 +336,15 @@ void PlayAlongSynth::stopNote()
             v.lastPlayedNote = -1;
         }
     }
+}
+
+void PlayAlongSynth::resetPosition()
+{
+    stopNote();
+    for (auto& v : m_voices) {
+        v.nextIndex = 0;
+    }
+    m_trillOnUpper = false;
 }
 
 void PlayAlongSynth::stop()
@@ -388,8 +418,9 @@ void PlayAlongSynth::trillToggle()
         const auto& ne = v.notes[idx];
         if (!ne.hasTrill) continue;
 
-        int oldPitch = m_trillOnUpper ? ne.trillPitch : ne.midiPitch;
-        int newPitch = m_trillOnUpper ? ne.midiPitch : ne.trillPitch;
+        int intOffset = static_cast<int>(m_pitchOffset);
+        int oldPitch = std::clamp((m_trillOnUpper ? ne.trillPitch : ne.midiPitch) + intOffset, 0, 127);
+        int newPitch = std::clamp((m_trillOnUpper ? ne.midiPitch : ne.trillPitch) + intOffset, 0, 127);
 
         fluid_synth_noteoff(s, v.channel, oldPitch);
         fluid_synth_noteon(s, v.channel, newPitch, 100);

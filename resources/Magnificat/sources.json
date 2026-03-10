@@ -1,5 +1,32 @@
 {
   "file": "./Magnificat.m4a",
   "spotify": "https://open.spotify.com/track/64gjOV0I9RyMplBIX2jKzH",
-  "youtube": "https://www.youtube.com/watch?v=kYmaAS4NsPU"
+  "youtube": [
+    {
+      "url": "https://www.youtube.com/watch?v=kYmaAS4NsPU",
+      "label": "Oxford Scholar Cantorum",
+      "instrumentVolume": 74,
+      "beats": "./beatdata.json"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=fUt88ImPV-E",
+      "label": "Jordi Savall",
+      "tuning": -1,
+      "instrumentVolume": 100
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=EsUWG2axB3w",
+      "label": "Netherlands Bach Society",
+      "instrumentVolume": 84,
+      "tuning": -1,
+      "start": 7,
+      "end": 175
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=41blIyHQ0hs",
+      "label": "Nikolaus Harnoncourt",
+      "start": 7,
+      "end": 203
+    }
+  ]
 }

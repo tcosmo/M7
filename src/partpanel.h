@@ -109,6 +109,7 @@ public:
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
     void setScoreFileName(const QString& fileName);
     void showOnlyParts(const QList<int>& partNumbers);
+    void activatePlayAlong(int rowIndex, int gmProgram);
     int desiredHeight() const;
     void applyTheme();
     void setPlayModeActive(bool active);

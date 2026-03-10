@@ -64,7 +64,7 @@ struct Theme {
     static QString globalStyleSheet() {
         return QString(
             // Base
-            "* { font-family: 'Whitney', 'Helvetica Neue', 'Segoe UI', sans-serif; }"
+            "* { font-family: 'Helvetica Neue', 'Segoe UI', sans-serif; }"
 
             // Splitter handles
             "QSplitter::handle { background: %1; }"

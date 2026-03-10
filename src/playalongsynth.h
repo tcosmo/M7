@@ -39,6 +39,7 @@ public:
     void buildNoteTables(mu::engraving::Score* score);
     void playNextNote();
     void stopNote();
+    void resetPosition();
     void stop();
 
     // Auto-advance past tied notes when cursor reaches them
@@ -56,6 +57,10 @@ public:
     void setGain(double gain);
     double gain() const;
 
+    // Pitch transposition in semitones (e.g. -1.5 = 1 semitone + 50 cents down)
+    void setPitchOffset(double semitones);
+    double pitchOffset() const;
+
     // Returns the element (Note*) for the next note to be played, or nullptr
     void* nextNoteElement() const;
 
@@ -72,6 +77,7 @@ private:
     int m_sfontId = -1;
 
     double m_gain = 0.6;
+    double m_pitchOffset = 0;
     bool m_trillOnUpper = false;
     std::vector<Voice> m_voices;
 };

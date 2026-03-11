@@ -246,79 +246,83 @@ void App::setupUI()
 
     // Instrument panel (hidden by default, shown via toolbar button)
     m_instrumentPanel = new QWidget();
-    m_instrumentPanel->setFixedHeight(72);
     {
-        auto* ipVBox = new QVBoxLayout(m_instrumentPanel);
-        ipVBox->setContentsMargins(16, 6, 16, 6);
-        ipVBox->setSpacing(4);
+        m_instrumentPanelLayout = new QVBoxLayout(m_instrumentPanel);
+        m_instrumentPanelLayout->setContentsMargins(16, 6, 16, 6);
+        m_instrumentPanelLayout->setSpacing(4);
 
-        // Row 1: Soundfont + Instrument
-        auto* row1 = new QHBoxLayout();
-        row1->setSpacing(16);
-
-        auto* sfLabel = new QLabel("Soundfont");
-        sfLabel->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold;").arg(Theme::textPrimary().name()));
-        row1->addWidget(sfLabel);
-
-        m_soundfontCombo = new QComboBox();
-        m_soundfontCombo->setMinimumWidth(160);
+        // Scan soundfonts directory
         m_soundfontsDir = QCoreApplication::applicationDirPath() + "/../../resources/sounds";
         QDir sfDir(m_soundfontsDir);
         QStringList sfFiles = sfDir.entryList({"*.sf2", "*.sf3"}, QDir::Files, QDir::Name);
         for (const auto& fn : sfFiles) {
             m_soundfontPaths.append(sfDir.absoluteFilePath(fn));
-            QString displayName = fn.left(fn.lastIndexOf('.'));
-            m_soundfontCombo->addItem(displayName);
         }
-        connect(m_soundfontCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                this, [this](int idx) {
-            if (idx < 0 || idx >= m_soundfontPaths.size()) return;
-            m_instrumentCombo->setEnabled(false);
-            m_instrumentCombo->clear();
-            m_instrumentCombo->addItem("Loading...");
-            QTimer::singleShot(0, this, [this, idx]() {
-                m_playAlongSynth->loadSoundfont(m_soundfontPaths[idx]);
-                // Repopulate instrument list from soundfont presets
-                int curProg = m_playAlongSynth->gmProgram();
-                m_instrumentCombo->blockSignals(true);
-                m_instrumentCombo->clear();
-                auto presets = m_playAlongSynth->presets();
-                for (const auto& p : presets) {
-                    m_instrumentCombo->addItem(p.second, p.first);
-                }
-                // Select current program
-                for (int i = 0; i < m_instrumentCombo->count(); ++i) {
-                    if (m_instrumentCombo->itemData(i).toInt() == curProg) {
-                        m_instrumentCombo->setCurrentIndex(i);
-                        break;
-                    }
-                }
-                m_instrumentCombo->blockSignals(false);
-                m_instrumentCombo->setEnabled(true);
-            });
-        });
-        row1->addWidget(m_soundfontCombo);
 
-        row1->addSpacing(16);
+        // Single-voice row: Soundfont + Instrument
+        m_singleVoiceRow = new QWidget();
+        {
+            auto* row1 = new QHBoxLayout(m_singleVoiceRow);
+            row1->setContentsMargins(0, 0, 0, 0);
+            row1->setSpacing(16);
 
-        auto* instrLabel = new QLabel("Instrument");
-        instrLabel->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold;").arg(Theme::textPrimary().name()));
-        row1->addWidget(instrLabel);
+            auto* sfLabel = new QLabel("Soundfont");
+            sfLabel->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold;").arg(Theme::textPrimary().name()));
+            row1->addWidget(sfLabel);
 
-        m_instrumentCombo = new QComboBox();
-        m_instrumentCombo->setMinimumWidth(180);
-        connect(m_instrumentCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                this, [this](int idx) {
-            if (idx >= 0) {
-                m_playAlongSynth->setGmProgram(m_instrumentCombo->itemData(idx).toInt());
+            m_soundfontCombo = new QComboBox();
+            m_soundfontCombo->setMinimumWidth(160);
+            for (const auto& path : m_soundfontPaths) {
+                QString fn = QFileInfo(path).fileName();
+                m_soundfontCombo->addItem(fn.left(fn.lastIndexOf('.')));
             }
-        });
-        row1->addWidget(m_instrumentCombo);
-        row1->addStretch();
+            connect(m_soundfontCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                    this, [this](int idx) {
+                if (idx < 0 || idx >= m_soundfontPaths.size()) return;
+                m_instrumentCombo->setEnabled(false);
+                m_instrumentCombo->clear();
+                m_instrumentCombo->addItem("Loading...");
+                QTimer::singleShot(0, this, [this, idx]() {
+                    m_playAlongSynth->loadSoundfont(m_soundfontPaths[idx]);
+                    int curProg = m_playAlongSynth->gmProgram();
+                    m_instrumentCombo->blockSignals(true);
+                    m_instrumentCombo->clear();
+                    auto presets = m_playAlongSynth->presets();
+                    for (const auto& p : presets) {
+                        m_instrumentCombo->addItem(p.second, p.first);
+                    }
+                    for (int i = 0; i < m_instrumentCombo->count(); ++i) {
+                        if (m_instrumentCombo->itemData(i).toInt() == curProg) {
+                            m_instrumentCombo->setCurrentIndex(i);
+                            break;
+                        }
+                    }
+                    m_instrumentCombo->blockSignals(false);
+                    m_instrumentCombo->setEnabled(true);
+                });
+            });
+            row1->addWidget(m_soundfontCombo);
 
-        ipVBox->addLayout(row1);
+            row1->addSpacing(16);
 
-        // Row 2: Transpose + Volume
+            auto* instrLabel = new QLabel("Instrument");
+            instrLabel->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold;").arg(Theme::textPrimary().name()));
+            row1->addWidget(instrLabel);
+
+            m_instrumentCombo = new QComboBox();
+            m_instrumentCombo->setMinimumWidth(180);
+            connect(m_instrumentCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                    this, [this](int idx) {
+                if (idx >= 0) {
+                    m_playAlongSynth->setGmProgram(m_instrumentCombo->itemData(idx).toInt());
+                }
+            });
+            row1->addWidget(m_instrumentCombo);
+            row1->addStretch();
+        }
+        m_instrumentPanelLayout->addWidget(m_singleVoiceRow);
+
+        // Row: Transpose + Volume (always visible)
         auto* row2 = new QHBoxLayout();
         row2->setSpacing(16);
 
@@ -362,7 +366,7 @@ void App::setupUI()
         row2->addWidget(m_instrumentVolSlider);
         row2->addStretch();
 
-        ipVBox->addLayout(row2);
+        m_instrumentPanelLayout->addLayout(row2);
 
         QPalette pal = m_instrumentPanel->palette();
         pal.setColor(QPalette::Window, Theme::panelBg());
@@ -1432,18 +1436,115 @@ void App::enterPlayMode()
     m_partPanel->setPlayModeActive(true);
     m_scoreWidget->setPlayModeActive(true);
     m_instrumentAction->setEnabled(true);
+}
 
-    // Sync instrument combo with current synth program
-    if (m_instrumentCombo) {
-        int curProg = m_playAlongSynth->gmProgram();
-        m_instrumentCombo->blockSignals(true);
-        for (int i = 0; i < m_instrumentCombo->count(); ++i) {
-            if (m_instrumentCombo->itemData(i).toInt() == curProg) {
-                m_instrumentCombo->setCurrentIndex(i);
-                break;
+void App::setupInstrumentPanelForVoices(int voiceCount)
+{
+    // Remove old multi-voice rows
+    for (auto* w : m_voiceRows) {
+        m_instrumentPanelLayout->removeWidget(w);
+        delete w;
+    }
+    m_voiceRows.clear();
+    m_voiceSfCombos.clear();
+    m_voiceInstrCombos.clear();
+
+    m_instrumentAction->setText(voiceCount > 1 ? "Instruments" : "Instrument");
+
+    if (voiceCount <= 1) {
+        // Single-voice mode: show the default row
+        m_singleVoiceRow->show();
+        m_instrumentPanel->setFixedHeight(72);
+    } else {
+        // Multi-voice mode: hide default row, create per-voice rows
+        m_singleVoiceRow->hide();
+
+        // Voice colors: voice 0 = blue, voice 1 = violet, etc.
+        QList<QColor> voiceColors = {QColor(80, 140, 220), QColor(180, 80, 220)};
+
+        for (int vi = 0; vi < voiceCount; ++vi) {
+            auto* row = new QWidget();
+            auto* hbox = new QHBoxLayout(row);
+            hbox->setContentsMargins(0, 0, 0, 0);
+            hbox->setSpacing(16);
+
+            QColor color = (vi < voiceColors.size()) ? voiceColors[vi] : Theme::textPrimary();
+            QString colorStyle = QString("color: %1; font-size: 12px; font-weight: bold;").arg(color.name());
+
+            auto* voiceLabel = new QLabel(QString("Voice %1").arg(vi + 1));
+            voiceLabel->setStyleSheet(colorStyle);
+            voiceLabel->setFixedWidth(50);
+            hbox->addWidget(voiceLabel);
+
+            auto* sfLabel = new QLabel("Soundfont");
+            sfLabel->setStyleSheet(colorStyle);
+            hbox->addWidget(sfLabel);
+
+            auto* sfCombo = new QComboBox();
+            sfCombo->setMinimumWidth(160);
+            for (const auto& path : m_soundfontPaths) {
+                QString fn = QFileInfo(path).fileName();
+                sfCombo->addItem(fn.left(fn.lastIndexOf('.')));
             }
+            hbox->addWidget(sfCombo);
+
+            hbox->addSpacing(16);
+
+            auto* instrLabel = new QLabel("Instrument");
+            instrLabel->setStyleSheet(colorStyle);
+            hbox->addWidget(instrLabel);
+
+            auto* instrCombo = new QComboBox();
+            instrCombo->setMinimumWidth(180);
+            hbox->addWidget(instrCombo);
+            hbox->addStretch();
+
+            m_voiceSfCombos.append(sfCombo);
+            m_voiceInstrCombos.append(instrCombo);
+            m_voiceRows.append(row);
+
+            // Insert before the last item (transpose+volume row)
+            m_instrumentPanelLayout->insertWidget(m_instrumentPanelLayout->count() - 1, row);
+
+            // Connect soundfont combo
+            connect(sfCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                    this, [this, vi, instrCombo](int idx) {
+                if (idx < 0 || idx >= m_soundfontPaths.size()) return;
+                instrCombo->setEnabled(false);
+                instrCombo->clear();
+                instrCombo->addItem("Loading...");
+                QTimer::singleShot(0, this, [this, vi, idx, instrCombo]() {
+                    m_playAlongSynth->setSoundfontForVoice(vi, m_soundfontPaths[idx]);
+                    int sfId = m_playAlongSynth->soundfontIdForVoice(vi);
+                    int curProg = m_playAlongSynth->gmProgramForVoice(vi);
+                    instrCombo->blockSignals(true);
+                    instrCombo->clear();
+                    auto presets = m_playAlongSynth->presetsForSoundfont(sfId);
+                    for (const auto& p : presets) {
+                        instrCombo->addItem(p.second, p.first);
+                    }
+                    for (int i = 0; i < instrCombo->count(); ++i) {
+                        if (instrCombo->itemData(i).toInt() == curProg) {
+                            instrCombo->setCurrentIndex(i);
+                            break;
+                        }
+                    }
+                    instrCombo->blockSignals(false);
+                    instrCombo->setEnabled(true);
+                });
+            });
+
+            // Connect instrument combo
+            connect(instrCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                    this, [this, vi, instrCombo](int idx) {
+                if (idx >= 0) {
+                    m_playAlongSynth->setGmProgramForVoice(vi, instrCombo->itemData(idx).toInt());
+                }
+            });
         }
-        m_instrumentCombo->blockSignals(false);
+
+        // Height: 30 per voice row + 36 for transpose/volume + 12 margins
+        m_instrumentPanel->setFixedHeight(30 * voiceCount + 48);
     }
 }
 
@@ -1459,6 +1560,7 @@ void App::exitPlayMode()
     m_multiVoice = false;
     m_voiceKeysHeld.clear();
     m_voiceKeyZones.clear();
+    setupInstrumentPanelForVoices(1); // reset to single-voice layout
     m_instrumentAction->setChecked(false);
     m_instrumentAction->setEnabled(false);
 }
@@ -1843,8 +1945,11 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         // Switch to score view
         m_centralStack->setCurrentIndex(1);
 
-        // Enter play mode first (this auto-selects row 0 for play-along)
+        // Enter play mode (block partPanel signals so auto-select doesn't
+        // override the level's instrument setup below)
+        m_partPanel->blockSignals(true);
         m_playModeButton->setChecked(true);
+        m_partPanel->blockSignals(false);
 
         // Save part pointers by original 1-based index before any reordering
         std::map<int, Part*> origPartMap; // 1-based part number → Part*
@@ -1935,10 +2040,55 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                 m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElementForVoice(0));
             if (m_playAlongSynth->voiceCount() > 1)
                 m_scoreWidget->setHighlightElement2(m_playAlongSynth->nextNoteElementForVoice(1));
+
+            // Setup multi-voice instrument panel
+            setupInstrumentPanelForVoices(level.voices.size());
+
+            // Preset each voice's soundfont and instrument combos
+            for (int vi = 0; vi < level.voices.size(); ++vi) {
+                const auto& vc = level.voices[vi];
+                if (vi < m_voiceSfCombos.size() && vi < m_voiceInstrCombos.size()) {
+                    auto* sfCombo = m_voiceSfCombos[vi];
+                    auto* instrCombo = m_voiceInstrCombos[vi];
+
+                    // Select soundfont
+                    if (!vc.soundfont.isEmpty()) {
+                        sfCombo->blockSignals(true);
+                        for (int si = 0; si < m_soundfontPaths.size(); ++si) {
+                            if (QFileInfo(m_soundfontPaths[si]).fileName() == vc.soundfont) {
+                                sfCombo->setCurrentIndex(si);
+                                break;
+                            }
+                        }
+                        sfCombo->blockSignals(false);
+                    }
+
+                    // Populate instrument list from the voice's soundfont
+                    int sfId = m_playAlongSynth->soundfontIdForVoice(vi);
+                    if (sfId >= 0) {
+                        instrCombo->blockSignals(true);
+                        instrCombo->clear();
+                        auto presets = m_playAlongSynth->presetsForSoundfont(sfId);
+                        for (const auto& p : presets) {
+                            instrCombo->addItem(p.second, p.first);
+                        }
+                        // Select current program
+                        int curProg = m_playAlongSynth->gmProgramForVoice(vi);
+                        for (int i = 0; i < instrCombo->count(); ++i) {
+                            if (instrCombo->itemData(i).toInt() == curProg) {
+                                instrCombo->setCurrentIndex(i);
+                                break;
+                            }
+                        }
+                        instrCombo->blockSignals(false);
+                    }
+                }
+            }
         } else {
             // Single-voice level
             m_multiVoice = false;
             m_scoreWidget->setHighlightElement2(nullptr);
+            setupInstrumentPanelForVoices(1);
 
             // Load soundfont
             if (!level.soundfont.isEmpty() && m_soundfontCombo) {
@@ -2078,6 +2228,8 @@ void App::keyPressEvent(QKeyEvent* event)
                 QChar ch = QChar(key);
                 bool isLeft = leftKeys.contains(ch);
                 bool isRight = rightKeys.contains(ch);
+                // Play all matching voices first (minimize latency between notes)
+                int matchMask = 0;
                 for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi) {
                     const QString& zone = m_voiceKeyZones[vi];
                     bool match = (zone == "all")
@@ -2086,16 +2238,24 @@ void App::keyPressEvent(QKeyEvent* event)
                     if (match) {
                         m_voiceKeysHeld[vi]++;
                         m_playAlongSynth->playNextNoteForVoice(vi);
-                        if (vi == 0)
-                            m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElementForVoice(0));
-                        else if (vi == 1)
-                            m_scoreWidget->setHighlightElement2(m_playAlongSynth->nextNoteElementForVoice(1));
+                        matchMask |= (1 << vi);
                     }
+                }
+                // Defer highlight updates so they don't block the next keypress
+                if (matchMask) {
+                    QTimer::singleShot(0, this, [this, matchMask]() {
+                        if (matchMask & 1)
+                            m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElementForVoice(0));
+                        if (matchMask & 2)
+                            m_scoreWidget->setHighlightElement2(m_playAlongSynth->nextNoteElementForVoice(1));
+                    });
                 }
             } else {
                 m_keysHeld++;
                 m_playAlongSynth->playNextNote();
-                m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+                QTimer::singleShot(0, this, [this]() {
+                    m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+                });
             }
         }
         if (isLetter) return;

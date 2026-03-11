@@ -86,8 +86,7 @@ struct Theme {
 
             // Combo boxes
             "QComboBox { background: %5; color: %3; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; }"
-            "QComboBox::drop-down { border: none; width: 18px; }"
-            "QComboBox::down-arrow { image: none; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid %6; }"
+            "QComboBox::drop-down { border: none; }"
             "QComboBox QAbstractItemView { background: %7; color: %3; border: 1px solid %1; selection-background-color: %4; border-radius: 4px; }"
 
             // Checkboxes

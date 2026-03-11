@@ -198,7 +198,7 @@ void PlayAlongSynth::addVoice(Part* part, int gmProg, int sfontId, Score* score)
 
     int channel = static_cast<int>(m_voices.size()); // each voice on its own channel
     QString name = part->partName().toQString();
-    Voice voice{name, gmProg, channel, -1, 0, {}};
+    Voice voice{name, gmProg, channel, sfontId, -1, 0, {}};
 
     staff_idx_t startStaff = part->startTrack() / VOICES;
     track_idx_t startTrack = startStaff * VOICES;
@@ -338,7 +338,7 @@ void PlayAlongSynth::setVoice(Part* part, int gmProg, Score* score)
 
     // Build the new voice from the part's track range
     QString name = part->partName().toQString();
-    Voice voice{name, gmProg, 0, -1, 0, {}};
+    Voice voice{name, gmProg, 0, m_sfontId, -1, 0, {}};
 
     // Build note table using the part's track range directly
     voice.notes.clear();
@@ -396,6 +396,73 @@ void PlayAlongSynth::setGmProgram(int program)
 int PlayAlongSynth::gmProgram() const
 {
     return m_voices.empty() ? -1 : m_voices[0].gmProgram;
+}
+
+void PlayAlongSynth::setGmProgramForVoice(int voiceIdx, int program)
+{
+    if (voiceIdx < 0 || voiceIdx >= static_cast<int>(m_voices.size())) return;
+    auto& v = m_voices[voiceIdx];
+    int bank = program / 128;
+    int prog = program % 128;
+    v.gmProgram = prog;
+    if (m_synth) {
+        if (v.sfontId >= 0) {
+            fluid_synth_program_select(fs(m_synth), v.channel, v.sfontId, bank, prog);
+        } else {
+            fluid_synth_bank_select(fs(m_synth), v.channel, bank);
+            fluid_synth_program_change(fs(m_synth), v.channel, prog);
+        }
+    }
+}
+
+int PlayAlongSynth::gmProgramForVoice(int voiceIdx) const
+{
+    if (voiceIdx < 0 || voiceIdx >= static_cast<int>(m_voices.size())) return -1;
+    return m_voices[voiceIdx].gmProgram;
+}
+
+void PlayAlongSynth::setSoundfontForVoice(int voiceIdx, const QString& path)
+{
+    if (!m_synth || voiceIdx < 0 || voiceIdx >= static_cast<int>(m_voices.size())) return;
+    int newId = ensureSoundfont(path);
+    if (newId < 0) return;
+    auto& v = m_voices[voiceIdx];
+    v.sfontId = newId;
+    // Re-apply program on the new soundfont
+    int bank = v.gmProgram / 128;
+    int prog = v.gmProgram % 128;
+    fluid_synth_program_select(fs(m_synth), v.channel, newId, bank, prog);
+}
+
+int PlayAlongSynth::soundfontIdForVoice(int voiceIdx) const
+{
+    if (voiceIdx < 0 || voiceIdx >= static_cast<int>(m_voices.size())) return -1;
+    return m_voices[voiceIdx].sfontId;
+}
+
+QList<QPair<int, QString>> PlayAlongSynth::presetsForSoundfont(int sfontId) const
+{
+    QList<QPair<int, QString>> result;
+    if (!m_synth || sfontId < 0) return result;
+
+    fluid_sfont_t* sfont = fluid_synth_get_sfont_by_id(fs(const_cast<void*>(m_synth)), sfontId);
+    if (!sfont) return result;
+
+    fluid_sfont_iteration_start(sfont);
+    fluid_preset_t* preset;
+    while ((preset = fluid_sfont_iteration_next(sfont)) != nullptr) {
+        int bank = fluid_preset_get_banknum(preset);
+        int prog = fluid_preset_get_num(preset);
+        QString name = QString::fromUtf8(fluid_preset_get_name(preset)).trimmed();
+        int key = bank * 128 + prog;
+        result.append({key, name});
+    }
+
+    std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
+        return a.first < b.first;
+    });
+
+    return result;
 }
 
 void PlayAlongSynth::setGain(double gain)

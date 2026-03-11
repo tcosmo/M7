@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QVBoxLayout>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QJsonObject>
@@ -83,6 +84,7 @@ private:
     void enterPlayMode();
     void exitPlayMode();
     void loadLevel(int worldIndex, int sectionIndex, int levelIndex);
+    void setupInstrumentPanelForVoices(int voiceCount);
     void enterSyncMode();
     void exitSyncMode();
     void setupSyncSidebar();
@@ -118,8 +120,13 @@ private:
     QLabel* m_zoomLabel = nullptr;
     QAction* m_instrumentAction = nullptr;
     QWidget* m_instrumentPanel = nullptr;
-    QComboBox* m_instrumentCombo = nullptr;
-    QComboBox* m_soundfontCombo = nullptr;
+    QVBoxLayout* m_instrumentPanelLayout = nullptr;
+    QComboBox* m_instrumentCombo = nullptr;     // single-voice instrument combo
+    QComboBox* m_soundfontCombo = nullptr;      // single-voice soundfont combo
+    QWidget* m_singleVoiceRow = nullptr;        // row for single-voice mode
+    QList<QComboBox*> m_voiceSfCombos;          // per-voice soundfont combos
+    QList<QComboBox*> m_voiceInstrCombos;       // per-voice instrument combos
+    QList<QWidget*> m_voiceRows;                // per-voice row widgets
     QDoubleSpinBox* m_transposeSpin = nullptr;
     QSlider* m_instrumentVolSlider = nullptr;
     QStringList m_soundfontPaths;  // absolute paths to available soundfonts

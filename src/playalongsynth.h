@@ -27,6 +27,7 @@ struct Voice {
     QString partName;       // long instrument name to match
     int gmProgram;          // GM program number
     int channel;            // MIDI channel
+    int sfontId = -1;       // soundfont id for this voice
     int lastPlayedNote = -1;
     int nextIndex = 0;             // next note to play
     std::vector<NoteEvent> notes;  // sorted by tick
@@ -68,6 +69,13 @@ public:
     // Change GM instrument on the fly
     void setGmProgram(int program);
     int gmProgram() const;
+
+    // Per-voice instrument changes (for multi-voice levels)
+    void setGmProgramForVoice(int voiceIdx, int program);
+    int gmProgramForVoice(int voiceIdx) const;
+    void setSoundfontForVoice(int voiceIdx, const QString& path);
+    int soundfontIdForVoice(int voiceIdx) const;
+    QList<QPair<int, QString>> presetsForSoundfont(int sfontId) const;
 
     // Volume control (0.0 – 1.0)
     void setGain(double gain);

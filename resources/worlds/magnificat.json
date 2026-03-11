@@ -30,6 +30,14 @@
           "soundfont": "MS Basic.sf3"
         },
         {
+          "id": "oboe1",
+          "title": "Oboe I",
+          "parts": [7],
+          "playPart": 7,
+          "gmProgram": 68,
+          "soundfont": "MS Basic.sf3"
+        },
+        {
           "id": "continuo-timpani",
           "title": "Organo e Continuo + Timpani",
           "parts": [17, 4],

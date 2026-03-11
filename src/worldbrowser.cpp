@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
+#include <algorithm>
 
 namespace scoretracker {
 
@@ -179,8 +180,11 @@ WorldSidebar::WorldSidebar(QWidget* parent)
     m_volumeSlider = new QSlider(Qt::Horizontal);
     m_volumeSlider->setRange(0, 100);
     m_volumeSlider->setValue(80);
-    connect(m_volumeSlider, &QSlider::valueChanged,
-            this, &WorldSidebar::volumeChanged);
+    m_volumeSlider->setToolTip("Volume: 80%");
+    connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int val) {
+        m_volumeSlider->setToolTip(QString("Volume: %1%").arg(val));
+        emit volumeChanged(val);
+    });
     volLayout->addWidget(m_volumeSlider);
     m_volumeContainer->hide();
     m_outerLayout->addWidget(m_volumeContainer);
@@ -236,6 +240,16 @@ void WorldSidebar::showVolumeSlider(bool show)
     m_volumeContainer->setVisible(show);
 }
 
+void WorldSidebar::setVolume(int percent)
+{
+    if (m_volumeSlider) {
+        m_volumeSlider->blockSignals(true);
+        m_volumeSlider->setValue(percent);
+        m_volumeSlider->blockSignals(false);
+        emit volumeChanged(percent);
+    }
+}
+
 void WorldSidebar::setWorlds(const QList<World>& worlds)
 {
     // Clear old cards
@@ -274,7 +288,7 @@ LevelBrowser::LevelBrowser(QWidget* parent)
     setFrameShape(QFrame::NoFrame);
 
     QPalette pal = palette();
-    pal.setColor(QPalette::Window, Theme::scoreBg());
+    pal.setColor(QPalette::Window, Theme::contentBg());
     setPalette(pal);
     setAutoFillBackground(true);
 
@@ -287,6 +301,8 @@ LevelBrowser::LevelBrowser(QWidget* parent)
 void LevelBrowser::setWorld(const World& world)
 {
     m_world = world;
+    m_currentSection = -1;
+    m_currentLevel = -1;
     rebuild();
 }
 
@@ -328,6 +344,7 @@ void LevelBrowser::rebuild()
     m_playButtons.clear();
     setWidget(m_content);
 
+    m_content->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     auto* layout = new QVBoxLayout(m_content);
     layout->setContentsMargins(32, 24, 32, 24);
     layout->setSpacing(6);
@@ -476,8 +493,6 @@ void LevelBrowser::rebuild()
 
         layout->addSpacing(8);
     }
-
-    layout->addStretch();
 }
 
 // ---------------------------------------------------------------------------
@@ -504,6 +519,7 @@ QList<World> loadWorlds(const QString& worldsDir)
         world.title = obj["title"].toString();
         world.composer = obj["composer"].toString();
         world.catalogue = obj["catalogue"].toString();
+        world.order = obj.value("order").toInt(0);
 
         // Resolve paths relative to the JSON file
         QDir jsonDir = QFileInfo(filePath).absoluteDir();
@@ -536,9 +552,23 @@ QList<World> loadWorlds(const QString& worldsDir)
                 level.description = lo["description"].toString();
                 level.playPart = lo["playPart"].toInt(-1);
                 level.gmProgram = lo["gmProgram"].toInt(34);
+                level.soundfont = lo["soundfont"].toString();
                 QJsonArray partsArr = lo["parts"].toArray();
                 for (const auto& pv : partsArr)
                     level.parts.append(pv.toInt());
+                // Multi-voice config
+                if (lo.contains("voices")) {
+                    QJsonArray voicesArr = lo["voices"].toArray();
+                    for (const auto& vv : voicesArr) {
+                        QJsonObject vo = vv.toObject();
+                        VoiceConfig vc;
+                        vc.playPart = vo["playPart"].toInt(-1);
+                        vc.gmProgram = vo["gmProgram"].toInt(34);
+                        vc.soundfont = vo["soundfont"].toString();
+                        vc.keys = vo.value("keys").toString("all");
+                        level.voices.append(vc);
+                    }
+                }
                 section.levels.append(level);
             }
 
@@ -547,6 +577,10 @@ QList<World> loadWorlds(const QString& worldsDir)
 
         worlds.append(world);
     }
+
+    std::sort(worlds.begin(), worlds.end(), [](const World& a, const World& b) {
+        return a.order < b.order;
+    });
 
     return worlds;
 }

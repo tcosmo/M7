@@ -1,5 +1,6 @@
 {
   "id": "magnificat",
+  "order": 0,
   "title": "Magnificat in D major",
   "composer": "J. S. Bach",
   "catalogue": "BWV 243",
@@ -13,12 +14,39 @@
       "beats": "../Magnificat/beatdata.json",
       "levels": [
         {
+          "id": "timpani",
+          "title": "Timpani",
+          "parts": [4],
+          "playPart": 4,
+          "gmProgram": 47,
+          "soundfont": "Live HQ Natural SoundFont GM.sf2"
+        },
+        {
           "id": "continuo",
           "title": "Organo e Continuo",
-          "description": "Hold down the bass line",
           "parts": [17],
           "playPart": 17,
-          "gmProgram": 34
+          "gmProgram": 34,
+          "soundfont": "MS Basic.sf3"
+        },
+        {
+          "id": "continuo-timpani",
+          "title": "Organo e Continuo + Timpani",
+          "parts": [4, 17],
+          "voices": [
+            {
+              "playPart": 17,
+              "gmProgram": 34,
+              "soundfont": "MS Basic.sf3",
+              "keys": "right"
+            },
+            {
+              "playPart": 4,
+              "gmProgram": 47,
+              "soundfont": "Live HQ Natural SoundFont GM.sf2",
+              "keys": "left"
+            }
+          ]
         }
       ]
     },

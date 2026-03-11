@@ -141,6 +141,191 @@ bool PlayAlongSynth::init(const QString& sf3Path)
     return true;
 }
 
+bool PlayAlongSynth::loadSoundfont(const QString& path)
+{
+    if (!m_synth) return false;
+    stopNote();
+
+    // Unload previous soundfont
+    if (m_sfontId >= 0) {
+        fluid_synth_sfunload(fs(m_synth), m_sfontId, 1);
+        m_sfontId = -1;
+    }
+
+    m_sfontId = fluid_synth_sfload(fs(m_synth), path.toUtf8().constData(), 1);
+    if (m_sfontId < 0) {
+        qWarning() << "PlayAlongSynth: failed to load soundfont:" << path;
+        return false;
+    }
+
+    // Re-apply GM programs for existing voices
+    for (const auto& v : m_voices) {
+        fluid_synth_program_change(fs(m_synth), v.channel, v.gmProgram);
+    }
+    // Re-apply pitch bend
+    setPitchOffset(m_pitchOffset);
+
+    qDebug() << "PlayAlongSynth: loaded soundfont:" << path;
+    return true;
+}
+
+void PlayAlongSynth::clearVoices()
+{
+    stopNote();
+    m_voices.clear();
+}
+
+int PlayAlongSynth::ensureSoundfont(const QString& path)
+{
+    if (!m_synth) return -1;
+
+    auto it = m_loadedSfonts.find(path);
+    if (it != m_loadedSfonts.end()) return it->second;
+
+    int id = fluid_synth_sfload(fs(m_synth), path.toUtf8().constData(), 0); // 0 = don't reset
+    if (id < 0) {
+        qWarning() << "PlayAlongSynth: failed to load soundfont:" << path;
+        return -1;
+    }
+    m_loadedSfonts[path] = id;
+    qDebug() << "PlayAlongSynth: ensureSoundfont loaded:" << path << "id:" << id;
+    return id;
+}
+
+void PlayAlongSynth::addVoice(Part* part, int gmProg, int sfontId, Score* score)
+{
+    if (!part || !score) return;
+
+    int channel = static_cast<int>(m_voices.size()); // each voice on its own channel
+    QString name = part->partName().toQString();
+    Voice voice{name, gmProg, channel, -1, 0, {}};
+
+    staff_idx_t startStaff = part->startTrack() / VOICES;
+    track_idx_t startTrack = startStaff * VOICES;
+    track_idx_t endTrack = startTrack + VOICES;
+
+    for (Segment* seg = score->firstSegment(SegmentType::ChordRest);
+         seg; seg = seg->next1(SegmentType::ChordRest)) {
+        for (track_idx_t track = startTrack; track < endTrack; ++track) {
+            EngravingItem* e = seg->element(track);
+            if (!e || !e->isChord()) continue;
+            Chord* chord = static_cast<Chord*>(e);
+            int tick = seg->tick().ticks();
+            int durTicks = chord->actualTicks().ticks();
+            const auto& notes = chord->notes();
+            if (!notes.empty()) {
+                Note* note = notes.front();
+                bool tied = note->tieBack() != nullptr;
+                voice.notes.push_back({tick, note->pitch(), durTicks, note, tied});
+            }
+        }
+    }
+
+    std::sort(voice.notes.begin(), voice.notes.end(),
+              [](const NoteEvent& a, const NoteEvent& b) { return a.tick < b.tick; });
+
+    m_voices.push_back(std::move(voice));
+
+    // Select the right soundfont + program on this channel
+    if (m_synth) {
+        int bank = gmProg / 128;
+        int prog = gmProg % 128;
+        if (sfontId >= 0) {
+            fluid_synth_program_select(fs(m_synth), channel, sfontId, bank, prog);
+        } else {
+            fluid_synth_bank_select(fs(m_synth), channel, bank);
+            fluid_synth_program_change(fs(m_synth), channel, prog);
+        }
+        // Apply pitch bend
+        double frac = m_pitchOffset - static_cast<int>(m_pitchOffset);
+        int bend = 8192 + static_cast<int>(frac * 8192.0 / 2.0);
+        bend = std::clamp(bend, 0, 16383);
+        fluid_synth_pitch_bend(fs(m_synth), channel, bend);
+    }
+
+    qDebug() << "PlayAlongSynth: addVoice" << name << "channel" << channel
+             << "program" << gmProg << "notes:" << m_voices.back().notes.size();
+}
+
+void PlayAlongSynth::playNextNoteForVoice(int voiceIdx)
+{
+    if (!m_synth || voiceIdx < 0 || voiceIdx >= static_cast<int>(m_voices.size())) return;
+
+    auto* s = fs(m_synth);
+    auto& v = m_voices[voiceIdx];
+
+    if (v.nextIndex >= static_cast<int>(v.notes.size())) return;
+
+    int pitch = v.notes[v.nextIndex].midiPitch + static_cast<int>(m_pitchOffset);
+    pitch = std::clamp(pitch, 0, 127);
+
+    if (v.lastPlayedNote >= 0) {
+        fluid_synth_noteoff(s, v.channel, v.lastPlayedNote);
+    }
+
+    fluid_synth_noteon(s, v.channel, pitch, 100);
+    v.lastPlayedNote = pitch;
+    v.nextIndex++;
+
+    // Skip tied notes
+    while (v.nextIndex < static_cast<int>(v.notes.size()) && v.notes[v.nextIndex].tiedBack) {
+        v.nextIndex++;
+    }
+}
+
+void PlayAlongSynth::stopNoteForVoice(int voiceIdx)
+{
+    if (!m_synth || voiceIdx < 0 || voiceIdx >= static_cast<int>(m_voices.size())) return;
+
+    auto& v = m_voices[voiceIdx];
+    if (v.lastPlayedNote >= 0) {
+        fluid_synth_noteoff(fs(m_synth), v.channel, v.lastPlayedNote);
+        v.lastPlayedNote = -1;
+    }
+}
+
+void* PlayAlongSynth::nextNoteElementForVoice(int voiceIdx) const
+{
+    if (voiceIdx < 0 || voiceIdx >= static_cast<int>(m_voices.size())) return nullptr;
+    const auto& v = m_voices[voiceIdx];
+    if (v.nextIndex < static_cast<int>(v.notes.size())) {
+        return v.notes[v.nextIndex].element;
+    }
+    return nullptr;
+}
+
+int PlayAlongSynth::voiceCount() const
+{
+    return static_cast<int>(m_voices.size());
+}
+
+QList<QPair<int, QString>> PlayAlongSynth::presets() const
+{
+    QList<QPair<int, QString>> result;
+    if (!m_synth || m_sfontId < 0) return result;
+
+    fluid_sfont_t* sfont = fluid_synth_get_sfont_by_id(fs(const_cast<void*>(m_synth)), m_sfontId);
+    if (!sfont) return result;
+
+    fluid_sfont_iteration_start(sfont);
+    fluid_preset_t* preset;
+    while ((preset = fluid_sfont_iteration_next(sfont)) != nullptr) {
+        int bank = fluid_preset_get_banknum(preset);
+        int prog = fluid_preset_get_num(preset);
+        QString name = QString::fromUtf8(fluid_preset_get_name(preset)).trimmed();
+        // Encode bank and program: bank * 128 + program
+        int key = bank * 128 + prog;
+        result.append({key, name});
+    }
+
+    // Sort by encoded key (bank first, then program)
+    std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
+        return a.first < b.first;
+    });
+
+    return result;
+}
+
 void PlayAlongSynth::setVoice(Part* part, int gmProg, Score* score)
 {
     if (!part || !score) return;
@@ -196,11 +381,15 @@ void PlayAlongSynth::setVoice(Part* part, int gmProg, Score* score)
 
 void PlayAlongSynth::setGmProgram(int program)
 {
+    // program may be encoded as bank*128 + preset
+    int bank = program / 128;
+    int prog = program % 128;
     if (!m_voices.empty()) {
-        m_voices[0].gmProgram = program;
+        m_voices[0].gmProgram = prog;
     }
     if (m_synth) {
-        fluid_synth_program_change(fs(m_synth), 0, program);
+        fluid_synth_bank_select(fs(m_synth), 0, bank);
+        fluid_synth_program_change(fs(m_synth), 0, prog);
     }
 }
 
@@ -321,6 +510,11 @@ void PlayAlongSynth::playNextNote()
         fluid_synth_noteon(s, v.channel, pitch, 100);
         v.lastPlayedNote = pitch;
         v.nextIndex++;
+
+        // Skip any tied continuation notes (same pitch sustained)
+        while (v.nextIndex < static_cast<int>(v.notes.size()) && v.notes[v.nextIndex].tiedBack) {
+            v.nextIndex++;
+        }
     }
     m_trillOnUpper = false;
 }

@@ -1,7 +1,10 @@
 #pragma once
 
 #include <vector>
+#include <map>
 #include <QString>
+#include <QList>
+#include <QPair>
 
 namespace mu::engraving {
 class Score;
@@ -36,6 +39,10 @@ public:
     ~PlayAlongSynth();
 
     bool init(const QString& sf3Path);
+    bool loadSoundfont(const QString& path);
+
+    // Returns list of (program number, preset name) from the loaded soundfont (bank 0 only)
+    QList<QPair<int, QString>> presets() const;
     void buildNoteTables(mu::engraving::Score* score);
     void playNextNote();
     void stopNote();
@@ -48,6 +55,15 @@ public:
 
     // Set the voice to play along with (clears previous, builds note table)
     void setVoice(mu::engraving::Part* part, int gmProgram, mu::engraving::Score* score);
+
+    // Multi-voice support
+    void clearVoices();
+    int ensureSoundfont(const QString& path); // load if needed, return sfont_id
+    void addVoice(mu::engraving::Part* part, int gmProgram, int sfontId, mu::engraving::Score* score);
+    void playNextNoteForVoice(int voiceIdx);
+    void stopNoteForVoice(int voiceIdx);
+    void* nextNoteElementForVoice(int voiceIdx) const;
+    int voiceCount() const;
 
     // Change GM instrument on the fly
     void setGmProgram(int program);
@@ -80,6 +96,7 @@ private:
     double m_pitchOffset = 0;
     bool m_trillOnUpper = false;
     std::vector<Voice> m_voices;
+    std::map<QString, int> m_loadedSfonts; // path → sfont_id
 };
 
 } // namespace scoretracker

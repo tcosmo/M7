@@ -1,0 +1,26 @@
+{
+  "id": "iwantyouback",
+  "order": 1,
+  "title": "I Want You Back",
+  "composer": "The Jackson 5",
+  "catalogue": "1969",
+  "cover": "../IWantYouBack/I Want You Back_cover.jpeg",
+  "sections": [
+    {
+      "id": "iwantyouback",
+      "title": "I Want You Back",
+      "score": "../IWantYouBack/I Want You Back_Bass.musicxml",
+      "sources": "../IWantYouBack/sources.json",
+      "levels": [
+        {
+          "id": "bass",
+          "title": "Bass",
+          "parts": [1],
+          "playPart": 1,
+          "gmProgram": 34,
+          "soundfont": "MS Basic.sf3"
+        }
+      ]
+    }
+  ]
+}

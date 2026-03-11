@@ -80,12 +80,6 @@ App::App(QWidget* parent)
     m_syncMode = new SyncMode(this);
     m_playAlongSynth = new PlayAlongSynth();
 
-    m_trillTimer = new QTimer(this);
-    m_trillTimer->setInterval(90);
-    connect(m_trillTimer, &QTimer::timeout, this, [this]() {
-        m_playAlongSynth->trillToggle();
-    });
-
     setupUI();
     setupToolbar();
 
@@ -251,54 +245,85 @@ void App::setupUI()
 
     // Instrument panel (hidden by default, shown via toolbar button)
     m_instrumentPanel = new QWidget();
-    m_instrumentPanel->setFixedHeight(80);
+    m_instrumentPanel->setFixedHeight(72);
     {
-        auto* ipLayout = new QHBoxLayout(m_instrumentPanel);
-        ipLayout->setContentsMargins(16, 8, 16, 8);
-        ipLayout->setSpacing(16);
+        auto* ipVBox = new QVBoxLayout(m_instrumentPanel);
+        ipVBox->setContentsMargins(16, 6, 16, 6);
+        ipVBox->setSpacing(4);
+
+        // Row 1: Soundfont + Instrument
+        auto* row1 = new QHBoxLayout();
+        row1->setSpacing(16);
+
+        auto* sfLabel = new QLabel("Soundfont");
+        sfLabel->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold;").arg(Theme::textPrimary().name()));
+        row1->addWidget(sfLabel);
+
+        m_soundfontCombo = new QComboBox();
+        m_soundfontCombo->setMinimumWidth(160);
+        m_soundfontsDir = QCoreApplication::applicationDirPath() + "/../../resources/sounds";
+        QDir sfDir(m_soundfontsDir);
+        QStringList sfFiles = sfDir.entryList({"*.sf2", "*.sf3"}, QDir::Files, QDir::Name);
+        for (const auto& fn : sfFiles) {
+            m_soundfontPaths.append(sfDir.absoluteFilePath(fn));
+            QString displayName = fn.left(fn.lastIndexOf('.'));
+            m_soundfontCombo->addItem(displayName);
+        }
+        connect(m_soundfontCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [this](int idx) {
+            if (idx < 0 || idx >= m_soundfontPaths.size()) return;
+            m_instrumentCombo->setEnabled(false);
+            m_instrumentCombo->clear();
+            m_instrumentCombo->addItem("Loading...");
+            QTimer::singleShot(0, this, [this, idx]() {
+                m_playAlongSynth->loadSoundfont(m_soundfontPaths[idx]);
+                // Repopulate instrument list from soundfont presets
+                int curProg = m_playAlongSynth->gmProgram();
+                m_instrumentCombo->blockSignals(true);
+                m_instrumentCombo->clear();
+                auto presets = m_playAlongSynth->presets();
+                for (const auto& p : presets) {
+                    m_instrumentCombo->addItem(p.second, p.first);
+                }
+                // Select current program
+                for (int i = 0; i < m_instrumentCombo->count(); ++i) {
+                    if (m_instrumentCombo->itemData(i).toInt() == curProg) {
+                        m_instrumentCombo->setCurrentIndex(i);
+                        break;
+                    }
+                }
+                m_instrumentCombo->blockSignals(false);
+                m_instrumentCombo->setEnabled(true);
+            });
+        });
+        row1->addWidget(m_soundfontCombo);
+
+        row1->addSpacing(16);
 
         auto* instrLabel = new QLabel("Instrument");
         instrLabel->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold;").arg(Theme::textPrimary().name()));
-        ipLayout->addWidget(instrLabel);
+        row1->addWidget(instrLabel);
 
         m_instrumentCombo = new QComboBox();
-        auto* instrCombo = m_instrumentCombo;
-        instrCombo->addItem("Acoustic Grand Piano", 0);
-        instrCombo->addItem("Nylon Guitar",         24);
-        instrCombo->addItem("Steel Guitar",          25);
-        instrCombo->addItem("Acoustic Bass",         32);
-        instrCombo->addItem("Electric Bass (finger)", 33);
-        instrCombo->addItem("Electric Bass (pick)",  34);
-        instrCombo->addItem("Violin",                40);
-        instrCombo->addItem("Cello",                 42);
-        instrCombo->addItem("Orchestral Harp",       46);
-        instrCombo->addItem("String Ensemble",       48);
-        instrCombo->addItem("Trumpet",               56);
-        instrCombo->addItem("French Horn",           60);
-        instrCombo->addItem("Oboe",                  68);
-        instrCombo->addItem("Clarinet",              71);
-        instrCombo->addItem("Flute",                 73);
-        instrCombo->addItem("Recorder",              74);
-        instrCombo->setMinimumWidth(180);
-        // Select current GM program
-        int curProg = m_playAlongSynth->gmProgram();
-        for (int i = 0; i < instrCombo->count(); ++i) {
-            if (instrCombo->itemData(i).toInt() == curProg) {
-                instrCombo->setCurrentIndex(i);
-                break;
+        m_instrumentCombo->setMinimumWidth(180);
+        connect(m_instrumentCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [this](int idx) {
+            if (idx >= 0) {
+                m_playAlongSynth->setGmProgram(m_instrumentCombo->itemData(idx).toInt());
             }
-        }
-        connect(instrCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                this, [this, instrCombo](int idx) {
-            m_playAlongSynth->setGmProgram(instrCombo->itemData(idx).toInt());
         });
-        ipLayout->addWidget(instrCombo);
+        row1->addWidget(m_instrumentCombo);
+        row1->addStretch();
 
-        ipLayout->addSpacing(16);
+        ipVBox->addLayout(row1);
+
+        // Row 2: Transpose + Volume
+        auto* row2 = new QHBoxLayout();
+        row2->setSpacing(16);
 
         auto* pitchLabel = new QLabel("Transpose");
         pitchLabel->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold;").arg(Theme::textPrimary().name()));
-        ipLayout->addWidget(pitchLabel);
+        row2->addWidget(pitchLabel);
 
         m_transposeSpin = new QDoubleSpinBox();
         m_transposeSpin->setRange(-24.0, 24.0);
@@ -316,13 +341,13 @@ void App::setupUI()
                 this, [this](double val) {
             m_playAlongSynth->setPitchOffset(val);
         });
-        ipLayout->addWidget(m_transposeSpin);
+        row2->addWidget(m_transposeSpin);
 
-        ipLayout->addSpacing(16);
+        row2->addSpacing(16);
 
         auto* instVolLabel = new QLabel("Instrument Vol.");
         instVolLabel->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold;").arg(Theme::textPrimary().name()));
-        ipLayout->addWidget(instVolLabel);
+        row2->addWidget(instVolLabel);
 
         m_instrumentVolSlider = new QSlider(Qt::Horizontal);
         m_instrumentVolSlider->setRange(0, 150);
@@ -333,9 +358,10 @@ void App::setupUI()
             m_instrumentVolSlider->setToolTip(QString("Instrument volume: %1%").arg(val));
             m_playAlongSynth->setGain(val / 100.0);
         });
-        ipLayout->addWidget(m_instrumentVolSlider);
+        row2->addWidget(m_instrumentVolSlider);
+        row2->addStretch();
 
-        ipLayout->addStretch();
+        ipVBox->addLayout(row2);
 
         QPalette pal = m_instrumentPanel->palette();
         pal.setColor(QPalette::Window, Theme::panelBg());
@@ -413,6 +439,10 @@ void App::setupUI()
 
     // Central stacked widget: 0 = level browser, 1 = score view
     m_centralStack = new QStackedWidget();
+    m_centralStack->setAutoFillBackground(true);
+    QPalette csPal = m_centralStack->palette();
+    csPal.setColor(QPalette::Window, Theme::contentBg());
+    m_centralStack->setPalette(csPal);
     m_centralStack->addWidget(m_levelBrowser);
     m_centralStack->addWidget(m_mainSplitter);
     m_centralStack->setCurrentIndex(0);
@@ -423,6 +453,9 @@ void App::setupUI()
         m_currentWorldIndex = index;
         if (index >= 0 && index < m_worlds.size()) {
             m_levelBrowser->setWorld(m_worlds[index]);
+            if (index == m_activeWorldIndex && m_activeSectionIndex >= 0) {
+                m_levelBrowser->setCurrentLevel(m_activeSectionIndex, m_activeLevelIndex);
+            }
             m_centralStack->setCurrentIndex(0);
         }
     });
@@ -449,6 +482,10 @@ void App::setupUI()
         if (index < m_sourceInstrumentVols.size() && m_sourceInstrumentVols[index] >= 0 && m_instrumentVolSlider) {
             m_instrumentVolSlider->setValue(m_sourceInstrumentVols[index]);
         }
+        // Apply per-interpretation master volume
+        if (index < m_sourceVolumes.size() && m_sourceVolumes[index] >= 0 && m_worldSidebar) {
+            m_worldSidebar->setVolume(m_sourceVolumes[index]);
+        }
         // Load per-interpretation beats or disable tracking
         if (index < m_sourceBeatsFiles.size() && !m_sourceBeatsFiles[index].isEmpty()) {
             loadBeatData(m_sourceBeatsFiles[index]);
@@ -463,7 +500,16 @@ void App::setupUI()
         }
         // Reset tracker and synth to beginning
         m_playAlongSynth->resetPosition();
-        m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+        if (m_multiVoice) {
+            for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi)
+                m_voiceKeysHeld[vi] = 0;
+            if (m_playAlongSynth->voiceCount() > 0)
+                m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElementForVoice(0));
+            if (m_playAlongSynth->voiceCount() > 1)
+                m_scoreWidget->setHighlightElement2(m_playAlongSynth->nextNoteElementForVoice(1));
+        } else {
+            m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+        }
         m_syncTimer->setTime(0);
         onPositionChanged(0);
         m_playPauseAction->setText("Play");
@@ -524,7 +570,16 @@ void App::setupToolbar()
     connect(m_stopAction, &QAction::triggered, this, [this]() {
         playerSeekTo(0);
         m_playAlongSynth->resetPosition();
-        m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+        if (m_multiVoice) {
+            for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi)
+                m_voiceKeysHeld[vi] = 0;
+            if (m_playAlongSynth->voiceCount() > 0)
+                m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElementForVoice(0));
+            if (m_playAlongSynth->voiceCount() > 1)
+                m_scoreWidget->setHighlightElement2(m_playAlongSynth->nextNoteElementForVoice(1));
+        } else {
+            m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+        }
         m_syncTimer->setTime(0);
         onPositionChanged(0);
         playerPlay();
@@ -810,8 +865,25 @@ bool App::loadScore(const QString& musicXmlPath)
     m_syncTimer->setScore(m_score);
 
     // Initialize play-along synth (no voice until user clicks ear icon)
-    QString sf3Path = QCoreApplication::applicationDirPath() + "/../../thirdparty/musescore_a/share/sound/MS Basic.sf3";
+    // Initialize with first available soundfont
+    QString sf3Path;
+    if (!m_soundfontPaths.isEmpty()) {
+        sf3Path = m_soundfontPaths.first();
+    } else {
+        sf3Path = QCoreApplication::applicationDirPath() + "/../../thirdparty/musescore_a/share/sound/MS Basic.sf3";
+    }
     m_playAlongSynth->init(sf3Path);
+
+    // Populate instrument combo from loaded soundfont
+    if (m_instrumentCombo) {
+        m_instrumentCombo->blockSignals(true);
+        m_instrumentCombo->clear();
+        auto presets = m_playAlongSynth->presets();
+        for (const auto& p : presets) {
+            m_instrumentCombo->addItem(p.second, p.first);
+        }
+        m_instrumentCombo->blockSignals(false);
+    }
 
     m_partPanel->setScore(m_score);
     m_partPanel->setRenderer(m_renderer.get());
@@ -840,7 +912,7 @@ bool App::loadScore(const QString& musicXmlPath)
     if (remaining < 0) remaining = 0;
     m_sidebarSplitter->setSizes({partsHeight, trackingHeight, displayHeight, remaining});
 
-    setWindowTitle(QString("JamJammin' - %1").arg(fi.fileName()));
+    setWindowTitle("JamJammin'");
 
     // Fit score to viewport after layout settles
     QTimer::singleShot(0, m_scoreWidget, &ScoreWidget::zoomToFit);
@@ -1181,6 +1253,7 @@ void App::loadSources(const QString& jsonPath)
     m_sourceLabels.clear();
     m_sourceTunings.clear();
     m_sourceInstrumentVols.clear();
+    m_sourceVolumes.clear();
     m_sourceBeatsFiles.clear();
     m_sourceStartTimes.clear();
     m_sourceEndTimes.clear();
@@ -1202,6 +1275,7 @@ void App::loadSources(const QString& jsonPath)
                     m_sourceLabels.append(ytObj.value("label").toString("YouTube"));
                     m_sourceTunings.append(ytObj.value("tuning").toDouble(0));
                     m_sourceInstrumentVols.append(ytObj.contains("instrumentVolume") ? ytObj["instrumentVolume"].toInt() : -1);
+                    m_sourceVolumes.append(ytObj.contains("volume") ? ytObj["volume"].toInt() : -1);
                     m_sourceBeatsFiles.append(ytObj.contains("beats") ? sourceDir.absoluteFilePath(ytObj["beats"].toString()) : QString());
                     m_sourceStartTimes.append(ytObj.value("start").toDouble(0));
                     m_sourceEndTimes.append(ytObj.value("end").toDouble(0));
@@ -1210,6 +1284,7 @@ void App::loadSources(const QString& jsonPath)
                     m_sourceLabels.append("YouTube");
                     m_sourceTunings.append(0.0);
                     m_sourceInstrumentVols.append(-1);
+                    m_sourceVolumes.append(-1);
                     m_sourceBeatsFiles.append(QString());
                     m_sourceStartTimes.append(0);
                     m_sourceEndTimes.append(0);
@@ -1220,6 +1295,7 @@ void App::loadSources(const QString& jsonPath)
             m_sourceLabels.append("YouTube");
             m_sourceTunings.append(0.0);
             m_sourceInstrumentVols.append(-1);
+            m_sourceVolumes.append(-1);
             m_sourceBeatsFiles.append(QString());
             m_sourceStartTimes.append(0);
             m_sourceEndTimes.append(0);
@@ -1248,6 +1324,9 @@ void App::loadSources(const QString& jsonPath)
     }
     if (!m_sourceInstrumentVols.isEmpty() && m_sourceInstrumentVols.first() >= 0 && m_instrumentVolSlider) {
         m_instrumentVolSlider->setValue(m_sourceInstrumentVols.first());
+    }
+    if (!m_sourceVolumes.isEmpty() && m_sourceVolumes.first() >= 0 && m_worldSidebar) {
+        m_worldSidebar->setVolume(m_sourceVolumes.first());
     }
 
     // Apply initial start/end times
@@ -1370,12 +1449,15 @@ void App::enterPlayMode()
 void App::exitPlayMode()
 {
     m_playModeActive = false;
-    m_trillTimer->stop();
     m_playAlongSynth->stopNote();
     m_scoreWidget->setHighlightElement(nullptr);
+    m_scoreWidget->setHighlightElement2(nullptr);
     m_scoreWidget->setPlayModeActive(false);
     m_partPanel->setPlayModeActive(false);
     m_keysHeld = 0;
+    m_multiVoice = false;
+    m_voiceKeysHeld.clear();
+    m_voiceKeyZones.clear();
     m_instrumentAction->setChecked(false);
     m_instrumentAction->setEnabled(false);
 }
@@ -1696,9 +1778,14 @@ void App::loadWorlds(const QString& worldsDir)
 
 void App::showWorldBrowser()
 {
-    // Exit play mode if active
     if (m_playModeActive) {
         m_playModeButton->setChecked(false);
+    }
+    // Show the active world with Resume on the active level
+    if (m_activeWorldIndex >= 0 && m_activeWorldIndex < m_worlds.size()) {
+        m_currentWorldIndex = m_activeWorldIndex;
+        m_levelBrowser->setWorld(m_worlds[m_activeWorldIndex]);
+        m_levelBrowser->setCurrentLevel(m_activeSectionIndex, m_activeLevelIndex);
     }
     m_centralStack->setCurrentIndex(0);
 }
@@ -1746,7 +1833,10 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         // Hide the right sidebar by default for levels
         m_sidebarAction->setChecked(false);
 
-        // Mark this level as current in the browser
+        // Mark this level as active
+        m_activeWorldIndex = worldIndex;
+        m_activeSectionIndex = sectionIndex;
+        m_activeLevelIndex = levelIndex;
         m_levelBrowser->setCurrentLevel(sectionIndex, levelIndex);
 
         // Switch to score view
@@ -1760,15 +1850,84 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             setVisibleParts(level.parts);
         }
 
-        if (level.playPart > 0) {
+        // Multi-voice or single-voice setup
+        if (!level.voices.isEmpty()) {
+            // Multi-voice level
+            m_multiVoice = true;
+            m_voiceKeysHeld.clear();
+            m_voiceKeyZones.clear();
+            m_playAlongSynth->clearVoices();
+            m_scoreWidget->setHighlightElement(nullptr);
+            m_scoreWidget->setHighlightElement2(nullptr);
+
             auto* score = m_score;
-            if (score) {
-                const auto& parts = score->parts();
-                int partIdx = level.playPart - 1; // 0-based
+            const auto& parts = score->parts();
+
+            for (int vi = 0; vi < level.voices.size(); ++vi) {
+                const auto& vc = level.voices[vi];
+                m_voiceKeysHeld.append(0);
+                m_voiceKeyZones.append(vc.keys);
+
+                // Load soundfont for this voice
+                int sfId = -1;
+                if (!vc.soundfont.isEmpty()) {
+                    QString sfPath = m_soundfontsDir + "/" + vc.soundfont;
+                    sfId = m_playAlongSynth->ensureSoundfont(sfPath);
+                }
+
+                int partIdx = vc.playPart - 1;
+                if (partIdx >= 0 && partIdx < static_cast<int>(parts.size())) {
+                    m_playAlongSynth->addVoice(parts[partIdx], vc.gmProgram, sfId, score);
+                }
+            }
+
+            // Set highlights for each voice
+            if (m_playAlongSynth->voiceCount() > 0)
+                m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElementForVoice(0));
+            if (m_playAlongSynth->voiceCount() > 1)
+                m_scoreWidget->setHighlightElement2(m_playAlongSynth->nextNoteElementForVoice(1));
+        } else {
+            // Single-voice level
+            m_multiVoice = false;
+            m_scoreWidget->setHighlightElement2(nullptr);
+
+            // Load soundfont
+            if (!level.soundfont.isEmpty() && m_soundfontCombo) {
+                for (int i = 0; i < m_soundfontPaths.size(); ++i) {
+                    if (QFileInfo(m_soundfontPaths[i]).fileName() == level.soundfont) {
+                        m_soundfontCombo->blockSignals(true);
+                        m_soundfontCombo->setCurrentIndex(i);
+                        m_soundfontCombo->blockSignals(false);
+                        m_playAlongSynth->loadSoundfont(m_soundfontPaths[i]);
+                        m_instrumentCombo->blockSignals(true);
+                        m_instrumentCombo->clear();
+                        auto presets = m_playAlongSynth->presets();
+                        for (const auto& p : presets) {
+                            m_instrumentCombo->addItem(p.second, p.first);
+                        }
+                        m_instrumentCombo->blockSignals(false);
+                        break;
+                    }
+                }
+            }
+
+            if (level.playPart > 0 && m_score) {
+                const auto& parts = m_score->parts();
+                int partIdx = level.playPart - 1;
                 if (partIdx >= 0 && partIdx < static_cast<int>(parts.size())) {
                     m_partPanel->activatePlayAlong(partIdx, level.gmProgram);
-                    m_playAlongSynth->setVoice(parts[partIdx], level.gmProgram, score);
+                    m_playAlongSynth->setVoice(parts[partIdx], level.gmProgram, m_score);
                     m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+                    if (m_instrumentCombo) {
+                        m_instrumentCombo->blockSignals(true);
+                        for (int i = 0; i < m_instrumentCombo->count(); ++i) {
+                            if (m_instrumentCombo->itemData(i).toInt() == level.gmProgram) {
+                                m_instrumentCombo->setCurrentIndex(i);
+                                break;
+                            }
+                        }
+                        m_instrumentCombo->blockSignals(false);
+                    }
                 }
             }
         }
@@ -1863,12 +2022,31 @@ void App::keyPressEvent(QKeyEvent* event)
         int key = event->key();
         bool isLetter = (key >= Qt::Key_A && key <= Qt::Key_Z);
         if (isLetter && !event->isAutoRepeat()) {
-            m_keysHeld++;
-            m_trillTimer->stop();
-            m_playAlongSynth->playNextNote();
-            m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
-            if (m_playAlongSynth->currentNoteHasTrill()) {
-                m_trillTimer->start();
+            if (m_multiVoice) {
+                // Determine key zone: left or right half of keyboard
+                static const QString leftKeys = "ABCDEFGQRSTVWXZ";
+                static const QString rightKeys = "HIJKLMNOPUY";
+                QChar ch = QChar(key);
+                bool isLeft = leftKeys.contains(ch);
+                bool isRight = rightKeys.contains(ch);
+                for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi) {
+                    const QString& zone = m_voiceKeyZones[vi];
+                    bool match = (zone == "all")
+                              || (zone == "left" && isLeft)
+                              || (zone == "right" && isRight);
+                    if (match) {
+                        m_voiceKeysHeld[vi]++;
+                        m_playAlongSynth->playNextNoteForVoice(vi);
+                        if (vi == 0)
+                            m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElementForVoice(0));
+                        else if (vi == 1)
+                            m_scoreWidget->setHighlightElement2(m_playAlongSynth->nextNoteElementForVoice(1));
+                    }
+                }
+            } else {
+                m_keysHeld++;
+                m_playAlongSynth->playNextNote();
+                m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
             }
         }
         if (isLetter) return;
@@ -1882,10 +2060,29 @@ void App::keyReleaseEvent(QKeyEvent* event)
     int key = event->key();
     bool isLetter = (key >= Qt::Key_A && key <= Qt::Key_Z);
     if (isLetter && !event->isAutoRepeat() && m_playModeActive && playerIsPlaying()) {
-        m_keysHeld = std::max(0, m_keysHeld - 1);
-        if (m_keysHeld == 0) {
-            m_trillTimer->stop();
-            m_playAlongSynth->stopNote();
+        if (m_multiVoice) {
+            static const QString leftKeys = "ABCDEFGQRSTVWXZ";
+            static const QString rightKeys = "HIJKLMNOPUY";
+            QChar ch = QChar(key);
+            bool isLeft = leftKeys.contains(ch);
+            bool isRight = rightKeys.contains(ch);
+            for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi) {
+                const QString& zone = m_voiceKeyZones[vi];
+                bool match = (zone == "all")
+                          || (zone == "left" && isLeft)
+                          || (zone == "right" && isRight);
+                if (match) {
+                    m_voiceKeysHeld[vi] = std::max(0, m_voiceKeysHeld[vi] - 1);
+                    if (m_voiceKeysHeld[vi] == 0) {
+                        m_playAlongSynth->stopNoteForVoice(vi);
+                    }
+                }
+            }
+        } else {
+            m_keysHeld = std::max(0, m_keysHeld - 1);
+            if (m_keysHeld == 0) {
+                m_playAlongSynth->stopNote();
+            }
         }
         return;
     }

@@ -48,6 +48,7 @@ public:
     void setInterpretations(const QStringList& labels, int activeIndex = 0);
     void clearInterpretations();
     void showVolumeSlider(bool show);
+    void setVolume(int percent);
 
 signals:
     void worldSelected(int index);

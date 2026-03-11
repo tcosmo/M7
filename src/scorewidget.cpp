@@ -296,6 +296,31 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
         }
     }
 
+    // Draw second voice highlight (violet)
+    if (m_highlightElement2 && m_score) {
+        auto* note2 = static_cast<mu::engraving::Note*>(m_highlightElement2);
+        auto* chord2 = note2->chord();
+        if (chord2) {
+            muse::RectF bbox2 = chord2->canvasBoundingRect();
+            auto* pg2 = static_cast<mu::engraving::Page*>(
+                chord2->findAncestor(mu::engraving::ElementType::PAGE));
+            int pageIdx2 = pg2 ? pg2->no() : 0;
+            double pageX2 = pg2 ? pg2->pos().x() : 0;
+            double pageY2 = pg2 ? pg2->pos().y() : 0;
+            muse::RectF pageRel2(bbox2.x() - pageX2, bbox2.y() - pageY2, bbox2.width(), bbox2.height());
+            muse::RectF mapped2 = mapToRenderCoords(pageRel2, pageIdx2);
+
+            QPainter hlPainter2(this);
+            hlPainter2.setRenderHint(QPainter::Antialiasing, true);
+            double pad2 = 2.0;
+            QRectF hlRect2(mapped2.x() * s - pad2, mapped2.y() * s - pad2,
+                           mapped2.width() * s + 2 * pad2, mapped2.height() * s + 2 * pad2);
+            hlPainter2.setPen(QPen(QColor(180, 80, 220), 2.0));
+            hlPainter2.setBrush(QColor(180, 80, 220, 40));
+            hlPainter2.drawRoundedRect(hlRect2, 3, 3);
+        }
+    }
+
     // Draw sync dots (fixed pixel size, independent of zoom)
     if (m_syncMode && m_syncMode->isActive()) {
         QPainter dotPainter(this);
@@ -324,7 +349,6 @@ void ScoreCanvas::setHighlightElement(void* element)
 {
     if (m_highlightElement == element) return;
 
-    // Reset previous highlight to black
     if (m_highlightElement) {
         colorChord(static_cast<mu::engraving::Note*>(m_highlightElement),
                    muse::draw::Color::BLACK);
@@ -332,10 +356,28 @@ void ScoreCanvas::setHighlightElement(void* element)
 
     m_highlightElement = element;
 
-    // Apply blue highlight
     if (m_highlightElement) {
         colorChord(static_cast<mu::engraving::Note*>(m_highlightElement),
                    muse::draw::Color(50, 120, 255));
+    }
+
+    update();
+}
+
+void ScoreCanvas::setHighlightElement2(void* element)
+{
+    if (m_highlightElement2 == element) return;
+
+    if (m_highlightElement2) {
+        colorChord(static_cast<mu::engraving::Note*>(m_highlightElement2),
+                   muse::draw::Color::BLACK);
+    }
+
+    m_highlightElement2 = element;
+
+    if (m_highlightElement2) {
+        colorChord(static_cast<mu::engraving::Note*>(m_highlightElement2),
+                   muse::draw::Color(180, 80, 220)); // violet
     }
 
     update();
@@ -878,6 +920,11 @@ void ScoreWidget::setHighlightElement(void* element)
 {
     m_canvas->setHighlightElement(element);
     ensureHighlightVisible();
+}
+
+void ScoreWidget::setHighlightElement2(void* element)
+{
+    m_canvas->setHighlightElement2(element);
 }
 
 void ScoreWidget::ensureHighlightVisible()

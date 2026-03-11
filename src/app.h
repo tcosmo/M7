@@ -119,8 +119,11 @@ private:
     QAction* m_instrumentAction = nullptr;
     QWidget* m_instrumentPanel = nullptr;
     QComboBox* m_instrumentCombo = nullptr;
+    QComboBox* m_soundfontCombo = nullptr;
     QDoubleSpinBox* m_transposeSpin = nullptr;
     QSlider* m_instrumentVolSlider = nullptr;
+    QStringList m_soundfontPaths;  // absolute paths to available soundfonts
+    QString m_soundfontsDir;       // resources/sounds/ directory
 
     // Backend
     AudioPlayer* m_audioPlayer = nullptr;
@@ -130,7 +133,8 @@ private:
     QStringList m_sourceYouTubeUrls;
     QStringList m_sourceLabels;
     QList<double> m_sourceTunings; // per-interpretation pitch offset in semitones (fractional OK)
-    QList<int> m_sourceInstrumentVols; // per-interpretation instrument volume (0–100), -1 = use default
+    QList<int> m_sourceInstrumentVols; // per-interpretation instrument volume (0–150), -1 = use default
+    QList<int> m_sourceVolumes;        // per-interpretation master volume (0–100), -1 = use default
     QStringList m_sourceBeatsFiles;    // per-interpretation beats JSON path, empty = no beats
     QList<double> m_sourceStartTimes;  // per-interpretation start offset in seconds, 0 = from beginning
     QList<double> m_sourceEndTimes;    // per-interpretation end time in seconds, 0 = no limit
@@ -163,8 +167,11 @@ private:
     std::shared_ptr<mu::engraving::rendering::IScoreRenderer> m_renderer;
 
     PlayAlongSynth* m_playAlongSynth = nullptr;
-    QTimer* m_trillTimer = nullptr;
     int m_keysHeld = 0;
+    // Multi-voice support
+    bool m_multiVoice = false;
+    QList<int> m_voiceKeysHeld;     // per-voice key counters
+    QList<QString> m_voiceKeyZones; // "left", "right", "all" per voice
 
     QString m_audioFilePath;
     QString m_beatDataPath;
@@ -177,6 +184,10 @@ private:
     QStackedWidget* m_centralStack = nullptr;  // switches between level browser and score view
     QList<World> m_worlds;
     int m_currentWorldIndex = -1;
+    // Active level (for Resume support)
+    int m_activeWorldIndex = -1;
+    int m_activeSectionIndex = -1;
+    int m_activeLevelIndex = -1;
 };
 
 } // namespace scoretracker

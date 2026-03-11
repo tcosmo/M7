@@ -13,7 +13,7 @@
       "url": "https://www.youtube.com/watch?v=fUt88ImPV-E",
       "label": "Jordi Savall",
       "tuning": -0.90,
-      "instrumentVolume": 100
+      "instrumentVolume": 140
     },
     {
       "url": "https://www.youtube.com/watch?v=EsUWG2axB3w",
@@ -44,8 +44,9 @@
       "label": "Ton Koopman, Amsterdam Baroque Orchestra & Choir",
       "start": 15,
       "end": 186,
-      "tuning": -0.80,
-      "instrumentVolume": 140
+      "tuning": -1,
+      "instrumentVolume": 145,
+      "volume": 79
     }
   ]
 }

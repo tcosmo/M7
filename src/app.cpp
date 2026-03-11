@@ -53,6 +53,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QSplitter>
+#include <numeric>
 
 using namespace mu::engraving;
 using namespace mu::engraving::rendering;
@@ -1845,6 +1846,57 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         // Enter play mode first (this auto-selects row 0 for play-along)
         m_playModeButton->setChecked(true);
 
+        // Save part pointers by original 1-based index before any reordering
+        std::map<int, Part*> origPartMap; // 1-based part number → Part*
+        if (m_score) {
+            const auto& origParts = m_score->parts();
+            for (int i = 0; i < static_cast<int>(origParts.size()); ++i) {
+                origPartMap[i + 1] = origParts[i];
+            }
+        }
+
+        // Reorder staves if level.parts specifies a non-ascending order
+        // so that the visible parts appear in the requested display order.
+        // Each part has one staff; we swap their positions in the score.
+        if (level.parts.size() >= 2 && m_score) {
+            bool needsReorder = false;
+            for (int i = 1; i < level.parts.size(); ++i) {
+                if (level.parts[i] < level.parts[i - 1]) {
+                    needsReorder = true;
+                    break;
+                }
+            }
+            if (needsReorder) {
+                size_t nst = m_score->nstaves();
+                // Build identity permutation
+                std::vector<staff_idx_t> newOrder(nst);
+                std::iota(newOrder.begin(), newOrder.end(), 0);
+
+                // Find staff indices for the parts in level.parts (0-based)
+                // and the slots they occupy in score order
+                std::vector<staff_idx_t> staffIndices; // staff idx for each part in level.parts order
+                std::vector<staff_idx_t> sortedSlots;  // their positions sorted by score order
+                for (int p : level.parts) {
+                    auto it = origPartMap.find(p);
+                    if (it != origPartMap.end()) {
+                        staff_idx_t si = m_score->staffIdx(it->second);
+                        staffIndices.push_back(si);
+                    }
+                }
+                sortedSlots = staffIndices;
+                std::sort(sortedSlots.begin(), sortedSlots.end());
+
+                // Place the requested staves into the sorted positions
+                // in the order specified by level.parts
+                if (sortedSlots.size() == staffIndices.size()) {
+                    for (size_t i = 0; i < sortedSlots.size(); ++i) {
+                        newOrder[sortedSlots[i]] = staffIndices[i];
+                    }
+                    m_score->sortStaves(newOrder);
+                }
+            }
+        }
+
         // Now override: show only the relevant parts and activate the correct play-along
         if (!level.parts.isEmpty()) {
             setVisibleParts(level.parts);
@@ -1860,9 +1912,6 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             m_scoreWidget->setHighlightElement(nullptr);
             m_scoreWidget->setHighlightElement2(nullptr);
 
-            auto* score = m_score;
-            const auto& parts = score->parts();
-
             for (int vi = 0; vi < level.voices.size(); ++vi) {
                 const auto& vc = level.voices[vi];
                 m_voiceKeysHeld.append(0);
@@ -1875,9 +1924,9 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                     sfId = m_playAlongSynth->ensureSoundfont(sfPath);
                 }
 
-                int partIdx = vc.playPart - 1;
-                if (partIdx >= 0 && partIdx < static_cast<int>(parts.size())) {
-                    m_playAlongSynth->addVoice(parts[partIdx], vc.gmProgram, sfId, score);
+                auto pit = origPartMap.find(vc.playPart);
+                if (pit != origPartMap.end()) {
+                    m_playAlongSynth->addVoice(pit->second, vc.gmProgram, sfId, m_score);
                 }
             }
 

@@ -32,7 +32,7 @@
         {
           "id": "continuo-timpani",
           "title": "Organo e Continuo + Timpani",
-          "parts": [4, 17],
+          "parts": [17, 4],
           "voices": [
             {
               "playPart": 17,

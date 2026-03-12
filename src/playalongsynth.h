@@ -88,6 +88,9 @@ public:
     // Returns the element (Note*) for the next note to be played, or nullptr
     void* nextNoteElement() const;
 
+    // Returns the tick of the last played note (for recording tracking data)
+    int lastPlayedTick(int voiceIdx = 0) const;
+
     // Trill support
     bool currentNoteHasTrill() const;
     void trillToggle();

@@ -18,6 +18,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QMenu>
+#include <QRegularExpression>
 
 #include "modularity/ioc.h"
 
@@ -501,7 +502,10 @@ void App::setupUI()
             m_syncTimer->setMeasureStarts({});
             m_beatDataPath.clear();
             m_trackingAction->setChecked(false);
-            m_trackingButton->setEnabled(false);
+            m_beatDataFromRecording = false;
+            // Keep button enabled so user can record tracking
+            m_trackingButton->setEnabled(true);
+            updateTrackingIcon();
         }
         // Reset tracker and synth to beginning
         m_playAlongSynth->resetPosition();
@@ -646,19 +650,58 @@ void App::setupToolbar()
     m_trackingButton->setIconSize(QSize(8, 8));
 
     updateTrackingIcon();
-    m_trackingButton->setFixedSize(m_trackingButton->sizeHint());
+    // Size for the wider label so it doesn't jump when switching text
+    m_trackingButton->setText("Tracking");
+    QSize trackSz = m_trackingButton->sizeHint();
+    m_trackingButton->setText("Record");
+    QSize recSz = m_trackingButton->sizeHint();
+    m_trackingButton->setFixedSize(QSize(std::max(trackSz.width(), recSz.width()),
+                                         std::max(trackSz.height(), recSz.height())));
+    updateTrackingIcon(); // restore correct text
 
-    m_trackingButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_T));
     m_toolbar->addWidget(m_trackingButton);
+    m_trackingAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_T));
+    addAction(m_trackingAction); // register with window for shortcut dispatch
 
     connect(m_trackingButton, &QPushButton::clicked, [this]() {
-        m_trackingAction->toggle();
+        if (m_recordTrackingActive) {
+            stopRecordTracking();
+        } else {
+            m_trackingAction->toggle();
+        }
     });
     connect(m_trackingAction, &QAction::toggled, [this](bool on) {
         updateTrackingIcon();
         if (!on && !m_trackingSettings->autoScrollEnabled()) {
             m_scoreWidget->setCursorRect(muse::RectF(), -1);
         }
+    });
+
+    // Right-click context menu on tracking button for Record / Save
+    m_trackingButton->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_trackingButton, &QPushButton::customContextMenuRequested, [this](const QPoint& pos) {
+        if (!m_playModeActive) return;
+        QMenu menu;
+        if (m_recordTrackingActive) {
+            auto* stopAction = menu.addAction("Stop Recording");
+            connect(stopAction, &QAction::triggered, this, [this]() { stopRecordTracking(); });
+        } else {
+            auto* recAction = menu.addAction("Record Tracking");
+            connect(recAction, &QAction::triggered, this, [this]() {
+                if (m_beatDataFromRecording) {
+                    m_syncTimer->setBeatTimes({}, 0);
+                    m_syncTimer->setBeatTicks({});
+                    m_syncTimer->setMeasureStarts({});
+                    m_beatDataFromRecording = false;
+                }
+                startRecordTracking();
+            });
+            if (m_beatDataFromRecording) {
+                auto* saveAction = menu.addAction("Save Tracking Data");
+                connect(saveAction, &QAction::triggered, this, &App::saveRecordedTracking);
+            }
+        }
+        menu.exec(m_trackingButton->mapToGlobal(pos));
     });
 
     // Play Mode — hidden toggle (activated programmatically by loadLevel)
@@ -977,7 +1020,24 @@ bool App::loadBeatData(const QString& jsonPath)
     std::vector<double> beatTimes;
     std::vector<double> measureStarts;
 
-    if (obj.contains("measures")) {
+    std::vector<int> beatTicks;
+
+    if (obj.contains("control_points")) {
+        // Recorded tracking format: array of {tick, time} + optional measure_starts
+        QJsonArray cpArr = obj.value("control_points").toArray();
+        beatTimes.reserve(cpArr.size());
+        beatTicks.reserve(cpArr.size());
+        for (const auto& v : cpArr) {
+            QJsonObject pt = v.toObject();
+            beatTicks.push_back(pt["tick"].toInt());
+            beatTimes.push_back(pt["time"].toDouble());
+        }
+        if (obj.contains("measure_starts")) {
+            QJsonArray msArr = obj.value("measure_starts").toArray();
+            for (const auto& v : msArr)
+                measureStarts.push_back(v.toDouble());
+        }
+    } else if (obj.contains("measures")) {
         // Measures format: array of {beats: [{beat, time}, ...]}
         QJsonArray measuresArr = obj.value("measures").toArray();
         for (const auto& mv : measuresArr) {
@@ -1004,11 +1064,12 @@ bool App::loadBeatData(const QString& jsonPath)
         }
     }
 
-    // Compute tick position for each beat (each beat = quarter note = 480 ticks)
-    std::vector<int> beatTicks;
-    beatTicks.reserve(beatTimes.size());
-    for (size_t i = 0; i < beatTimes.size(); ++i) {
-        beatTicks.push_back(static_cast<int>(i) * 480);
+    // Compute tick positions if not already provided (beat-based formats)
+    if (beatTicks.empty()) {
+        beatTicks.reserve(beatTimes.size());
+        for (size_t i = 0; i < beatTimes.size(); ++i) {
+            beatTicks.push_back(static_cast<int>(i) * 480);
+        }
     }
 
     m_syncTimer->setBeatTimes(beatTimes, beatsPerMeasure);
@@ -1060,6 +1121,13 @@ void App::onPositionChanged(double seconds)
 
     // Auto-pause at interpretation end
     if (m_interpEnd > 0 && seconds >= m_interpEnd && playerIsPlaying()) {
+        if (m_recordTrackingActive) {
+            // Finalize recorded data but stay in recording state visually —
+            // let the user click to switch to tracking mode
+            m_recordTrackingActive = false;
+            finalizeRecordedTracking();
+            updateTrackingIcon();
+        }
         playerPause();
         m_playPauseAction->setText("Play");
         return;
@@ -1128,18 +1196,30 @@ QString App::formatTime(double seconds) const
 void App::updateTrackingIcon()
 {
     if (!m_trackingButton || !m_trackingAction) return;
-    bool on = m_trackingAction->isChecked();
+
+    bool hasBeatData = !m_syncTimer->beatTimes().empty();
+
     int sz = 16; // render at 2x for retina
     QPixmap px(sz + 7, sz + 3);
     px.fill(Qt::transparent);
     QPainter p(&px);
     p.setRenderHint(QPainter::Antialiasing);
-    if (on) {
-        p.setBrush(Theme::green());
-        p.setPen(QPen(Theme::green(), 1.5));
+
+    if (m_recordTrackingActive) {
+        // Recording: solid red circle
+        p.setBrush(Theme::red());
+        p.setPen(QPen(Theme::red(), 1.5));
+        m_trackingButton->setText("Record");
     } else {
-        p.setBrush(Qt::NoBrush);
-        p.setPen(QPen(Theme::textHint(), 1.5));
+        bool on = m_trackingAction->isChecked() && hasBeatData;
+        if (on) {
+            p.setBrush(Theme::green());
+            p.setPen(QPen(Theme::green(), 1.5));
+        } else {
+            p.setBrush(Qt::NoBrush);
+            p.setPen(QPen(Theme::textHint(), 1.5));
+        }
+        m_trackingButton->setText("Tracking");
     }
     p.drawEllipse(QRectF(2, 3, sz - 2, sz - 2));
     px.setDevicePixelRatio(2);
@@ -1239,6 +1319,8 @@ bool App::playerIsPlaying() const
 
 void App::loadSources(const QString& jsonPath)
 {
+    m_sourcesPath = QFileInfo(jsonPath).absoluteFilePath();
+
     QFile file(jsonPath);
     if (!file.open(QIODevice::ReadOnly)) {
         qWarning() << "Failed to open sources file:" << jsonPath;
@@ -1347,7 +1429,6 @@ void App::loadSources(const QString& jsonPath)
         // First interpretation has no beats — check if section already loaded beats
         if (m_beatDataPath.isEmpty()) {
             m_trackingAction->setChecked(false);
-            m_trackingButton->setEnabled(false);
         }
     }
 
@@ -1436,6 +1517,7 @@ void App::enterPlayMode()
     m_partPanel->setPlayModeActive(true);
     m_scoreWidget->setPlayModeActive(true);
     m_instrumentAction->setEnabled(true);
+    updateTrackingIcon(); // show "Record" if no beat data
 }
 
 void App::setupInstrumentPanelForVoices(int voiceCount)
@@ -1548,9 +1630,234 @@ void App::setupInstrumentPanelForVoices(int voiceCount)
     }
 }
 
+void App::startRecordTracking()
+{
+    m_recordTrackingActive = true;
+    m_recordedNotes.clear();
+    m_beatDataFromRecording = false;
+    updateTrackingIcon();
+    // Auto-restart playback from the beginning
+    playerSeekTo(m_interpStart);
+    m_playAlongSynth->resetPosition();
+    if (m_multiVoice) {
+        if (m_playAlongSynth->voiceCount() > 0)
+            m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElementForVoice(0));
+        if (m_playAlongSynth->voiceCount() > 1)
+            m_scoreWidget->setHighlightElement2(m_playAlongSynth->nextNoteElementForVoice(1));
+    } else {
+        m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+    }
+    m_syncTimer->setTime(0);
+    onPositionChanged(0);
+    playerPlay();
+    m_playPauseAction->setText("Pause");
+}
+
+void App::stopRecordTracking()
+{
+    m_recordTrackingActive = false;
+    finalizeRecordedTracking();
+    updateTrackingIcon();
+    // Auto-enable tracking if we got enough data
+    if (!m_syncTimer->beatTimes().empty()) {
+        m_trackingAction->setChecked(true);
+        // Restart playback to test
+        playerSeekTo(m_interpStart);
+        m_playAlongSynth->resetPosition();
+        if (m_multiVoice) {
+            if (m_playAlongSynth->voiceCount() > 0)
+                m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElementForVoice(0));
+            if (m_playAlongSynth->voiceCount() > 1)
+                m_scoreWidget->setHighlightElement2(m_playAlongSynth->nextNoteElementForVoice(1));
+        } else {
+            m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+        }
+        m_syncTimer->setTime(0);
+        onPositionChanged(0);
+    }
+}
+
+void App::finalizeRecordedTracking()
+{
+    if (m_recordedNotes.size() < 2) {
+        m_recordedNotes.clear();
+        return;
+    }
+
+    // Sort by tick
+    std::sort(m_recordedNotes.begin(), m_recordedNotes.end(),
+              [](const RecordedNote& a, const RecordedNote& b) {
+                  return a.tick < b.tick;
+              });
+
+    // Remove duplicate ticks (keep first)
+    m_recordedNotes.erase(
+        std::unique(m_recordedNotes.begin(), m_recordedNotes.end(),
+                    [](const RecordedNote& a, const RecordedNote& b) {
+                        return a.tick == b.tick;
+                    }),
+        m_recordedNotes.end());
+
+    if (m_recordedNotes.size() < 2) {
+        m_recordedNotes.clear();
+        return;
+    }
+
+    // Build beat data arrays
+    std::vector<double> beatTimes;
+    std::vector<int> beatTicks;
+    beatTimes.reserve(m_recordedNotes.size());
+    beatTicks.reserve(m_recordedNotes.size());
+
+    for (const auto& rn : m_recordedNotes) {
+        beatTimes.push_back(rn.wallTime);
+        beatTicks.push_back(rn.tick);
+    }
+
+    // Compute measure starts by interpolating score measure boundaries
+    std::vector<double> measureStarts;
+    if (m_score) {
+        for (auto* measure = m_score->firstMeasure(); measure; measure = measure->nextMeasure()) {
+            int mTick = measure->tick().ticks();
+            // Only include measures within our recorded range
+            if (mTick < beatTicks.front() || mTick > beatTicks.back()) continue;
+            // Interpolate time for this tick
+            auto it = std::lower_bound(beatTicks.begin(), beatTicks.end(), mTick);
+            if (it == beatTicks.end()) continue;
+            size_t idx = static_cast<size_t>(it - beatTicks.begin());
+            if (*it == mTick) {
+                measureStarts.push_back(beatTimes[idx]);
+            } else if (idx > 0) {
+                double t0 = beatTimes[idx - 1];
+                double t1 = beatTimes[idx];
+                int tk0 = beatTicks[idx - 1];
+                int tk1 = beatTicks[idx];
+                double frac = (tk1 > tk0) ? double(mTick - tk0) / double(tk1 - tk0) : 0.0;
+                measureStarts.push_back(t0 + frac * (t1 - t0));
+            }
+        }
+    }
+
+    // Feed into SyncTimer
+    m_syncTimer->setBeatTimes(beatTimes, 0);
+    m_syncTimer->setBeatTicks(beatTicks);
+    m_syncTimer->setMeasureStarts(measureStarts);
+
+    m_beatDataFromRecording = true;
+    m_recordedNotes.clear();
+
+    qDebug() << "Record tracking: finalized" << beatTimes.size() << "control points,"
+             << measureStarts.size() << "measure starts";
+}
+
+void App::saveRecordedTracking()
+{
+    if (!m_beatDataFromRecording) return;
+
+    const auto& beatTimes = m_syncTimer->beatTimes();
+    const auto& beatTicks = m_syncTimer->beatTicks();
+    const auto& measureStarts = m_syncTimer->measureStarts();
+
+    if (beatTimes.empty()) return;
+
+    // Build JSON with control_points format (preserves tick positions)
+    QJsonArray cpArray;
+    for (size_t i = 0; i < beatTimes.size(); ++i) {
+        QJsonObject pt;
+        pt["tick"] = (i < beatTicks.size()) ? beatTicks[i] : 0;
+        pt["time"] = beatTimes[i];
+        cpArray.append(pt);
+    }
+
+    QJsonArray msArray;
+    for (double t : measureStarts)
+        msArray.append(t);
+
+    QJsonObject root;
+    root["control_points"] = cpArray;
+    root["measure_starts"] = msArray;
+
+    // Determine output directory and filename
+    QDir outDir;
+    if (!m_sourcesPath.isEmpty()) {
+        outDir = QFileInfo(m_sourcesPath).absoluteDir();
+    } else if (!m_beatDataPath.isEmpty()) {
+        outDir = QFileInfo(m_beatDataPath).absoluteDir();
+    } else {
+        qWarning() << "No sources path — cannot save tracking";
+        return;
+    }
+
+    // Filename: beatdata_<label>.json (sanitised)
+    QString label;
+    if (m_activeInterpretation >= 0 && m_activeInterpretation < m_sourceLabels.size())
+        label = m_sourceLabels[m_activeInterpretation];
+    if (label.isEmpty()) label = "recorded";
+    label = label.toLower().replace(QRegularExpression("[^a-z0-9]+"), "_").replace(QRegularExpression("^_|_$"), "");
+    QString filename = QString("beatdata_%1.json").arg(label);
+    QString filePath = outDir.absoluteFilePath(filename);
+
+    // Write beat data file
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        qWarning() << "Failed to write beat data:" << filePath;
+        return;
+    }
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    file.close();
+    qDebug() << "Saved beat data:" << filePath;
+
+    // Update sources.json
+    if (!m_sourcesPath.isEmpty()) {
+        QFile srcFile(m_sourcesPath);
+        if (srcFile.open(QIODevice::ReadOnly)) {
+            QJsonDocument srcDoc = QJsonDocument::fromJson(srcFile.readAll());
+            srcFile.close();
+
+            if (srcDoc.isObject()) {
+                QJsonObject srcObj = srcDoc.object();
+                QString relPath = QDir(QFileInfo(m_sourcesPath).absolutePath()).relativeFilePath(filePath);
+                if (!relPath.startsWith("./")) relPath = "./" + relPath;
+
+                if (srcObj.contains("youtube") && srcObj["youtube"].isArray()) {
+                    QJsonArray ytArr = srcObj["youtube"].toArray();
+                    if (m_activeInterpretation >= 0 && m_activeInterpretation < ytArr.size()) {
+                        QJsonObject interp = ytArr[m_activeInterpretation].toObject();
+                        interp["beats"] = relPath;
+                        ytArr[m_activeInterpretation] = interp;
+                        srcObj["youtube"] = ytArr;
+                    }
+                }
+
+                QFile outFile(m_sourcesPath);
+                if (outFile.open(QIODevice::WriteOnly)) {
+                    // Re-read to preserve unknown keys; just write the modified object
+                    outFile.write(QJsonDocument(srcObj).toJson(QJsonDocument::Indented));
+                    outFile.close();
+                    qDebug() << "Updated sources.json:" << m_sourcesPath;
+                }
+            }
+        }
+    }
+
+    // Update in-memory state
+    if (m_activeInterpretation >= 0 && m_activeInterpretation < m_sourceBeatsFiles.size())
+        m_sourceBeatsFiles[m_activeInterpretation] = filePath;
+
+    m_beatDataFromRecording = false;
+    m_beatDataPath = filePath;
+    updateTrackingIcon();
+}
+
 void App::exitPlayMode()
 {
+    // Stop recording if active
+    if (m_recordTrackingActive) {
+        m_recordTrackingActive = false;
+        finalizeRecordedTracking();
+    }
     m_playModeActive = false;
+    m_beatDataFromRecording = false;
     m_playAlongSynth->stopNote();
     m_scoreWidget->setHighlightElement(nullptr);
     m_scoreWidget->setHighlightElement2(nullptr);
@@ -2145,6 +2452,9 @@ void App::keyPressEvent(QKeyEvent* event)
     // Escape returns to world browser from score view
     if (event->key() == Qt::Key_Escape && m_centralStack->currentIndex() == 1
         && !m_syncMode->isActive()) {
+        if (m_recordTrackingActive) {
+            stopRecordTracking();
+        }
         playerPause();
         showWorldBrowser();
         return;
@@ -2217,7 +2527,8 @@ void App::keyPressEvent(QKeyEvent* event)
 
     // Tap-to-play: laptop keyboard as MIDI controller (letter keys only)
     // Overlap keys for legato, release all for noteoff
-    if (m_playModeActive && playerIsPlaying()) {
+    // Skip when Cmd/Ctrl is held (reserved for shortcuts like Cmd+T)
+    if (m_playModeActive && playerIsPlaying() && !(event->modifiers() & Qt::ControlModifier)) {
         int key = event->key();
         bool isLetter = (key >= Qt::Key_A && key <= Qt::Key_Z);
         if (isLetter && !event->isAutoRepeat()) {
@@ -2239,6 +2550,12 @@ void App::keyPressEvent(QKeyEvent* event)
                         m_voiceKeysHeld[vi]++;
                         m_playAlongSynth->playNextNoteForVoice(vi);
                         matchMask |= (1 << vi);
+                        if (m_recordTrackingActive && vi == 0) {
+                            int tick = m_playAlongSynth->lastPlayedTick(0);
+                            if (tick >= 0) {
+                                m_recordedNotes.push_back({playerCurrentTime(), tick});
+                            }
+                        }
                     }
                 }
                 // Defer highlight updates so they don't block the next keypress
@@ -2253,6 +2570,12 @@ void App::keyPressEvent(QKeyEvent* event)
             } else {
                 m_keysHeld++;
                 m_playAlongSynth->playNextNote();
+                if (m_recordTrackingActive) {
+                    int tick = m_playAlongSynth->lastPlayedTick();
+                    if (tick >= 0) {
+                        m_recordedNotes.push_back({playerCurrentTime(), tick});
+                    }
+                }
                 QTimer::singleShot(0, this, [this]() {
                     m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
                 });

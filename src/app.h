@@ -85,6 +85,11 @@ private:
     void exitPlayMode();
     void loadLevel(int worldIndex, int sectionIndex, int levelIndex);
     void setupInstrumentPanelForVoices(int voiceCount);
+    void startRecordTracking();
+    void stopRecordTracking();
+    void finalizeRecordedTracking();
+    void saveRecordedTracking();
+
     void enterSyncMode();
     void exitSyncMode();
     void setupSyncSidebar();
@@ -182,8 +187,15 @@ private:
 
     QString m_audioFilePath;
     QString m_beatDataPath;
+    QString m_sourcesPath;
     bool m_sliderDragging = false;
     int m_sidebarWidth = 300;
+
+    // Record tracking
+    bool m_recordTrackingActive = false;
+    bool m_beatDataFromRecording = false;
+    struct RecordedNote { double wallTime; int tick; };
+    std::vector<RecordedNote> m_recordedNotes;
 
     // Worlds
     WorldSidebar* m_worldSidebar = nullptr;

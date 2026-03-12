@@ -1,52 +1,55 @@
 {
-  "file": "./Magnificat.m4a",
-  "spotify": "https://open.spotify.com/track/64gjOV0I9RyMplBIX2jKzH",
-  "youtube": [
-    {
-      "url": "https://www.youtube.com/watch?v=kYmaAS4NsPU",
-      "label": "Oxford Scholar Cantorum",
-      "tuning": 0.10,
-      "instrumentVolume": 74,
-      "beats": "./beatdata.json"
-    },
-    {
-      "url": "https://www.youtube.com/watch?v=fUt88ImPV-E",
-      "label": "Jordi Savall",
-      "tuning": -0.90,
-      "instrumentVolume": 140
-    },
-    {
-      "url": "https://www.youtube.com/watch?v=EsUWG2axB3w",
-      "label": "Netherlands Bach Society",
-      "instrumentVolume": 84,
-      "tuning": -1,
-      "start": 7,
-      "end": 175
-    },
-    {
-      "url": "https://www.youtube.com/watch?v=41blIyHQ0hs",
-      "label": "Nikolaus Harnoncourt",
-      "tuning": -0.80,
-      "instrumentVolume": 104,
-      "start": 6,
-      "end": 203
-    },
-    {
-      "url": "https://www.youtube.com/watch?v=3EPk6zOaLH0",
-      "label": "Chœur du Concert D’Astrée ∙ Emmanuelle Haïm",
-      "tuning": 0.20,
-      "instrumentVolume": 114,
-      "start": 5,
-      "end": 177
-    },
-    {
-      "url": "https://www.youtube.com/watch?v=s9UYuBxxqS8",
-      "label": "Ton Koopman, Amsterdam Baroque Orchestra & Choir",
-      "start": 15,
-      "end": 186,
-      "tuning": -1,
-      "instrumentVolume": 145,
-      "volume": 79
-    }
-  ]
+    "file": "./Magnificat.m4a",
+    "spotify": "https://open.spotify.com/track/64gjOV0I9RyMplBIX2jKzH",
+    "youtube": [
+        {
+            "beats": "./beatdata.json",
+            "instrumentVolume": 74,
+            "label": "Oxford Scholar Cantorum",
+            "tuning": 0.1,
+            "url": "https://www.youtube.com/watch?v=kYmaAS4NsPU"
+        },
+        {
+            "beats": "./beatdata_jordi_savall.json",
+            "instrumentVolume": 140,
+            "label": "Jordi Savall",
+            "tuning": -0.9,
+            "url": "https://www.youtube.com/watch?v=fUt88ImPV-E"
+        },
+        {
+            "end": 175,
+            "instrumentVolume": 84,
+            "label": "Netherlands Bach Society",
+            "start": 7,
+            "tuning": -1,
+            "url": "https://www.youtube.com/watch?v=EsUWG2axB3w"
+        },
+        {
+            "end": 203,
+            "instrumentVolume": 104,
+            "label": "Nikolaus Harnoncourt",
+            "start": 6,
+            "tuning": -0.8,
+            "url": "https://www.youtube.com/watch?v=41blIyHQ0hs"
+        },
+        {
+            "beats": "./beatdata_ch_ur_du_concert_d_astr_e_emmanuelle_ha_m.json",
+            "end": 177,
+            "instrumentVolume": 114,
+            "label": "Chœur du Concert D’Astrée ∙ Emmanuelle Haïm",
+            "start": 5,
+            "tuning": 0.2,
+            "url": "https://www.youtube.com/watch?v=3EPk6zOaLH0"
+        },
+        {
+            "beats": "./beatdata_ton_koopman_amsterdam_baroque_orchestra_choir.json",
+            "end": 186,
+            "instrumentVolume": 145,
+            "label": "Ton Koopman, Amsterdam Baroque Orchestra & Choir",
+            "start": 15,
+            "tuning": -1,
+            "url": "https://www.youtube.com/watch?v=s9UYuBxxqS8",
+            "volume": 79
+        }
+    ]
 }

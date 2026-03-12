@@ -657,6 +657,16 @@ void* PlayAlongSynth::nextNoteElement() const
     return nullptr;
 }
 
+int PlayAlongSynth::lastPlayedTick(int voiceIdx) const
+{
+    if (voiceIdx < 0 || voiceIdx >= static_cast<int>(m_voices.size())) return -1;
+    const auto& v = m_voices[voiceIdx];
+    int idx = v.nextIndex - 1;
+    if (idx >= 0 && idx < static_cast<int>(v.notes.size()))
+        return v.notes[idx].tick;
+    return -1;
+}
+
 bool PlayAlongSynth::currentNoteHasTrill() const
 {
     for (const auto& v : m_voices) {

@@ -45,6 +45,8 @@ public:
     explicit WorldSidebar(QWidget* parent = nullptr);
     void setWorlds(const QList<World>& worlds);
     void setVideoWidget(QWidget* videoWidget);
+    void setExpandButton(QWidget* button);
+    QWidget* videoContainer() const { return m_videoContainer; }
     void setInterpretations(const QStringList& labels, int activeIndex = 0);
     void clearInterpretations();
     void showVolumeSlider(bool show);

@@ -555,6 +555,17 @@ void App::resizeEvent(QResizeEvent* event)
 
 bool App::eventFilter(QObject* obj, QEvent* event)
 {
+    if (obj == m_expandedVideoContainer && event->type() == QEvent::Resize && m_videoExpanded) {
+        auto* re = static_cast<QResizeEvent*>(event);
+        int h = re->size().height();
+        int w = re->size().width();
+        // Auto-collapse if dragged below YouTube minimum (200px)
+        if (h < 200) {
+            QTimer::singleShot(0, this, &App::toggleVideoExpand);
+        } else {
+            m_youtubePlayer->resizePlayer(w, h);
+        }
+    }
     return QMainWindow::eventFilter(obj, event);
 }
 
@@ -1493,6 +1504,24 @@ void App::loadYouTube(const QString& url)
 
     m_worldSidebar->setVideoWidget(videoWidget);
 
+    // Expand button — placed above the video, not overlaid
+    m_videoExpandButton = new QPushButton("\xe2\x96\xa1"); // □ expand icon
+    m_videoExpandButton->setFixedHeight(20);
+    m_videoExpandButton->setCursor(Qt::PointingHandCursor);
+    m_videoExpandButton->setFocusPolicy(Qt::NoFocus);
+    m_videoExpandButton->setStyleSheet(
+        QString("QPushButton { background: %1; color: %2; border: none;"
+                " font-size: 12px; padding: 0; }"
+                "QPushButton:hover { background: %3; }")
+        .arg(Theme::surfaceBg().name(), Theme::textSecondary().name(),
+             Theme::inputBg().name()));
+    m_worldSidebar->setExpandButton(m_videoExpandButton);
+    connect(m_videoExpandButton, &QPushButton::clicked, this, &App::toggleVideoExpand);
+
+    // Expanded video container (inserted into centralSplitter when expanded)
+    m_expandedVideoContainer = new QWidget();
+    m_expandedVideoContainer->hide();
+
     // Enable speed button and wire it to the YouTube player
     connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this]() {
         m_speedButton->setEnabled(m_useYouTube);
@@ -1506,6 +1535,82 @@ void App::loadYouTube(const QString& url)
     });
 
     m_youtubePlayer->load(url);
+}
+
+void App::toggleVideoExpand()
+{
+    if (!m_youtubePlayer) return;
+    auto* videoWidget = m_youtubePlayer->videoWidget();
+
+    if (!m_videoExpanded) {
+        // Expand: move video from sidebar into centralSplitter above score
+        int totalH = m_centralSplitter->height();
+        int videoH = totalH / 3;
+
+        // Clear sidebar fixed size — let video fill its new container
+        videoWidget->setMinimumSize(0, 0);
+        videoWidget->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+        videoWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        videoWidget->setParent(m_expandedVideoContainer);
+
+        if (!m_expandedVideoContainer->layout()) {
+            auto* lay = new QVBoxLayout(m_expandedVideoContainer);
+            lay->setContentsMargins(0, 0, 0, 0);
+        }
+        m_expandedVideoContainer->layout()->addWidget(videoWidget);
+        m_expandedVideoContainer->setStyleSheet("background: black;");
+
+        // Insert at index 1 (after waveform, before score)
+        m_centralSplitter->insertWidget(1, m_expandedVideoContainer);
+        m_expandedVideoContainer->show();
+
+        // Set splitter sizes: ~1/3 for video, rest for score
+        QList<int> sizes;
+        for (int i = 0; i < m_centralSplitter->count(); ++i) {
+            if (m_centralSplitter->widget(i) == m_expandedVideoContainer)
+                sizes.append(videoH);
+            else if (m_centralSplitter->widget(i) == m_scoreWidget)
+                sizes.append(totalH - videoH);
+            else
+                sizes.append(m_centralSplitter->widget(i)->height());
+        }
+        m_centralSplitter->setSizes(sizes);
+        m_centralSplitter->setStretchFactor(1, 0);
+        m_centralSplitter->setStretchFactor(2, 1);
+
+        // Track resizes on the expanded container (splitter dragging)
+        m_expandedVideoContainer->installEventFilter(this);
+
+        // Tell the YouTube iframe player to resize to match the new container
+        QTimer::singleShot(100, this, [this]() {
+            QSize sz = m_expandedVideoContainer->size();
+            m_youtubePlayer->resizePlayer(sz.width(), sz.height());
+        });
+
+        // Hide sidebar video container and update button text
+        m_worldSidebar->videoContainer()->setFixedHeight(0);
+        m_videoExpandButton->setText("\xc3\x97"); // × collapse
+        m_videoExpanded = true;
+    } else {
+        // Collapse: move video back to sidebar
+        auto* sidebarContainer = m_worldSidebar->videoContainer();
+
+        m_expandedVideoContainer->removeEventFilter(this);
+        m_expandedVideoContainer->layout()->removeWidget(videoWidget);
+        m_expandedVideoContainer->hide();
+
+        // Reparent video back to sidebar container
+        videoWidget->setParent(sidebarContainer);
+        videoWidget->setMinimumSize(0, 0);
+        videoWidget->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+        videoWidget->setFixedSize(240, 200);
+        sidebarContainer->layout()->addWidget(videoWidget);
+        sidebarContainer->setFixedHeight(200);
+        m_youtubePlayer->resizePlayer(240, 200);
+
+        m_videoExpandButton->setText("\xe2\x96\xa1"); // □ expand
+        m_videoExpanded = false;
+    }
 }
 
 void App::enterPlayMode()

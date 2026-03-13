@@ -201,6 +201,17 @@ void WorldSidebar::setVideoWidget(QWidget* videoWidget)
     vl->addWidget(videoWidget);
 }
 
+void WorldSidebar::setExpandButton(QWidget* button)
+{
+    if (!button) return;
+    // Insert just above the video container
+    int idx = m_outerLayout->indexOf(m_videoContainer);
+    if (idx >= 0)
+        m_outerLayout->insertWidget(idx, button);
+    else
+        m_outerLayout->addWidget(button);
+}
+
 void WorldSidebar::setInterpretations(const QStringList& labels, int activeIndex)
 {
     clearInterpretations();

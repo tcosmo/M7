@@ -207,6 +207,12 @@ private:
     int m_activeWorldIndex = -1;
     int m_activeSectionIndex = -1;
     int m_activeLevelIndex = -1;
+
+    // Video expand
+    bool m_videoExpanded = false;
+    QWidget* m_expandedVideoContainer = nullptr;
+    QPushButton* m_videoExpandButton = nullptr;
+    void toggleVideoExpand();
 };
 
 } // namespace scoretracker

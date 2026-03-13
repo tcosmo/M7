@@ -65,6 +65,7 @@ public:
     void seekTo(double seconds);
     void setPlaybackRate(double rate);
     void setVolume(int volume); // 0–100
+    void resizePlayer(int width, int height);
     int volume() const { return m_volume; }
 
     double currentTime() const { return m_currentTime; }

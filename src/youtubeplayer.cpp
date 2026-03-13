@@ -245,6 +245,14 @@ void YouTubePlayer::setVolume(int volume)
         QString("player.setVolume(%1);").arg(m_volume));
 }
 
+void YouTubePlayer::resizePlayer(int width, int height)
+{
+    if (!m_ready || !m_view) return;
+    m_view->page()->runJavaScript(
+        QString("if(player && player.setSize) player.setSize(%1, %2);")
+        .arg(width).arg(height));
+}
+
 QString YouTubePlayer::extractVideoId(const QString& url)
 {
     // Handle youtu.be/ID

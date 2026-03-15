@@ -1,0 +1,45 @@
+{
+  "name": "m7-scoretracker",
+  "version": "0.1.0",
+  "description": "M7 ScoreTracker — Electron edition",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "package": "electron-builder"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "verovio": "^4.4.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^3.1.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.21"
+  },
+  "build": {
+    "appId": "com.mm.m7-scoretracker",
+    "productName": "M7 ScoreTracker",
+    "mac": {
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  }
+}

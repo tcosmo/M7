@@ -190,9 +190,9 @@ const ScoreView: React.FC<ScoreViewProps> = ({
           filter: drop-shadow(0 0 6px rgba(50, 120, 255, 0.7));
         }
         .${HIGHLIGHT_V1_CLASS} {
-          fill: rgba(180, 80, 220, 0.9) !important;
-          stroke: rgba(180, 80, 220, 1.0) !important;
-          filter: drop-shadow(0 0 6px rgba(180, 80, 220, 0.7));
+          fill: rgba(236, 64, 122, 0.9) !important;
+          stroke: rgba(236, 64, 122, 1.0) !important;
+          filter: drop-shadow(0 0 6px rgba(236, 64, 122, 0.7));
         }
         .score-page {
           background: #ffffff;

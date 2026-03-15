@@ -92,7 +92,7 @@ function App(): React.ReactElement {
 
   const {
     svgPages, zoom, cursorRect, highlightIds, highlightIds2, autoScroll,
-    setSvgPages, setCursorRect, setHighlightIds, clear: clearScore,
+    setSvgPages, setCursorRect, setHighlightIds, setHighlightIds2, clear: clearScore,
   } = useScoreStore()
 
   const {
@@ -324,7 +324,8 @@ function App(): React.ReactElement {
     // Build note table for play-along
     // After selectStaves(), parts are renumbered starting from 0
     // Map original part numbers to their position in the filtered set
-    const filteredParts = level.parts.length > 0 ? [...level.parts].sort((a, b) => a - b) : []
+    // Parts are in the order specified by the world JSON (not sorted)
+    const filteredParts = level.parts.length > 0 ? [...level.parts] : []
 
     voicesRef.current = []
     voiceKeyConfigs.current = []
@@ -375,13 +376,12 @@ function App(): React.ReactElement {
     const resourcesPath = await window.api.app.getResourcesPath()
     const soundsDir = `${resourcesPath}/resources/sounds`
     voiceSfNamesRef.current = []
-    for (const voice of voicesRef.current) {
-      // Find the soundfont for this voice from the level config
+    for (let vi = 0; vi < voicesRef.current.length; vi++) {
+      const voice = voicesRef.current[vi]
+      // Match voice to level config by index
       let sfName = level.soundfont || ''
-      if (level.voices.length > 0) {
-        const vc = level.voices.find(v => v.playPart === voice.channel + 1 ||
-          level.voices.indexOf(v) === voicesRef.current.indexOf(voice))
-        if (vc) sfName = vc.soundfont || ''
+      if (level.voices.length > vi) {
+        sfName = level.voices[vi].soundfont || sfName
       }
       voiceSfNamesRef.current.push(sfName)
       // Load soundfont if specified, otherwise use default
@@ -389,22 +389,20 @@ function App(): React.ReactElement {
         const sfPath = `${soundsDir}/${sfName}`
         try {
           const sfId = await window.api.synth.loadSoundfont(sfPath)
-          if (sfId >= 0) {
-            voice.sfontId = sfId
-          }
+          if (sfId >= 0) voice.sfontId = sfId
         } catch (e) {
           console.warn('Failed to load soundfont:', sfName, e)
         }
       }
-      // Select GM program on this voice's channel
+    }
+    // Select GM programs and apply tuning for all voices (after all soundfonts loaded)
+    for (const voice of voicesRef.current) {
       const bank = Math.floor(voice.gmProgram / 128)
       const prog = voice.gmProgram % 128
       const sfId = voice.sfontId >= 0 ? voice.sfontId : 1
       window.api.synth.programSelect(voice.channel, sfId, bank, prog)
-      // Apply pitch tuning
       window.api.synth.setPitchOffset(voice.channel, synthPitchRef.current)
     }
-    // Apply volume
     window.api.synth.setGain(synthVolume)
 
     // Update UI with voice info
@@ -416,12 +414,18 @@ function App(): React.ReactElement {
       soundfontName: voiceSfNamesRef.current[i] || '',
     })))
 
-    // Highlight the first note to play
-    const firstNoteIds: string[] = []
-    for (const v of voicesRef.current) {
-      if (v.notes.length > 0) firstNoteIds.push(v.notes[0].elementId)
+    // Highlight the first note to play for each voice
+    const ids0: string[] = []
+    const ids1: string[] = []
+    for (let i = 0; i < voicesRef.current.length; i++) {
+      const v = voicesRef.current[i]
+      if (v.notes.length > 0) {
+        if (i === 0) ids0.push(v.notes[0].elementId)
+        else ids1.push(v.notes[0].elementId)
+      }
     }
-    setHighlightIds(firstNoteIds)
+    setHighlightIds(ids0)
+    setHighlightIds2(ids1)
 
     // Auto-start playback (seek to interpretation start time if set)
     setTimeout(() => {
@@ -513,14 +517,18 @@ function App(): React.ReactElement {
 
   // ── Highlight the next note to play ──────────────────────────────
   const updateNextNoteHighlight = useCallback(() => {
-    const ids: string[] = []
-    for (const voice of voicesRef.current) {
+    const ids0: string[] = [] // voice 0 — blue
+    const ids1: string[] = [] // voice 1 — pink
+    for (let i = 0; i < voicesRef.current.length; i++) {
+      const voice = voicesRef.current[i]
       if (voice.nextIndex < voice.notes.length) {
-        ids.push(voice.notes[voice.nextIndex].elementId)
+        if (i === 0) ids0.push(voice.notes[voice.nextIndex].elementId)
+        else ids1.push(voice.notes[voice.nextIndex].elementId)
       }
     }
-    setHighlightIds(ids)
-  }, [setHighlightIds])
+    setHighlightIds(ids0)
+    setHighlightIds2(ids1)
+  }, [setHighlightIds, setHighlightIds2])
 
   // ── Keyboard handler (play-along) ─────────────────────────────────
   useEffect(() => {

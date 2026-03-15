@@ -127,10 +127,29 @@ export class VerovioEngine {
     for (const svg of pages) {
       const parser = new DOMParser()
       const doc = parser.parseFromString(svg, 'image/svg+xml')
-      const noteEls = doc.querySelectorAll('.note[id]')
-      for (const el of noteEls) {
-        const id = el.getAttribute('id')
-        if (id) allIds.push(id)
+
+      // In Verovio SVGs, notes are inside: measure > staff > layer > note
+      // Within each measure, staves appear in order (1st staff = staffN 1, etc.)
+      const measures = doc.querySelectorAll('.measure')
+      if (measures.length > 0 && staffN > 0) {
+        // Multi-staff: extract notes only from the correct staff within each measure
+        for (const measure of measures) {
+          const staves = measure.querySelectorAll(':scope > .staff')
+          const targetStaff = staves[staffN - 1] // 0-indexed into 1-based staffN
+          if (!targetStaff) continue
+          const noteEls = targetStaff.querySelectorAll('.note[id]')
+          for (const el of noteEls) {
+            const id = el.getAttribute('id')
+            if (id) allIds.push(id)
+          }
+        }
+      } else {
+        // Single staff or no measures found: collect all notes
+        const noteEls = doc.querySelectorAll('.note[id]')
+        for (const el of noteEls) {
+          const id = el.getAttribute('id')
+          if (id) allIds.push(id)
+        }
       }
     }
 
@@ -319,30 +338,20 @@ export class VerovioEngine {
     if (!partList) return xml
 
     const scoreParts = Array.from(partList.querySelectorAll('score-part'))
-    const keepIds = new Set<string>()
+    // Build ordered list of part IDs to keep (preserving requested order)
+    const orderedIds: string[] = []
     for (const idx of parts) {
-      const sp = scoreParts[idx - 1] // convert 1-based to 0-based
-      if (sp) {
-        keepIds.add(sp.getAttribute('id') ?? '')
-      }
+      const sp = scoreParts[idx - 1]
+      if (sp) orderedIds.push(sp.getAttribute('id') ?? '')
     }
+    const keepIds = new Set(orderedIds)
     if (keepIds.size === 0) return xml
 
-    // Remove unwanted <score-part> entries from <part-list>
-    for (const sp of scoreParts) {
-      const id = sp.getAttribute('id') ?? ''
-      if (!keepIds.has(id)) {
-        sp.parentNode?.removeChild(sp)
-      }
-    }
+    // Clear part-list entirely and rebuild in requested order
+    while (partList.firstChild) partList.removeChild(partList.firstChild)
 
-    // Replace existing part-groups with a single bracket group spanning all kept parts
-    const partGroups = Array.from(partList.querySelectorAll('part-group'))
-    for (const pg of partGroups) {
-      pg.parentNode?.removeChild(pg)
-    }
-    if (keepIds.size > 1) {
-      // Add a bracket group: start before first kept part, stop after last
+    // Add bracket group if multiple parts
+    if (orderedIds.length > 1) {
       const startGroup = doc.createElement('part-group')
       startGroup.setAttribute('type', 'start')
       startGroup.setAttribute('number', '1')
@@ -352,34 +361,38 @@ export class VerovioEngine {
       const groupBarline = doc.createElement('group-barline')
       groupBarline.textContent = 'yes'
       startGroup.appendChild(groupBarline)
+      partList.appendChild(startGroup)
+    }
 
+    // Re-add score-parts in requested order
+    for (const id of orderedIds) {
+      const sp = scoreParts.find(s => s.getAttribute('id') === id)
+      if (sp) partList.appendChild(sp)
+    }
+
+    if (orderedIds.length > 1) {
       const stopGroup = doc.createElement('part-group')
       stopGroup.setAttribute('type', 'stop')
       stopGroup.setAttribute('number', '1')
-
-      // Insert start before first remaining score-part, stop after last
-      const remaining = Array.from(partList.querySelectorAll('score-part'))
-      if (remaining.length > 0) {
-        partList.insertBefore(startGroup, remaining[0])
-        const lastPart = remaining[remaining.length - 1]
-        if (lastPart.nextSibling) {
-          partList.insertBefore(stopGroup, lastPart.nextSibling)
-        } else {
-          partList.appendChild(stopGroup)
-        }
-      }
+      partList.appendChild(stopGroup)
     }
 
-    // Remove unwanted <part> elements from the root
+    // Remove unwanted <part> elements and reorder kept ones
     const root = doc.documentElement
     const partElements = Array.from(root.getElementsByTagName('part'))
+    const keptPartEls: Element[] = []
     for (const pe of partElements) {
-      // Only remove direct children of root (not nested elements named "part")
       if (pe.parentNode !== root) continue
       const id = pe.getAttribute('id') ?? ''
-      if (!keepIds.has(id)) {
-        root.removeChild(pe)
+      if (keepIds.has(id)) {
+        keptPartEls.push(pe)
       }
+      root.removeChild(pe)
+    }
+    // Re-append in requested order
+    for (const id of orderedIds) {
+      const pe = keptPartEls.find(e => e.getAttribute('id') === id)
+      if (pe) root.appendChild(pe)
     }
 
     // Serialise back to string

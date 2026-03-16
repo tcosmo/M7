@@ -379,6 +379,49 @@ void PlayAlongSynth::setVoice(Part* part, int gmProg, Score* score)
              << "notes:" << m_voices[0].notes.size();
 }
 
+void PlayAlongSynth::setVoiceFromNotes(const std::vector<NoteEvent>& notes, int gmProg)
+{
+    stopNote();
+    m_voices.clear();
+
+    Voice voice{"Verovio", gmProg, 0, m_sfontId, -1, 0, notes};
+    m_voices.push_back(std::move(voice));
+
+    if (m_synth) {
+        int bank = gmProg / 128;
+        int prog = gmProg % 128;
+        fluid_synth_bank_select(fs(m_synth), 0, bank);
+        fluid_synth_program_change(fs(m_synth), 0, prog);
+    }
+
+    qDebug() << "PlayAlongSynth: setVoiceFromNotes notes:" << m_voices[0].notes.size()
+             << "program" << gmProg;
+}
+
+void PlayAlongSynth::addVoiceFromNotes(const std::vector<NoteEvent>& notes, int gmProg, int sfontId)
+{
+    int ch = static_cast<int>(m_voices.size());
+    int sf = (sfontId >= 0) ? sfontId : m_sfontId;
+    Voice voice{"Verovio", gmProg, ch, sf, -1, 0, notes};
+    m_voices.push_back(std::move(voice));
+
+    if (m_synth) {
+        int bank = gmProg / 128;
+        int prog = gmProg % 128;
+        fluid_synth_bank_select(fs(m_synth), ch, bank);
+        fluid_synth_program_select(fs(m_synth), ch, sf, bank, prog);
+    }
+
+    qDebug() << "PlayAlongSynth: addVoiceFromNotes ch=" << ch
+             << "notes:" << notes.size() << "program" << gmProg;
+}
+
+int PlayAlongSynth::nextNoteIndex(int voiceIdx) const
+{
+    if (voiceIdx < 0 || voiceIdx >= static_cast<int>(m_voices.size())) return 0;
+    return m_voices[voiceIdx].nextIndex;
+}
+
 void PlayAlongSynth::setGmProgram(int program)
 {
     // program may be encoded as bank*128 + preset
@@ -560,6 +603,7 @@ void PlayAlongSynth::buildNoteTableForPart(Score* score, Voice& voice)
 void PlayAlongSynth::playNextNote()
 {
     if (!m_synth) return;
+    if (m_voices.empty()) return;
 
     auto* s = fs(m_synth);
 

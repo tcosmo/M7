@@ -1,4 +1,7 @@
 #include "synctimer.h"
+#include "engine/ScoreEngine.h"
+
+#include <QRectF>
 
 #include "engraving/dom/score.h"
 #include "engraving/dom/measure.h"
@@ -22,6 +25,11 @@ SyncTimer::SyncTimer(QObject* parent)
 void SyncTimer::setScore(Score* score)
 {
     m_score = score;
+}
+
+void SyncTimer::setEngine(scoretracker::ScoreEngine* engine)
+{
+    m_engine = engine;
 }
 
 void SyncTimer::setMeasureStarts(const std::vector<double>& measureStarts)
@@ -101,11 +109,18 @@ void SyncTimer::setTime(double seconds)
 
     int interpTick = prevTick + static_cast<int>(t * (nextTick - prevTick));
     m_lastTick = interpTick;
-    Fraction tick = Fraction::fromTicks(interpTick);
 
     int pageIndex = 0;
-    muse::RectF rect = resolveCursorRect(tick, pageIndex);
-    emit cursorRectChanged(rect, pageIndex);
+    if (m_engine) {
+        // Use engine abstraction for cursor resolution
+        QRectF qr = m_engine->resolveCursorRect(interpTick, pageIndex);
+        muse::RectF rect(qr.x(), qr.y(), qr.width(), qr.height());
+        emit cursorRectChanged(rect, pageIndex);
+    } else {
+        Fraction tick = Fraction::fromTicks(interpTick);
+        muse::RectF rect = resolveCursorRect(tick, pageIndex);
+        emit cursorRectChanged(rect, pageIndex);
+    }
 }
 
 void SyncTimer::refresh()

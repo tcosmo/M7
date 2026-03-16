@@ -13,6 +13,9 @@
 #include "collapsiblesection.h"
 #include "worldbrowser.h"
 #include "theme.h"
+#include "engine/ScoreEngine.h"
+#include "engine/MuseScoreEngine.h"
+#include "engine/VerovioEngine.h"
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -192,7 +195,9 @@ App::App(QWidget* parent)
 App::~App()
 {
     delete m_playAlongSynth;
-    delete m_score;
+    // Score is owned by MuseScoreEngine (via m_engine), don't delete here.
+    // m_score is just a non-owning pointer for legacy access.
+    m_score = nullptr;
 }
 
 void App::setupUI()
@@ -590,7 +595,16 @@ void App::setupToolbar()
     connect(m_stopAction, &QAction::triggered, this, [this]() {
         playerSeekTo(0);
         m_playAlongSynth->resetPosition();
-        if (m_multiVoice) {
+        m_keysHeld = 0;
+        if (m_useVerovio && !m_vrvVoices.empty()) {
+            // Reset scroll position and highlight first notes
+            m_scoreWidget->runWebJavaScript("resetScroll()");
+            for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
+                auto& vv = m_vrvVoices[vi];
+                if (!vv.elementIds.empty())
+                    m_scoreWidget->highlightNoteIds({vv.elementIds[0]}, vi);
+            }
+        } else if (m_multiVoice) {
             for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi)
                 m_voiceKeysHeld[vi] = 0;
             if (m_playAlongSynth->voiceCount() > 0)
@@ -805,49 +819,78 @@ bool App::loadScore(const QString& musicXmlPath)
     // Disconnect old part-panel signals to avoid duplicate/stale connections
     disconnect(m_partPanel, nullptr, this, nullptr);
 
-    // Clean up old score
-    if (m_score) {
-        delete m_score;
-        m_score = nullptr;
+    // Clean up old engine (which owns the score)
+    m_engine.reset();
+    m_score = nullptr;
+    m_renderer.reset();
+
+    // Create the appropriate engine
+    if (m_useVerovio) {
+        auto engine = std::make_unique<scoretracker::VerovioEngine>();
+
+        // pageWidth controls measures per system. MuseScore fits ~8 measures at
+        // 8.5" / 0.046" spatium ≈ 185 spatiums wide. At scale=40, pageWidth=5500
+        // gives similar density. CSS width:100% scales SVG to viewport.
+        double dpi = engine->internalDPI();
+        engine->setPageSizeInches(5500.0 / dpi, 100.0);
+        engine->setMarginsInches(0.20, 0.20, 1.0, 1.0);
+        engine->setSpatiumInches(0.046);
+
+        if (!engine->loadMusicXML(musicXmlPath)) {
+            qWarning() << "Verovio failed to load:" << musicXmlPath;
+            return false;
+        }
+
+        engine->layout();
+        m_engine = std::move(engine);
+
+        qDebug() << "Score loaded (Verovio):" << musicXmlPath
+                 << "pages:" << m_engine->pageCount()
+                 << "parts:" << m_engine->partCount();
+
+        // Set up widgets with engine
+        m_scoreWidget->setEngine(m_engine.get());
+        m_syncTimer->setEngine(m_engine.get());
+
+        // Init FluidSynth for play-along
+        QString sf3Path;
+        if (!m_soundfontPaths.isEmpty()) {
+            sf3Path = m_soundfontPaths.first();
+        } else {
+            sf3Path = QCoreApplication::applicationDirPath()
+                + "/../../resources/sounds/MS Basic.sf3";
+        }
+        m_playAlongSynth->init(sf3Path);
+
+        // PartPanel not used in Verovio mode
+        m_partPanel->setScore(nullptr);
+        m_partPanel->setRenderer(nullptr);
+
+        setWindowTitle("JamJammin'");
+        QTimer::singleShot(0, m_scoreWidget, &ScoreWidget::zoomToFit);
+        return true;
     }
 
-    // Resolve the renderer from IoC
-    m_renderer = muse::modularity::globalIoc()->resolve<IScoreRenderer>("scoretracker");
-    if (!m_renderer) {
-        qWarning() << "Failed to resolve IScoreRenderer";
+    // --- MuseScore engine path ---
+    auto msEngine = std::make_unique<scoretracker::MuseScoreEngine>();
+
+    if (!msEngine->loadMusicXML(musicXmlPath)) {
         return false;
     }
 
-    // Create a score with default style
-    auto iocCtx = muse::modularity::globalCtx();
-    m_score = compat::ScoreAccess::createMasterScoreWithDefaultStyle(iocCtx);
-    m_score->setFileInfoProvider(std::make_shared<LocalFileInfoProvider>(musicXmlPath.toStdString()));
-
-    // Import MusicXML
-    muse::String path = muse::String::fromQString(musicXmlPath);
-    Err err = mu::iex::musicxml::importMusicXml(m_score, path, false);
-    if (err != Err::NoError) {
-        qWarning() << "Failed to import MusicXML, error:" << static_cast<int>(err);
-        delete m_score;
-        m_score = nullptr;
-        return false;
-    }
+    // Get the raw score for MuseScore-specific features
+    m_score = msEngine->score();
+    m_renderer = std::shared_ptr<IScoreRenderer>(
+        msEngine->renderer(), [](IScoreRenderer*) {}); // non-owning shared_ptr
 
     qDebug() << "Score loaded:" << musicXmlPath;
     qDebug() << "Parts:" << m_score->parts().size();
     qDebug() << "Measures:" << m_score->nmeasures();
 
     // Page layout: Letter, matching MuseScore defaults
-    m_score->style().set(Sid::pageWidth, 8.5);
-    m_score->style().set(Sid::pageHeight, 11.0);
-    m_score->style().set(Sid::spatium, 0.046 * 1200.0); // 0.046in in internal units
-    m_score->style().set(Sid::pageOddTopMargin, 0.39);
-    m_score->style().set(Sid::pageOddBottomMargin, 0.79);
-    m_score->style().set(Sid::pageOddLeftMargin, 0.39);
-    m_score->style().set(Sid::pageEvenTopMargin, 0.39);
-    m_score->style().set(Sid::pageEvenBottomMargin, 0.79);
-    m_score->style().set(Sid::pageEvenLeftMargin, 0.39);
-    m_score->style().set(Sid::pagePrintableWidth, 8.5 - 0.39 - 0.39);
+    msEngine->setPageSizeInches(8.5, 11.0);
+    msEngine->setMarginsInches(0.39, 0.79, 0.39, 0.39);
+    msEngine->setSpatiumInches(0.046);
 
     // Ensure instrument names show on all systems
     m_score->style().set(Sid::firstSystemInstNameVisibility,
@@ -857,7 +900,6 @@ bool App::loadScore(const QString& musicXmlPath)
     m_score->style().set(Sid::hideInstrumentNameIfOneInstrument, false);
 
     // Generate short instrument names from long names if missing
-    // Full-string overrides for specific instruments
     static const QMap<QString, QString> FULL_ABBREVS = {
         {"Tromba in D. I",       "Tr. I"},
         {"Tromba in D. II",      "Tr. II"},
@@ -888,9 +930,9 @@ bool App::loadScore(const QString& musicXmlPath)
     }
 
     // Apply display settings before layout
-    m_score->setLayoutMode(comboIndexToLayoutMode(m_displaySettings->layoutMode()));
+    msEngine->setLayoutMode(m_displaySettings->layoutMode());
     bool showTitle = m_displaySettings->showTitleFrame();
-    m_score->setShowVBox(showTitle);
+    msEngine->setShowTitleFrame(showTitle);
     {
         double topMargin = showTitle ? 0.39 : 0.10;
         m_score->style().set(Sid::pageOddTopMargin, topMargin);
@@ -898,29 +940,17 @@ bool App::loadScore(const QString& musicXmlPath)
     }
 
     // Layout the score
-    m_renderer->layoutScore(m_score, Fraction(0, 1), Fraction(-1, 1));
+    msEngine->layout();
+    m_engine = std::move(msEngine);
 
     qDebug() << "Score layout complete, pages:" << m_score->pages().size();
 
-    // Debug: page layout
-    qDebug() << "pageWidth:" << m_score->style().styleD(Sid::pageWidth) << "in"
-             << "pageHeight:" << m_score->style().styleD(Sid::pageHeight) << "in";
-    qDebug() << "spatium:" << m_score->style().spatium() / 1200.0 << "in";
-    qDebug() << "margins - top:" << m_score->style().styleD(Sid::pageOddTopMargin)
-             << "bottom:" << m_score->style().styleD(Sid::pageOddBottomMargin)
-             << "left:" << m_score->style().styleD(Sid::pageOddLeftMargin)
-             << "right:" << m_score->style().styleD(Sid::pageEvenLeftMargin);
-    for (const auto* part : m_score->parts()) {
-        const auto& instr = *part->instrument();
-        qDebug() << "Part:" << part->partName()
-                 << "longName:" << (instr.longNames().empty() ? "EMPTY" : instr.longNames().front().name().toQString())
-                 << "shortName:" << (instr.shortNames().empty() ? "EMPTY" : instr.shortNames().front().name().toQString());
-    }
-
-    // Set up widgets
+    // Set up widgets with engine
+    m_scoreWidget->setEngine(m_engine.get());
     m_scoreWidget->setRenderer(m_renderer.get());
     m_scoreWidget->setScore(m_score);
 
+    m_syncTimer->setEngine(m_engine.get());
     m_syncTimer->setScore(m_score);
 
     // Initialize play-along synth (no voice until user clicks ear icon)
@@ -981,6 +1011,16 @@ bool App::loadScore(const QString& musicXmlPath)
 
 void App::setVisibleParts(const QList<int>& partNumbers)
 {
+    if (m_engine && m_engine->usesWebRendering()) {
+        // Verovio: reload with parts in the requested order (with bracket grouping)
+        auto* vrvEngine = dynamic_cast<scoretracker::VerovioEngine*>(m_engine.get());
+        if (vrvEngine) {
+            vrvEngine->selectParts(partNumbers);
+            // Refresh the web view
+            m_scoreWidget->setEngine(m_engine.get());
+        }
+        return;
+    }
     m_partPanel->showOnlyParts(partNumbers);
 }
 
@@ -1441,6 +1481,28 @@ void App::loadSources(const QString& jsonPath)
         if (m_beatDataPath.isEmpty()) {
             m_trackingAction->setChecked(false);
         }
+    }
+
+    // Apply tuning for first interpretation
+    if (!m_sourceTunings.isEmpty()) {
+        double tuning = m_sourceTunings.first();
+        m_playAlongSynth->setPitchOffset(tuning);
+        if (m_transposeSpin) {
+            m_transposeSpin->blockSignals(true);
+            m_transposeSpin->setValue(tuning);
+            m_transposeSpin->blockSignals(false);
+        }
+    }
+
+    // Apply instrument volume for first interpretation
+    if (!m_sourceInstrumentVols.isEmpty() && m_sourceInstrumentVols.first() >= 0
+        && m_instrumentVolSlider) {
+        m_instrumentVolSlider->setValue(m_sourceInstrumentVols.first());
+    }
+
+    // Apply master volume for first interpretation
+    if (!m_sourceVolumes.isEmpty() && m_sourceVolumes.first() >= 0) {
+        // volume is 0-100, map to 0.0-1.0 for the audio player
     }
 
     // Auto-load: first YouTube if present, otherwise file
@@ -2348,6 +2410,11 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         // Hide the right sidebar by default for levels
         m_sidebarAction->setChecked(false);
 
+        // Auto-expand video for levels
+        if (!m_videoExpanded) {
+            QTimer::singleShot(0, this, &App::toggleVideoExpand);
+        }
+
         // Mark this level as active
         m_activeWorldIndex = worldIndex;
         m_activeSectionIndex = sectionIndex;
@@ -2363,64 +2430,160 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         m_playModeButton->setChecked(true);
         m_partPanel->blockSignals(false);
 
-        // Save part pointers by original 1-based index before any reordering
-        std::map<int, Part*> origPartMap; // 1-based part number → Part*
-        if (m_score) {
-            const auto& origParts = m_score->parts();
-            for (int i = 0; i < static_cast<int>(origParts.size()); ++i) {
-                origPartMap[i + 1] = origParts[i];
-            }
-        }
-
-        // Reorder staves if level.parts specifies a non-ascending order
-        // so that the visible parts appear in the requested display order.
-        // Each part has one staff; we swap their positions in the score.
-        if (level.parts.size() >= 2 && m_score) {
-            bool needsReorder = false;
-            for (int i = 1; i < level.parts.size(); ++i) {
-                if (level.parts[i] < level.parts[i - 1]) {
-                    needsReorder = true;
-                    break;
+        // Part map used by MuseScore path for voice setup and staff reordering
+        std::map<int, Part*> origPartMap;
+        if (!m_useVerovio) {
+            // MuseScore-only: save part pointers and reorder staves
+            if (m_score) {
+                const auto& origParts = m_score->parts();
+                for (int i = 0; i < static_cast<int>(origParts.size()); ++i) {
+                    origPartMap[i + 1] = origParts[i];
                 }
             }
-            if (needsReorder) {
-                size_t nst = m_score->nstaves();
-                // Build identity permutation
-                std::vector<staff_idx_t> newOrder(nst);
-                std::iota(newOrder.begin(), newOrder.end(), 0);
 
-                // Find staff indices for the parts in level.parts (0-based)
-                // and the slots they occupy in score order
-                std::vector<staff_idx_t> staffIndices; // staff idx for each part in level.parts order
-                std::vector<staff_idx_t> sortedSlots;  // their positions sorted by score order
-                for (int p : level.parts) {
-                    auto it = origPartMap.find(p);
-                    if (it != origPartMap.end()) {
-                        staff_idx_t si = m_score->staffIdx(it->second);
-                        staffIndices.push_back(si);
+            if (level.parts.size() >= 2 && m_score) {
+                bool needsReorder = false;
+                for (int i = 1; i < level.parts.size(); ++i) {
+                    if (level.parts[i] < level.parts[i - 1]) {
+                        needsReorder = true;
+                        break;
                     }
                 }
-                sortedSlots = staffIndices;
-                std::sort(sortedSlots.begin(), sortedSlots.end());
+                if (needsReorder) {
+                    size_t nst = m_score->nstaves();
+                    std::vector<staff_idx_t> newOrder(nst);
+                    std::iota(newOrder.begin(), newOrder.end(), 0);
 
-                // Place the requested staves into the sorted positions
-                // in the order specified by level.parts
-                if (sortedSlots.size() == staffIndices.size()) {
-                    for (size_t i = 0; i < sortedSlots.size(); ++i) {
-                        newOrder[sortedSlots[i]] = staffIndices[i];
+                    std::vector<staff_idx_t> staffIndices;
+                    std::vector<staff_idx_t> sortedSlots;
+                    for (int p : level.parts) {
+                        auto it = origPartMap.find(p);
+                        if (it != origPartMap.end()) {
+                            staff_idx_t si = m_score->staffIdx(it->second);
+                            staffIndices.push_back(si);
+                        }
                     }
-                    m_score->sortStaves(newOrder);
+                    sortedSlots = staffIndices;
+                    std::sort(sortedSlots.begin(), sortedSlots.end());
+
+                    if (sortedSlots.size() == staffIndices.size()) {
+                        for (size_t i = 0; i < sortedSlots.size(); ++i) {
+                            newOrder[sortedSlots[i]] = staffIndices[i];
+                        }
+                        m_score->sortStaves(newOrder);
+                    }
                 }
             }
         }
 
-        // Now override: show only the relevant parts and activate the correct play-along
+        // Show only the relevant parts
         if (!level.parts.isEmpty()) {
             setVisibleParts(level.parts);
         }
 
-        // Multi-voice or single-voice setup
-        if (!level.voices.isEmpty()) {
+        // Verovio play-along: build note tables (matching electron branch logic)
+        if (m_useVerovio && m_engine) {
+            m_vrvVoices.clear();
+            m_playAlongSynth->clearVoices();
+            auto* vrvEngine = dynamic_cast<scoretracker::VerovioEngine*>(m_engine.get());
+            if (vrvEngine) {
+                QList<int> filteredParts = level.parts;
+
+                if (!level.voices.isEmpty()) {
+                    // Multi-voice: each voice gets its own note table
+                    m_multiVoice = true;
+                    m_voiceKeysHeld.clear();
+                    m_voiceKeyZones.clear();
+
+                    for (int vi = 0; vi < level.voices.size(); ++vi) {
+                        const auto& vc = level.voices[vi];
+                        int filteredIdx = filteredParts.indexOf(vc.playPart);
+                        int partIdx = filteredIdx >= 0 ? filteredIdx : 0;
+
+                        auto noteInfos = vrvEngine->getNotesForPart(partIdx, vrvEngine->lastRenderedSvgs());
+                        std::vector<scoretracker::NoteEvent> events;
+                        VrvVoice vv;
+                        vv.keyZone = vc.keys;
+                        for (auto& ni : noteInfos) {
+                            scoretracker::NoteEvent ev{};
+                            ev.midiPitch = ni.pitch;
+                            ev.durationTicks = 480;
+                            events.push_back(ev);
+                            vv.elementIds.push_back(ni.elementId);
+                        }
+                        m_vrvVoices.push_back(std::move(vv));
+
+                        // Load soundfont for this voice
+                        int sfId = -1;
+                        if (!vc.soundfont.isEmpty()) {
+                            QString sfPath = m_soundfontsDir + "/" + vc.soundfont;
+                            sfId = m_playAlongSynth->ensureSoundfont(sfPath);
+                        }
+                        m_playAlongSynth->addVoiceFromNotes(events, vc.gmProgram, sfId);
+
+                        m_voiceKeysHeld.append(0);
+                        m_voiceKeyZones.append(vc.keys);
+
+                        qDebug() << "Verovio voice" << vi << ":" << noteInfos.size()
+                                 << "notes, part" << vc.playPart << "gm" << vc.gmProgram
+                                 << "keys" << vc.keys;
+                    }
+                } else if (level.playPart > 0) {
+                    // Single-voice
+                    m_multiVoice = false;
+                    int filteredIdx = filteredParts.indexOf(level.playPart);
+                    int partIdx = filteredIdx >= 0 ? filteredIdx : 0;
+
+                    auto noteInfos = vrvEngine->getNotesForPart(partIdx, vrvEngine->lastRenderedSvgs());
+                    std::vector<scoretracker::NoteEvent> events;
+                    VrvVoice vv;
+                    vv.keyZone = "all";
+                    for (auto& ni : noteInfos) {
+                        scoretracker::NoteEvent ev{};
+                        ev.midiPitch = ni.pitch;
+                        ev.durationTicks = 480;
+                        events.push_back(ev);
+                        vv.elementIds.push_back(ni.elementId);
+                    }
+                    m_vrvVoices.push_back(std::move(vv));
+
+                    // Load soundfont
+                    if (!level.soundfont.isEmpty()) {
+                        QString sfPath = m_soundfontsDir + "/" + level.soundfont;
+                        m_playAlongSynth->loadSoundfont(sfPath);
+                    }
+                    m_playAlongSynth->setVoiceFromNotes(events, level.gmProgram);
+
+                    qDebug() << "Verovio single voice:" << noteInfos.size()
+                             << "notes, part" << level.playPart << "gm" << level.gmProgram;
+                }
+
+                // Re-apply tuning from active interpretation (loadSources may have set it
+                // before voices existed)
+                if (m_activeInterpretation < m_sourceTunings.size()) {
+                    m_playAlongSynth->setPitchOffset(m_sourceTunings[m_activeInterpretation]);
+                }
+
+                // Set up instrument panel for Verovio voices
+                int nVoices = static_cast<int>(m_vrvVoices.size());
+                setupInstrumentPanelForVoices(nVoices);
+
+                // Highlight first note of each voice
+                QTimer::singleShot(500, this, [this]() {
+                    for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
+                        auto& vv = m_vrvVoices[vi];
+                        if (!vv.elementIds.empty()) {
+                            m_scoreWidget->highlightNoteIds({vv.elementIds[0]}, vi);
+                        }
+                    }
+                });
+            }
+        }
+
+        // Multi-voice or single-voice setup (skip for Verovio — already set up above)
+        if (m_useVerovio) {
+            // Verovio play-along was already configured above; skip MuseScore setup
+        } else if (!level.voices.isEmpty()) {
             // Multi-voice level
             m_multiVoice = true;
             m_voiceKeysHeld.clear();
@@ -2636,7 +2799,68 @@ void App::keyPressEvent(QKeyEvent* event)
     if (m_playModeActive && playerIsPlaying() && !(event->modifiers() & Qt::ControlModifier)) {
         int key = event->key();
         bool isLetter = (key >= Qt::Key_A && key <= Qt::Key_Z);
-        if (isLetter && !event->isAutoRepeat()) {
+        if (isLetter && !event->isAutoRepeat() && m_useVerovio && !m_vrvVoices.empty()) {
+            if (m_multiVoice) {
+                // Multi-voice Verovio: route to voices by key zone (matching electron)
+                static const QString leftKeys = "ABCDEFGQRSTVWXZ";
+                static const QString rightKeys = "HIJKLMNOPUY";
+                QChar ch = QChar(key);
+                bool isLeft = leftKeys.contains(ch);
+                bool isRight = rightKeys.contains(ch);
+
+                // Collect IDs of notes about to be played (before advancing)
+                QStringList playedNoteIds;
+                for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi) {
+                    const QString& zone = m_voiceKeyZones[vi];
+                    bool match = (zone == "all")
+                              || (zone == "left" && isLeft)
+                              || (zone == "right" && isRight);
+                    if (match) {
+                        // Capture the note ID we're about to play
+                        int idx = m_playAlongSynth->nextNoteIndex(vi);
+                        if (vi < static_cast<int>(m_vrvVoices.size())
+                            && idx < static_cast<int>(m_vrvVoices[vi].elementIds.size()))
+                            playedNoteIds << m_vrvVoices[vi].elementIds[idx];
+                        m_voiceKeysHeld[vi]++;
+                        m_playAlongSynth->playNextNoteForVoice(vi);
+                    }
+                }
+                QTimer::singleShot(0, this, [this, playedNoteIds]() {
+                    // Update highlights for all voices
+                    for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
+                        auto& vv = m_vrvVoices[vi];
+                        int idx = m_playAlongSynth->nextNoteIndex(vi);
+                        if (idx < static_cast<int>(vv.elementIds.size()))
+                            m_scoreWidget->highlightNoteIds({vv.elementIds[idx]}, vi);
+                        else
+                            m_scoreWidget->highlightNoteIds({}, vi);
+                    }
+                    // Scroll based on PLAYED notes, not highlights
+                    if (!playedNoteIds.isEmpty()) {
+                        QStringList escaped;
+                        for (const auto& id : playedNoteIds) {
+                            QString e = id;
+                            e.replace('\'', "\\'");
+                            escaped << QStringLiteral("'%1'").arg(e);
+                        }
+                        m_scoreWidget->runWebJavaScript(
+                            QStringLiteral("autoScrollMulti([%1])").arg(escaped.join(',')));
+                    }
+                });
+            } else {
+                // Single-voice Verovio
+                m_keysHeld++;
+                m_playAlongSynth->playNextNote();
+                QTimer::singleShot(0, this, [this]() {
+                    auto& vv = m_vrvVoices[0];
+                    int idx = m_playAlongSynth->nextNoteIndex();
+                    if (idx < static_cast<int>(vv.elementIds.size()))
+                        m_scoreWidget->highlightNoteIds({vv.elementIds[idx]}, 0, true);
+                    else
+                        m_scoreWidget->highlightNoteIds({}, 0, true);
+                });
+            }
+        } else if (isLetter && !event->isAutoRepeat()) {
             if (m_multiVoice) {
                 // Determine key zone: left or right half of keyboard
                 static const QString leftKeys = "ABCDEFGQRSTVWXZ";

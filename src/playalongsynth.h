@@ -85,8 +85,16 @@ public:
     void setPitchOffset(double semitones);
     double pitchOffset() const;
 
+    // Set voice from externally-built note table (for Verovio play-along)
+    void setVoiceFromNotes(const std::vector<NoteEvent>& notes, int gmProgram);
+    // Add an additional voice from external notes (multi-voice Verovio)
+    void addVoiceFromNotes(const std::vector<NoteEvent>& notes, int gmProgram, int sfontId = -1);
+
     // Returns the element (Note*) for the next note to be played, or nullptr
     void* nextNoteElement() const;
+
+    // Returns the next note index for voice 0 (for external highlight management)
+    int nextNoteIndex(int voiceIdx = 0) const;
 
     // Returns the tick of the last played note (for recording tracking data)
     int lastPlayedTick(int voiceIdx = 0) const;

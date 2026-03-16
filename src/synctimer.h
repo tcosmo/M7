@@ -11,6 +11,10 @@ class Score;
 }
 
 namespace scoretracker {
+class ScoreEngine;
+}
+
+namespace scoretracker {
 
 class SyncTimer : public QObject
 {
@@ -20,6 +24,7 @@ public:
     explicit SyncTimer(QObject* parent = nullptr);
 
     void setScore(mu::engraving::Score* score);
+    void setEngine(scoretracker::ScoreEngine* engine);
     void setMeasureStarts(const std::vector<double>& measureStarts);
     void setBeatTimes(const std::vector<double>& beatTimes, int beatsPerMeasure);
     void setBeatTicks(const std::vector<int>& beatTicks);
@@ -42,6 +47,7 @@ private:
     muse::RectF resolveCursorRect(const mu::engraving::Fraction& tick, int& outPageIndex) const;
 
     mu::engraving::Score* m_score = nullptr;
+    scoretracker::ScoreEngine* m_engine = nullptr;
     std::vector<double> m_measureStarts;
     std::vector<double> m_beatTimes;
     std::vector<int> m_beatTicks;        // tick position for each entry in m_beatTimes

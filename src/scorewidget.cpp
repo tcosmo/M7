@@ -1,8 +1,13 @@
 #include "scorewidget.h"
+#include "engine/ScoreEngine.h"
 #include "syncmode.h"
 #include "theme.h"
 
 #include <QPainter>
+#include <QWebEngineView>
+#include <QWebEnginePage>
+#include <QFile>
+#include <QDir>
 #include <QPaintEvent>
 #include <QResizeEvent>
 #include <QMouseEvent>
@@ -60,6 +65,13 @@ void ScoreCanvas::setRenderer(IScoreRenderer* renderer)
     update();
 }
 
+void ScoreCanvas::setEngine(scoretracker::ScoreEngine* engine)
+{
+    m_engine = engine;
+    updateCanvasSize();
+    update();
+}
+
 void ScoreCanvas::setCursorRect(const muse::RectF& rect, int pageIndex)
 {
     if (pageIndex < 0 || rect.isNull()) {
@@ -88,7 +100,18 @@ void ScoreCanvas::setZoom(double zoom)
 double ScoreCanvas::scale() const
 {
     double dpi = logicalDpiX();
-    return m_zoom * dpi / 1200.0; // MuseScore uses 1200 DPI internally
+    double internalDpi = m_engine ? m_engine->internalDPI() : 1200.0;
+    return m_zoom * dpi / internalDpi;
+}
+
+double ScoreCanvas::engineInternalDPI() const
+{
+    return m_engine ? m_engine->internalDPI() : 1200.0;
+}
+
+bool ScoreCanvas::engineUsesWebRendering() const
+{
+    return m_engine && m_engine->usesWebRendering();
 }
 
 QRect ScoreCanvas::cursorWidgetRect() const
@@ -107,21 +130,26 @@ QRect ScoreCanvas::cursorWidgetRect() const
 
 QRect ScoreCanvas::pageWidgetRect(int pageIndex) const
 {
-    if (!m_score || pageIndex < 0 || pageIndex >= static_cast<int>(m_score->pages().size()))
+    int nPages = m_engine ? m_engine->pageCount()
+                          : (m_score ? static_cast<int>(m_score->pages().size()) : 0);
+    if (pageIndex < 0 || pageIndex >= nPages)
         return QRect();
 
-    const auto& pages = m_score->pages();
     double s = scale();
+    double yOffset = PAGE_GAP / 2.0;
 
-    double yOffset = PAGE_GAP / 2.0; // in widget coords
     for (int i = 0; i < pageIndex; ++i) {
-        muse::RectF bbox = pages[i]->ldata()->bbox();
-        yOffset += bbox.height() * s + PAGE_GAP;
+        QSizeF pg = m_engine ? QSizeF(m_engine->pageSize(i))
+                             : QSizeF(m_score->pages()[i]->ldata()->bbox().width(),
+                                      m_score->pages()[i]->ldata()->bbox().height());
+        yOffset += pg.height() * s + PAGE_GAP;
     }
 
-    muse::RectF bbox = pages[pageIndex]->ldata()->bbox();
-    double pageW = bbox.width() * s;
-    double pageH = bbox.height() * s;
+    QSizeF pg = m_engine ? QSizeF(m_engine->pageSize(pageIndex))
+                         : QSizeF(m_score->pages()[pageIndex]->ldata()->bbox().width(),
+                                  m_score->pages()[pageIndex]->ldata()->bbox().height());
+    double pageW = pg.width() * s;
+    double pageH = pg.height() * s;
     double xOffset = (width() - pageW) / 2.0;
     if (xOffset < 0) xOffset = 0;
 
@@ -135,18 +163,20 @@ QRect ScoreCanvas::pageWidgetRect(int pageIndex) const
 
 void ScoreCanvas::updateCanvasSize()
 {
-    if (!m_score || !m_renderer) return;
+    int nPages = m_engine ? m_engine->pageCount()
+                          : ((m_score && m_renderer) ? static_cast<int>(m_score->pages().size()) : 0);
+    if (nPages == 0) return;
 
     double s = scale();
-    const auto& pages = m_score->pages();
-
     double totalHeight = 0;
     double maxWidth = 0;
 
-    for (const Page* page : pages) {
-        muse::RectF bbox = page->ldata()->bbox();
-        maxWidth = std::max(maxWidth, bbox.width() * s);
-        totalHeight += bbox.height() * s + PAGE_GAP;
+    for (int i = 0; i < nPages; ++i) {
+        QSizeF pg = m_engine ? QSizeF(m_engine->pageSize(i))
+                             : QSizeF(m_score->pages()[i]->ldata()->bbox().width(),
+                                      m_score->pages()[i]->ldata()->bbox().height());
+        maxWidth = std::max(maxWidth, pg.width() * s);
+        totalHeight += pg.height() * s + PAGE_GAP;
     }
 
     int w = static_cast<int>(maxWidth) + 20;
@@ -157,6 +187,12 @@ void ScoreCanvas::updateCanvasSize()
 
 double ScoreCanvas::maxPageWidthScore() const
 {
+    if (m_engine) {
+        double maxW = 0;
+        for (int i = 0; i < m_engine->pageCount(); ++i)
+            maxW = std::max(maxW, m_engine->pageSize(i).width());
+        return maxW;
+    }
     if (!m_score) return 0;
     double maxW = 0;
     for (const Page* page : m_score->pages()) {
@@ -167,24 +203,34 @@ double ScoreCanvas::maxPageWidthScore() const
 
 muse::RectF ScoreCanvas::mapToRenderCoords(const muse::RectF& pageRelRect, int pageIndex) const
 {
-    if (!m_score || pageRelRect.isNull()) return pageRelRect;
+    if (pageRelRect.isNull()) return pageRelRect;
 
-    const auto& pages = m_score->pages();
-    if (pages.empty() || pageIndex < 0 || pageIndex >= static_cast<int>(pages.size()))
+    int nPages = m_engine ? m_engine->pageCount()
+                          : (m_score ? static_cast<int>(m_score->pages().size()) : 0);
+    if (nPages == 0 || pageIndex < 0 || pageIndex >= nPages)
         return pageRelRect;
 
     double s = scale();
-    muse::RectF pageBBox = pages[pageIndex]->ldata()->bbox();
 
-    // Compute our y-offset for this page in score coordinates
-    double yOffsetScore = PAGE_GAP / (2.0 * s);
-    for (int i = 0; i < pageIndex; ++i) {
-        muse::RectF bbox = pages[i]->ldata()->bbox();
-        yOffsetScore += bbox.height() + PAGE_GAP / s;
+    double pageW;
+    if (m_engine) {
+        pageW = m_engine->pageSize(pageIndex).width();
+    } else {
+        pageW = m_score->pages()[pageIndex]->ldata()->bbox().width();
     }
 
-    // Center page horizontally in our layout
-    double xOffsetScore = (width() / s - pageBBox.width()) / 2.0;
+    double yOffsetScore = PAGE_GAP / (2.0 * s);
+    for (int i = 0; i < pageIndex; ++i) {
+        double h;
+        if (m_engine) {
+            h = m_engine->pageSize(i).height();
+        } else {
+            h = m_score->pages()[i]->ldata()->bbox().height();
+        }
+        yOffsetScore += h + PAGE_GAP / s;
+    }
+
+    double xOffsetScore = (width() / s - pageW) / 2.0;
     if (xOffsetScore < 0) xOffsetScore = 0;
 
     return muse::RectF(
@@ -197,13 +243,21 @@ muse::RectF ScoreCanvas::mapToRenderCoords(const muse::RectF& pageRelRect, int p
 
 void ScoreCanvas::paintEvent(QPaintEvent* event)
 {
-    if (!m_score || !m_renderer) {
+    // Web-rendered engines use QWebEngineView — skip QPainter rendering
+    if (m_engine && m_engine->usesWebRendering()) {
+        QWidget::paintEvent(event);
+        return;
+    }
+
+    bool hasEngine = m_engine && m_engine->pageCount() > 0;
+    bool hasMuseScore = m_score && m_renderer;
+    if (!hasEngine && !hasMuseScore) {
         QWidget::paintEvent(event);
         return;
     }
 
     double s = scale();
-    const auto& pages = m_score->pages();
+    int nPages = hasEngine ? m_engine->pageCount() : static_cast<int>(m_score->pages().size());
     QRect clipRect = event->rect();
 
     // Score rendering in its own scope so qp is destroyed before overlay painters
@@ -213,19 +267,20 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
         qp.setRenderHint(QPainter::TextAntialiasing, true);
         qp.scale(s, s);
 
-        Painter painter(QPainterProvider::make(&qp, false), "scorewidget");
-        painter.setAntialiasing(true);
-
-        PaintOptions paintOpt;
-        paintOpt.isPrinting = true;
         double yOffsetScore = PAGE_GAP / (2.0 * s);
 
-        for (size_t pi = 0; pi < pages.size(); ++pi) {
-            Page* page = pages[pi];
-            muse::RectF bbox = page->ldata()->bbox();
+        for (int pi = 0; pi < nPages; ++pi) {
+            double pgW, pgH;
+            if (hasEngine) {
+                QSizeF pg = m_engine->pageSize(pi);
+                pgW = pg.width(); pgH = pg.height();
+            } else {
+                muse::RectF bbox = m_score->pages()[pi]->ldata()->bbox();
+                pgW = bbox.width(); pgH = bbox.height();
+            }
 
-            double pageScreenH = bbox.height() * s;
-            double pageScreenW = bbox.width() * s;
+            double pageScreenH = pgH * s;
+            double pageScreenW = pgW * s;
             double pageScreenY = yOffsetScore * s;
 
             double xOffsetScreen = (width() - pageScreenW) / 2.0;
@@ -235,30 +290,48 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
             QRectF pageScreenRect(xOffsetScreen, pageScreenY, pageScreenW, pageScreenH);
 
             if (pageScreenRect.bottom() < clipRect.top()) {
-                yOffsetScore += bbox.height() + PAGE_GAP / s;
+                yOffsetScore += pgH + PAGE_GAP / s;
                 continue;
             }
             if (pageScreenRect.top() > clipRect.bottom()) {
                 break;
             }
 
-            painter.fillRect(muse::RectF(xOffsetScore, yOffsetScore, bbox.width(), bbox.height()),
-                             muse::draw::Color::WHITE);
+            if (hasEngine) {
+                // Engine-based rendering (works for both MuseScore and Verovio)
+                qp.save();
+                qp.translate(xOffsetScore, yOffsetScore);
+                qp.fillRect(QRectF(0, 0, pgW, pgH), Qt::white);
+                m_engine->renderPage(pi, qp);
+                qp.restore();
+            } else {
+                // Legacy MuseScore direct rendering
+                Painter painter(QPainterProvider::make(&qp, false), "scorewidget");
+                painter.setAntialiasing(true);
 
-            painter.save();
-            painter.translate(muse::PointF(xOffsetScore, yOffsetScore));
+                PaintOptions paintOpt;
+                paintOpt.isPrinting = true;
 
-            muse::RectF itemRect(bbox.x() - 500, bbox.y(), bbox.width() + 500, bbox.height());
-            std::vector<EngravingItem*> elements = page->items(itemRect);
-            for (const EngravingItem* item : elements) {
-                m_renderer->paintItem(painter, item, paintOpt);
+                painter.fillRect(muse::RectF(xOffsetScore, yOffsetScore, pgW, pgH),
+                                 muse::draw::Color::WHITE);
+
+                painter.save();
+                painter.translate(muse::PointF(xOffsetScore, yOffsetScore));
+
+                Page* page = m_score->pages()[pi];
+                muse::RectF bbox = page->ldata()->bbox();
+                muse::RectF itemRect(bbox.x() - 500, bbox.y(), bbox.width() + 500, bbox.height());
+                std::vector<EngravingItem*> elements = page->items(itemRect);
+                for (const EngravingItem* item : elements) {
+                    m_renderer->paintItem(painter, item, paintOpt);
+                }
+
+                painter.restore();
+                painter.endDraw();
             }
 
-            painter.restore();
-            yOffsetScore += bbox.height() + PAGE_GAP / s;
+            yOffsetScore += pgH + PAGE_GAP / s;
         }
-
-        painter.endDraw();
     }
 
     // Draw cursor overlay
@@ -707,6 +780,37 @@ void ScoreWidget::setRenderer(IScoreRenderer* renderer)
     m_canvas->setRenderer(renderer);
 }
 
+void ScoreWidget::setEngine(scoretracker::ScoreEngine* engine)
+{
+    m_canvas->setEngine(engine);
+
+    if (engine && engine->usesWebRendering()) {
+        if (!m_webView) {
+            m_webView = new QWebEngineView(this);
+            // Allow mouse scrolling but prevent keyboard focus stealing
+            m_webView->setFocusPolicy(Qt::NoFocus);
+        }
+        QString html = engine->renderAllPagesHtml();
+
+        // Write to temp file — loading via file:// gives better font/resource handling
+        QString tmpPath = QDir::tempPath() + "/verovio_score.html";
+        QFile f(tmpPath);
+        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            f.write(html.toUtf8());
+            f.close();
+        }
+        m_webView->load(QUrl::fromLocalFile(tmpPath));
+
+        m_webView->setGeometry(0, 0, width(), height());
+        m_webView->show();
+        m_webView->raise();
+        m_canvas->hide();
+    } else {
+        if (m_webView) m_webView->hide();
+        m_canvas->show();
+    }
+}
+
 void ScoreWidget::setZoom(double zoom)
 {
     applyZoom(zoom);
@@ -729,16 +833,18 @@ void ScoreWidget::zoomOut()
 
 void ScoreWidget::zoomToFit()
 {
+    // Web-rendered engines handle their own scaling
+    if (m_canvas->engineUsesWebRendering()) return;
+
     double maxW = m_canvas->maxPageWidthScore();
     if (maxW <= 0) return;
 
     double dpi = m_canvas->logicalDpiX();
-    int vpWidth = width() - 20 - m_overlayWidth; // use full scroll area width (incl. scrollbar area)
+    double internalDpi = m_canvas->engineInternalDPI();
+    int vpWidth = width() - 20 - m_overlayWidth;
     if (vpWidth < 100) vpWidth = 100;
 
-    // zoom * dpi / 1200 = scale, and we want: maxW * scale = vpWidth
-    // so zoom = vpWidth * 1200 / (maxW * dpi)
-    double fitZoom = (vpWidth * 1200.0) / (maxW * dpi);
+    double fitZoom = (vpWidth * internalDpi) / (maxW * dpi);
     applyZoom(fitZoom);
 }
 
@@ -796,6 +902,11 @@ void ScoreWidget::resizeEvent(QResizeEvent* event)
     QScrollArea::resizeEvent(event);
     m_triggerOverlay->setGeometry(viewport()->geometry());
     m_triggerOverlay->raise();
+
+    if (m_webView && m_webView->isVisible()) {
+        m_webView->setGeometry(0, 0, width(), height());
+        return;
+    }
     zoomToFit();
 }
 
@@ -959,9 +1070,42 @@ void ScoreWidget::ensureHighlightVisible()
     }
 }
 
+void ScoreWidget::runWebJavaScript(const QString& js)
+{
+    if (m_webView && m_webView->isVisible())
+        m_webView->page()->runJavaScript(js);
+}
+
 void ScoreWidget::setPlayModeActive(bool active)
 {
     m_playModeActive = active;
+}
+
+void ScoreWidget::highlightNoteIds(const QStringList& ids, int voice, bool scroll)
+{
+    if (!m_webView || !m_webView->isVisible()) return;
+    QString cls = (voice == 0) ? QStringLiteral("highlight-v0")
+                               : QStringLiteral("highlight-v1");
+    if (ids.isEmpty()) {
+        m_webView->page()->runJavaScript(
+            QStringLiteral("clearHighlights('%1')").arg(cls));
+        return;
+    }
+    // Build JS array of IDs
+    QStringList escaped;
+    for (const auto& id : ids) {
+        QString e = id;
+        e.replace('\'', "\\'");
+        escaped << QStringLiteral("'%1'").arg(e);
+    }
+    QString js = QStringLiteral("highlightNotes([%1], '%2')")
+        .arg(escaped.join(','), cls);
+    m_webView->page()->runJavaScript(js);
+
+    // Single-voice auto-scroll: triggered by highlight update
+    if (scroll && m_autoScroll && !ids.isEmpty()) {
+        m_webView->page()->runJavaScript(QStringLiteral("autoScrollSingle()"));
+    }
 }
 
 void ScoreWidget::ensureCursorVisible()

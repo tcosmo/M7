@@ -4,7 +4,7 @@ project(jamjammin LANGUAGES CXX C OBJCXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -25,10 +25,15 @@ set(CMAKE_MODULE_PATH
 include(SetupBuildEnvironment)
 include(GetPlatformInfo)
 
-find_package(Qt6 6.3 REQUIRED COMPONENTS Core Gui Widgets Svg Quick WebEngineWidgets WebChannel)
+find_package(Qt6 6.3 REQUIRED COMPONENTS Core Gui Widgets Svg Xml Quick WebEngineWidgets WebChannel)
 qt_standard_project_setup()
 
 include(MuseCreateModule)
+
+# Verovio engine (built before global include_directories to avoid name clashes)
+set(VEROVIO_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/thirdparty/verovio)
+set(BUILD_AS_LIBRARY ON)
+add_subdirectory(${VEROVIO_SOURCE_DIR}/cmake ${CMAKE_CURRENT_BINARY_DIR}/build/verovio)
 
 include_directories(
     ${CMAKE_CURRENT_LIST_DIR}/src
@@ -145,6 +150,11 @@ add_executable(jamjammin
     src/main.cpp
     src/app.h
     src/app.cpp
+    src/engine/ScoreEngine.h
+    src/engine/MuseScoreEngine.h
+    src/engine/MuseScoreEngine.cpp
+    src/engine/VerovioEngine.h
+    src/engine/VerovioEngine.cpp
     src/scorewidget.h
     src/scorewidget.cpp
     src/audioplayer.h
@@ -202,7 +212,20 @@ target_include_directories(jamjammin PUBLIC
 
 target_compile_options(jamjammin PRIVATE ${PCH_FIX})
 
-target_link_libraries(jamjammin
+target_include_directories(jamjammin PRIVATE
+    ${VEROVIO_SOURCE_DIR}/include/vrv
+    ${VEROVIO_SOURCE_DIR}/include/json
+    ${VEROVIO_SOURCE_DIR}/include/pugi
+    ${VEROVIO_SOURCE_DIR}/include/hum
+    ${VEROVIO_SOURCE_DIR}/include/crc
+    ${VEROVIO_SOURCE_DIR}/include/midi
+    ${VEROVIO_SOURCE_DIR}/include/zip
+    ${VEROVIO_SOURCE_DIR}/include/tuning-library
+    ${VEROVIO_SOURCE_DIR}/libmei/dist
+    ${VEROVIO_SOURCE_DIR}/libmei/addons
+)
+target_link_libraries(jamjammin PRIVATE
+    verovio
     muse_global
     muse_draw
     engraving
@@ -212,6 +235,7 @@ target_link_libraries(jamjammin
     Qt6::Gui
     Qt6::Widgets
     Qt6::Svg
+    Qt6::Xml
     Qt6::WebEngineWidgets
     Qt6::WebChannel
     "-framework CoreAudio"

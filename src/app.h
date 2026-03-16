@@ -27,6 +27,10 @@ class IScoreRenderer;
 }
 
 namespace scoretracker {
+class ScoreEngine;
+}
+
+namespace scoretracker {
 
 class ScoreWidget;
 class AudioPlayer;
@@ -50,6 +54,7 @@ public:
     explicit App(QWidget* parent = nullptr);
     ~App();
 
+    void setUseVerovio(bool use) { m_useVerovio = use; }
     bool loadScore(const QString& musicXmlPath);
     bool loadAudio(const QString& audioPath);
     bool loadBeatData(const QString& jsonPath);
@@ -174,7 +179,18 @@ private:
     std::vector<double> m_savedMeasureStarts;
     int m_savedBeatsPerMeasure = 3;
 
-    // Score
+    // Score engine (abstraction over MuseScore / Verovio)
+    std::unique_ptr<scoretracker::ScoreEngine> m_engine;
+    bool m_useVerovio = false;
+
+    // Verovio play-along: per-voice note tables with element IDs for highlighting
+    struct VrvVoice {
+        std::vector<QString> elementIds; // parallel to PlayAlongSynth voice notes
+        QString keyZone;                 // "left", "right", "all"
+    };
+    std::vector<VrvVoice> m_vrvVoices;
+
+    // Legacy MuseScore pointers (valid when using MuseScoreEngine)
     mu::engraving::MasterScore* m_score = nullptr;
     std::shared_ptr<mu::engraving::rendering::IScoreRenderer> m_renderer;
 

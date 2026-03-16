@@ -1,4 +1,6 @@
 #include <QApplication>
+#include <QScreen>
+#include <QWindow>
 #include <QDebug>
 #include <QFileInfo>
 #include <QPalette>
@@ -139,10 +141,16 @@ int main(int argc, char* argv[])
     bool startSyncMode = false;
     bool startPlayMode = false;
     bool preferFile = false;
+    bool useVerovio = false;
+    int screenIndex = -1;
 
     QStringList args = qapp.arguments();
     for (int i = 1; i < args.size(); ++i) {
-        if (args[i] == "--sync") {
+        if (args[i] == "--verovio") {
+            useVerovio = true;
+        } else if (args[i] == "--screen" && i + 1 < args.size()) {
+            screenIndex = args[++i].toInt();
+        } else if (args[i] == "--sync") {
             startSyncMode = true;
         } else if (args[i] == "--play") {
             startPlayMode = true;
@@ -212,6 +220,17 @@ int main(int argc, char* argv[])
 
     // Create and show the app
     scoretracker::App app;
+    if (useVerovio) app.setUseVerovio(true);
+
+    // Move window to requested screen (keep default size, just reposition)
+    if (screenIndex >= 0) {
+        auto screens = QGuiApplication::screens();
+        if (screenIndex < screens.size()) {
+            QScreen* screen = screens[screenIndex];
+            QPoint topLeft = screen->availableGeometry().topLeft();
+            app.move(topLeft);
+        }
+    }
 
     // Load worlds from resources directory
     QString worldsDir = QCoreApplication::applicationDirPath() + "/../../resources/worlds";

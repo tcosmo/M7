@@ -3,18 +3,18 @@
     "spotify": "https://open.spotify.com/track/64gjOV0I9RyMplBIX2jKzH",
     "youtube": [
         {
-            "beats": "./beatdata.json",
-            "instrumentVolume": 74,
-            "label": "Oxford Scholar Cantorum",
-            "tuning": 0.1,
-            "url": "https://www.youtube.com/watch?v=kYmaAS4NsPU"
-        },
-        {
             "beats": "./beatdata_jordi_savall.json",
             "instrumentVolume": 140,
             "label": "Jordi Savall",
             "tuning": -0.9,
             "url": "https://www.youtube.com/watch?v=fUt88ImPV-E"
+        },
+        {
+            "beats": "./beatdata.json",
+            "instrumentVolume": 74,
+            "label": "Oxford Scholar Cantorum",
+            "tuning": 0.1,
+            "url": "https://www.youtube.com/watch?v=kYmaAS4NsPU"
         },
         {
             "end": 175,

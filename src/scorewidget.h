@@ -11,6 +11,8 @@
 #include <QElapsedTimer>
 #include <vector>
 
+class QWebEngineView;
+
 namespace mu::engraving {
 class Score;
 namespace rendering {
@@ -20,6 +22,7 @@ class IScoreRenderer;
 
 namespace scoretracker {
 class SyncMode;
+class ScoreEngine;
 }
 
 namespace scoretracker {
@@ -40,10 +43,13 @@ public:
 
     void setScore(mu::engraving::Score* score);
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
+    void setEngine(scoretracker::ScoreEngine* engine);
     void setCursorRect(const muse::RectF& rect, int pageIndex);
     void setZoom(double zoom);
     double zoom() const { return m_zoom; }
     double scale() const;
+    double engineInternalDPI() const;
+    bool engineUsesWebRendering() const;
 
     QRect cursorWidgetRect() const;
     QRect pageWidgetRect(int pageIndex) const;
@@ -72,14 +78,16 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
 
-private:
+public:
     void updateCanvasSize();
+private:
     muse::RectF mapToRenderCoords(const muse::RectF& pageRelRect, int pageIndex) const;
     void paintSyncDots(QPainter& painter);
     int hitTestDot(const QPoint& pos) const;
 
     mu::engraving::Score* m_score = nullptr;
     mu::engraving::rendering::IScoreRenderer* m_renderer = nullptr;
+    scoretracker::ScoreEngine* m_engine = nullptr;
     scoretracker::SyncMode* m_syncMode = nullptr;
     muse::RectF m_cursorRect;
     int m_cursorPageIndex = 0;
@@ -126,6 +134,7 @@ public:
 
     void setScore(mu::engraving::Score* score);
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
+    void setEngine(scoretracker::ScoreEngine* engine);
     void setZoom(double zoom);
     double zoom() const;
     void zoomIn();
@@ -152,6 +161,8 @@ public:
     void setHighlightElement(void* element);
     void setHighlightElement2(void* element);
     void setPlayModeActive(bool active);
+    void highlightNoteIds(const QStringList& ids, int voice = 0, bool scroll = false);
+    void runWebJavaScript(const QString& js);
 
 signals:
     void zoomChanged(double zoom);
@@ -171,6 +182,7 @@ private:
     void applyZoom(double newZoom);
 
     ScoreCanvas* m_canvas = nullptr;
+    QWebEngineView* m_webView = nullptr;
     TriggerLineOverlay* m_triggerOverlay = nullptr;
     int m_overlayWidth = 0;
     bool m_autoScroll = true;

@@ -132,6 +132,10 @@ App::App(QWidget* parent)
     connect(m_trackingAction, &QAction::toggled, [this](bool on) {
         m_trackingSettings->setTrackingEnabled(on);
         m_scoreWidget->setCursorVisible(on);
+        // Show/hide Verovio cursor
+        if (m_useVerovio) {
+            m_scoreWidget->runWebJavaScript(on ? "" : "hideCursor()");
+        }
         // When tracking is off but auto-scroll is on, feed current position
         // so auto-scroll still works with an invisible cursor
         if (!on && m_trackingSettings->autoScrollEnabled() && playerDuration() > 0) {
@@ -1231,11 +1235,10 @@ void App::onPositionChanged(double seconds)
     if (shouldTrack) {
         m_syncTimer->setTime(adjusted);
         // Verovio: send tick to web view for cursor overlay
-        // Add small forward compensation for web view IPC latency
-        if (m_useVerovio) {
-            m_syncTimer->setTime(adjusted + 0.08);
+        if (m_useVerovio && m_trackingAction->isChecked()) {
+            m_syncTimer->setTime(adjusted + 0.08); // forward compensation for IPC latency
             m_scoreWidget->setCursorTick(m_syncTimer->currentTick());
-            m_syncTimer->setTime(adjusted); // restore actual position
+            m_syncTimer->setTime(adjusted);
         }
     }
 
@@ -2437,8 +2440,11 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
     const auto& section = world.sections[sectionIndex];
     if (levelIndex < 0 || levelIndex >= section.levels.size()) return;
 
-    // Pause playback immediately so user doesn't hear audio during loading
+    // Pause playback and reset cursor
     playerPause();
+    if (m_useVerovio)
+        m_scoreWidget->runWebJavaScript("hideCursor()");
+    m_syncTimer->setTime(0);
 
     // Exit current play mode if active
     if (m_playModeActive) {

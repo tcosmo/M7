@@ -807,8 +807,10 @@ void ScoreWidget::setEngine(scoretracker::ScoreEngine* engine)
         auto* vrvEngine = dynamic_cast<scoretracker::VerovioEngine*>(engine);
         if (vrvEngine) {
             QString tmJs = vrvEngine->timemapAsJs();
-            // Inject after a short delay to let the page load
-            QTimer::singleShot(500, this, [this, tmJs]() {
+            int ver = ++m_timemapVersion;
+            // Inject after delay; version check cancels stale timers
+            QTimer::singleShot(800, this, [this, tmJs, ver]() {
+                if (ver != m_timemapVersion) return; // stale
                 if (m_webView && m_webView->isVisible())
                     m_webView->page()->runJavaScript(tmJs);
             });

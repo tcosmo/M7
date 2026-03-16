@@ -184,6 +184,7 @@ private:
 
     ScoreCanvas* m_canvas = nullptr;
     QWebEngineView* m_webView = nullptr;
+    int m_timemapVersion = 0; // increments on each setEngine to cancel stale timers
     TriggerLineOverlay* m_triggerOverlay = nullptr;
     int m_overlayWidth = 0;
     bool m_autoScroll = true;

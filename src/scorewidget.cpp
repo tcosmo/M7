@@ -101,8 +101,8 @@ void WebScoreOverlay::paintEvent(QPaintEvent*)
         QRectF padded(r.x() - px, r.y() - py, r.width() + px * 2, r.height() + py * 2);
 
         QColor color = (v == 0) ? QColor(50, 120, 255) : QColor(180, 80, 220);
-        p.setPen(QPen(color, 2.5));
-        p.setBrush(QColor(color.red(), color.green(), color.blue(), 45));
+        p.setPen(QPen(color, 2.0));
+        p.setBrush(QColor(color.red(), color.green(), color.blue(), 40));
         p.drawRoundedRect(padded, 3, 3);
     }
 }

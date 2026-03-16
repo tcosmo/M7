@@ -2722,12 +2722,14 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                 }
 
                 // Highlight first note of each voice
-                QTimer::singleShot(500, this, [this]() {
+                // Delay initial highlights until after note positions are fetched (1200ms)
+                QTimer::singleShot(1500, this, [this]() {
                     for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
                         auto& vv = m_vrvVoices[vi];
-                        if (!vv.elementIds.empty()) {
+                        if (!vv.elementIds.empty())
                             m_scoreWidget->overlayHighlight(vi, vv.elementIds[0]);
-                        }
+                        else
+                            m_scoreWidget->overlayClearHighlight(vi);
                     }
                 });
             }

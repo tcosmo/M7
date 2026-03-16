@@ -3,6 +3,7 @@
 #include "ScoreEngine.h"
 #include <QDomDocument>
 #include <map>
+#include <set>
 
 namespace vrv {
 class Toolkit;
@@ -52,6 +53,9 @@ public:
     struct NoteInfo {
         QString elementId;
         int pitch;
+        int midiTime = -1;
+        int midiDur = 0;
+        bool tiedBack = false;
     };
     // Extract notes for a part from pre-rendered SVGs (avoids ID regeneration).
     // renderedSvgs should be the same SVGs used for HTML display.
@@ -91,6 +95,9 @@ private:
 
     // Cached rendered SVGs (from renderAllPagesHtml)
     mutable QStringList m_renderedSvgs;
+
+    // Currently selected parts (1-based, in display order)
+    QList<int> m_selectedParts;
 
     // Timemap for cursor resolution
     struct TimemapEntry {

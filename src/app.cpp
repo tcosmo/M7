@@ -446,6 +446,9 @@ void App::setupUI()
     });
     connect(m_levelBrowser, &LevelBrowser::resumeRequested, this, [this]() {
         m_centralStack->setCurrentIndex(1);
+        if (!m_videoExpanded) {
+            QTimer::singleShot(0, this, &App::toggleVideoExpand);
+        }
     });
 
     // Central stacked widget: 0 = level browser, 1 = score view
@@ -467,6 +470,8 @@ void App::setupUI()
             if (index == m_activeWorldIndex && m_activeSectionIndex >= 0) {
                 m_levelBrowser->setCurrentLevel(m_activeSectionIndex, m_activeLevelIndex);
             }
+            // Collapse video to sidebar when browsing
+            if (m_videoExpanded) toggleVideoExpand();
             m_centralStack->setCurrentIndex(0);
         }
     });
@@ -496,6 +501,28 @@ void App::setupUI()
         // Apply per-interpretation master volume
         if (index < m_sourceVolumes.size() && m_sourceVolumes[index] >= 0 && m_worldSidebar) {
             m_worldSidebar->setVolume(m_sourceVolumes[index]);
+        }
+        // Reset play-along to beginning of score
+        m_playAlongSynth->resetPosition();
+        m_keysHeld = 0;
+        if (m_useVerovio && !m_vrvVoices.empty()) {
+            for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
+                auto& vv = m_vrvVoices[vi];
+                if (!vv.elementIds.empty())
+                    m_scoreWidget->highlightNoteIds({vv.elementIds[0]}, vi);
+            }
+            m_scoreWidget->runWebJavaScript("resetScroll()");
+        } else {
+            m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
+        }
+        // Resize video to fill container after YouTube reloads
+        if (m_videoExpanded && m_expandedVideoContainer && m_youtubePlayer) {
+            auto conn = std::make_shared<QMetaObject::Connection>();
+            *conn = connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this, conn]() {
+                disconnect(*conn);
+                QSize sz = m_expandedVideoContainer->size();
+                m_youtubePlayer->resizePlayer(sz.width(), sz.height());
+            });
         }
         // Load per-interpretation beats or disable tracking
         if (index < m_sourceBeatsFiles.size() && !m_sourceBeatsFiles[index].isEmpty()) {
@@ -831,7 +858,7 @@ bool App::loadScore(const QString& musicXmlPath)
         // Set Verovio pageWidth directly in Verovio units (bypasses DPI calc).
         // Default is 2100 (≈A4 width). Wider = more measures per system.
         // CSS width:100% scales the SVG to fit the viewport.
-        engine->setPageWidthDirect(3600);
+        engine->setPageWidthDirect(3200);
         engine->setMarginsInches(0.20, 0.20, 0.6, 0.6);
         engine->setSpatiumInches(0.046);
 
@@ -1516,19 +1543,32 @@ void App::loadYouTube(const QString& url)
 {
     m_useYouTube = true;
 
-    // If player already exists, just reload
+    // If player already exists
     if (m_youtubePlayer) {
+        if (m_currentYoutubeUrl == url) {
+            // Same video — just seek to start, no reload needed
+            m_youtubePlayer->seekTo(m_interpStart);
+            m_youtubePlayer->pause();
+            return;
+        }
+        // Different video — reload
+        m_currentYoutubeUrl = url;
         m_youtubePlayer->load(url);
-        // Seek to interpretation start once video is ready
         auto conn = std::make_shared<QMetaObject::Connection>();
         double startTime = m_interpStart;
         *conn = connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this, conn, startTime]() {
-            m_youtubePlayer->seekTo(startTime);
             disconnect(*conn);
+            m_youtubePlayer->seekTo(startTime);
+            m_youtubePlayer->pause();
+            if (m_videoExpanded && m_expandedVideoContainer) {
+                QSize sz = m_expandedVideoContainer->size();
+                m_youtubePlayer->resizePlayer(sz.width(), sz.height());
+            }
         });
         return;
     }
 
+    m_currentYoutubeUrl = url;
     m_youtubePlayer = new YouTubePlayer(this);
 
     // Connect position updates
@@ -1605,8 +1645,7 @@ void App::toggleVideoExpand()
 
     if (!m_videoExpanded) {
         // Expand: move video from sidebar into centralSplitter above score
-        int totalH = m_centralSplitter->height();
-        int videoH = totalH / 3;
+        int videoH = 394;
 
         // Clear sidebar fixed size — let video fill its new container
         videoWidget->setMinimumSize(0, 0);
@@ -1631,7 +1670,7 @@ void App::toggleVideoExpand()
             if (m_centralSplitter->widget(i) == m_expandedVideoContainer)
                 sizes.append(videoH);
             else if (m_centralSplitter->widget(i) == m_scoreWidget)
-                sizes.append(totalH - videoH);
+                sizes.append(m_centralSplitter->height() - videoH);
             else
                 sizes.append(m_centralSplitter->widget(i)->height());
         }
@@ -1642,10 +1681,21 @@ void App::toggleVideoExpand()
         // Track resizes on the expanded container (splitter dragging)
         m_expandedVideoContainer->installEventFilter(this);
 
-        // Tell the YouTube iframe player to resize to match the new container
-        QTimer::singleShot(100, this, [this]() {
-            QSize sz = m_expandedVideoContainer->size();
-            m_youtubePlayer->resizePlayer(sz.width(), sz.height());
+        // Resize iframe: immediate (for re-expand) + on videoReady (for first load)
+        QTimer::singleShot(50, this, [this]() {
+            if (m_expandedVideoContainer && m_youtubePlayer) {
+                QSize sz = m_expandedVideoContainer->size();
+                if (sz.width() > 0 && sz.height() > 0)
+                    m_youtubePlayer->resizePlayer(sz.width(), sz.height());
+            }
+        });
+        auto conn = std::make_shared<QMetaObject::Connection>();
+        *conn = connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this, conn]() {
+            disconnect(*conn);
+            if (m_expandedVideoContainer) {
+                QSize sz = m_expandedVideoContainer->size();
+                m_youtubePlayer->resizePlayer(sz.width(), sz.height());
+            }
         });
 
         // Hide sidebar video container and update button text
@@ -1702,7 +1752,8 @@ void App::setupInstrumentPanelForVoices(int voiceCount)
     if (voiceCount <= 1) {
         // Single-voice mode: show the default row
         m_singleVoiceRow->show();
-        m_instrumentPanel->setFixedHeight(72);
+        m_instrumentPanel->setFixedHeight(
+            m_singleVoiceRow->sizeHint().height() + 40 + 16);
     } else {
         // Multi-voice mode: hide default row, create per-voice rows
         m_singleVoiceRow->hide();
@@ -1751,8 +1802,8 @@ void App::setupInstrumentPanelForVoices(int voiceCount)
             m_voiceInstrCombos.append(instrCombo);
             m_voiceRows.append(row);
 
-            // Insert before the last item (transpose+volume row)
-            m_instrumentPanelLayout->insertWidget(m_instrumentPanelLayout->count() - 1, row);
+            // Append after the controls row (controls are at the top)
+            m_instrumentPanelLayout->addWidget(row);
 
             // Connect soundfont combo
             connect(sfCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -1791,8 +1842,8 @@ void App::setupInstrumentPanelForVoices(int voiceCount)
             });
         }
 
-        // Height: 30 per voice row + 36 for transpose/volume + 12 margins
-        m_instrumentPanel->setFixedHeight(30 * voiceCount + 48);
+        // Height: controls row (~36) + voice rows (28 each) + margins
+        m_instrumentPanel->setFixedHeight(36 + 28 * voiceCount + 16);
     }
 }
 
@@ -2357,6 +2408,10 @@ void App::showWorldBrowser()
     if (m_playModeActive) {
         m_playModeButton->setChecked(false);
     }
+    // Collapse video back to sidebar when navigating
+    if (m_videoExpanded) {
+        toggleVideoExpand();
+    }
     // Show the active world with Resume on the active level
     if (m_activeWorldIndex >= 0 && m_activeWorldIndex < m_worlds.size()) {
         m_currentWorldIndex = m_activeWorldIndex;
@@ -2374,10 +2429,22 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
     const auto& section = world.sections[sectionIndex];
     if (levelIndex < 0 || levelIndex >= section.levels.size()) return;
 
+    // Pause playback immediately so user doesn't hear audio during loading
+    playerPause();
+
     // Exit current play mode if active
     if (m_playModeActive) {
         m_playModeButton->setChecked(false);
     }
+
+    // Full play-along reset — deterministic clean slate for every level
+    m_vrvVoices.clear();
+    m_playAlongSynth->clearVoices();
+    m_playAlongSynth->resetPosition();
+    m_keysHeld = 0;
+    m_multiVoice = false;
+    m_voiceKeysHeld.clear();
+    m_voiceKeyZones.clear();
 
     // Save window geometry before the heavy load
     QRect savedGeometry = geometry();
@@ -2413,6 +2480,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         if (!m_videoExpanded) {
             QTimer::singleShot(0, this, &App::toggleVideoExpand);
         }
+
 
         // Mark this level as active
         m_activeWorldIndex = worldIndex;
@@ -2507,6 +2575,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                             scoretracker::NoteEvent ev{};
                             ev.midiPitch = ni.pitch;
                             ev.durationTicks = 480;
+                            ev.tiedBack = ni.tiedBack;
                             events.push_back(ev);
                             vv.elementIds.push_back(ni.elementId);
                         }
@@ -2525,6 +2594,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
 
                         qDebug() << "Verovio voice" << vi << ":" << noteInfos.size()
                                  << "notes, part" << vc.playPart << "gm" << vc.gmProgram
+                                 << "sfId" << sfId << "sf" << vc.soundfont
                                  << "keys" << vc.keys;
                     }
                 } else if (level.playPart > 0) {
@@ -2541,6 +2611,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                         scoretracker::NoteEvent ev{};
                         ev.midiPitch = ni.pitch;
                         ev.durationTicks = 480;
+                        ev.tiedBack = ni.tiedBack;
                         events.push_back(ev);
                         vv.elementIds.push_back(ni.elementId);
                     }
@@ -2566,6 +2637,75 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                 // Set up instrument panel for Verovio voices
                 int nVoices = static_cast<int>(m_vrvVoices.size());
                 setupInstrumentPanelForVoices(nVoices);
+
+                // Populate instrument combos from soundfonts
+                if (nVoices > 1) {
+                    for (int vi = 0; vi < level.voices.size() && vi < m_voiceSfCombos.size(); ++vi) {
+                        const auto& vc = level.voices[vi];
+                        auto* sfCombo = m_voiceSfCombos[vi];
+                        auto* instrCombo = m_voiceInstrCombos[vi];
+
+                        if (!vc.soundfont.isEmpty()) {
+                            sfCombo->blockSignals(true);
+                            for (int si = 0; si < m_soundfontPaths.size(); ++si) {
+                                if (QFileInfo(m_soundfontPaths[si]).fileName() == vc.soundfont) {
+                                    sfCombo->setCurrentIndex(si);
+                                    break;
+                                }
+                            }
+                            sfCombo->blockSignals(false);
+                        }
+
+                        int sfId = m_playAlongSynth->soundfontIdForVoice(vi);
+                        if (sfId >= 0) {
+                            instrCombo->blockSignals(true);
+                            instrCombo->clear();
+                            auto presets = m_playAlongSynth->presetsForSoundfont(sfId);
+                            for (const auto& p : presets)
+                                instrCombo->addItem(p.second, p.first);
+                            int curProg = m_playAlongSynth->gmProgramForVoice(vi);
+                            for (int i = 0; i < instrCombo->count(); ++i) {
+                                if (instrCombo->itemData(i).toInt() == curProg) {
+                                    instrCombo->setCurrentIndex(i);
+                                    break;
+                                }
+                            }
+                            instrCombo->blockSignals(false);
+                        }
+                    }
+                } else if (nVoices == 1) {
+                    // Single voice: populate the global instrument combo
+                    if (m_instrumentCombo) {
+                        int sfId = m_playAlongSynth->soundfontIdForVoice(0);
+                        if (sfId >= 0) {
+                            m_instrumentCombo->blockSignals(true);
+                            m_instrumentCombo->clear();
+                            auto presets = m_playAlongSynth->presetsForSoundfont(sfId);
+                            for (const auto& p : presets)
+                                m_instrumentCombo->addItem(p.second, p.first);
+                            int curProg = m_playAlongSynth->gmProgramForVoice(0);
+                            for (int i = 0; i < m_instrumentCombo->count(); ++i) {
+                                if (m_instrumentCombo->itemData(i).toInt() == curProg) {
+                                    m_instrumentCombo->setCurrentIndex(i);
+                                    break;
+                                }
+                            }
+                            m_instrumentCombo->blockSignals(false);
+                        }
+                        // Select soundfont combo
+                        QString sfName = level.soundfont;
+                        if (!sfName.isEmpty() && m_soundfontCombo) {
+                            m_soundfontCombo->blockSignals(true);
+                            for (int i = 0; i < m_soundfontPaths.size(); ++i) {
+                                if (QFileInfo(m_soundfontPaths[i]).fileName() == sfName) {
+                                    m_soundfontCombo->setCurrentIndex(i);
+                                    break;
+                                }
+                            }
+                            m_soundfontCombo->blockSignals(false);
+                        }
+                    }
+                }
 
                 // Highlight first note of each voice
                 QTimer::singleShot(500, this, [this]() {
@@ -2707,10 +2847,20 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
 
         m_levelBrowser->showLoading(false);
 
-        // Restore window geometry after all deferred layout work (zoomToFit etc.) settles
+        // Restore window geometry after all deferred layout work settles
         QTimer::singleShot(0, this, [this, savedGeometry]() {
             move(savedGeometry.topLeft());
         });
+
+        // Resize video to fill its container once ready
+        if (m_youtubePlayer && m_videoExpanded && m_expandedVideoContainer) {
+            auto conn = std::make_shared<QMetaObject::Connection>();
+            *conn = connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this, conn]() {
+                disconnect(*conn);
+                QSize sz = m_expandedVideoContainer->size();
+                m_youtubePlayer->resizePlayer(sz.width(), sz.height());
+            });
+        }
     });
 }
 
@@ -2839,13 +2989,24 @@ void App::keyPressEvent(QKeyEvent* event)
                 });
             } else {
                 // Single-voice Verovio
+                int beforeIdx = m_playAlongSynth->nextNoteIndex();
                 m_keysHeld++;
                 m_playAlongSynth->playNextNote();
+                int afterIdx = m_playAlongSynth->nextNoteIndex();
+                auto& vv = m_vrvVoices[0];
+                // Debug: show what we played and where we landed
+                QString beforeId = (beforeIdx < static_cast<int>(vv.elementIds.size()))
+                    ? vv.elementIds[beforeIdx] : "END";
+                QString afterId = (afterIdx < static_cast<int>(vv.elementIds.size()))
+                    ? vv.elementIds[afterIdx] : "END";
+                qDebug() << "PLAY: idx" << beforeIdx << "->" << afterIdx
+                         << "(skipped" << (afterIdx - beforeIdx - 1) << "tied)"
+                         << "next=" << afterId;
                 QTimer::singleShot(0, this, [this]() {
-                    auto& vv = m_vrvVoices[0];
+                    auto& vv2 = m_vrvVoices[0];
                     int idx = m_playAlongSynth->nextNoteIndex();
-                    if (idx < static_cast<int>(vv.elementIds.size()))
-                        m_scoreWidget->highlightNoteIds({vv.elementIds[idx]}, 0);
+                    if (idx < static_cast<int>(vv2.elementIds.size()))
+                        m_scoreWidget->highlightNoteIds({vv2.elementIds[idx]}, 0);
                     else
                         m_scoreWidget->highlightNoteIds({}, 0);
                 });

@@ -92,6 +92,9 @@ PlayAlongSynth::~PlayAlongSynth()
 
 bool PlayAlongSynth::init(const QString& sf3Path)
 {
+    // Already initialized — don't create a second synth
+    if (m_synth) return true;
+
     m_settings = new_fluid_settings();
     if (!m_settings) return false;
 
@@ -171,7 +174,14 @@ bool PlayAlongSynth::loadSoundfont(const QString& path)
 
 void PlayAlongSynth::clearVoices()
 {
-    stopNote();
+    // Stop all notes on all channels used by voices
+    if (m_synth) {
+        auto* s = fs(m_synth);
+        for (auto& v : m_voices) {
+            if (v.lastPlayedNote >= 0)
+                fluid_synth_noteoff(s, v.channel, v.lastPlayedNote);
+        }
+    }
     m_voices.clear();
 }
 
@@ -390,12 +400,12 @@ void PlayAlongSynth::setVoiceFromNotes(const std::vector<NoteEvent>& notes, int 
     if (m_synth) {
         int bank = gmProg / 128;
         int prog = gmProg % 128;
-        fluid_synth_bank_select(fs(m_synth), 0, bank);
-        fluid_synth_program_change(fs(m_synth), 0, prog);
+        // Use program_select (not program_change) to ensure correct soundfont
+        fluid_synth_program_select(fs(m_synth), 0, m_sfontId, bank, prog);
     }
 
     qDebug() << "PlayAlongSynth: setVoiceFromNotes notes:" << m_voices[0].notes.size()
-             << "program" << gmProg;
+             << "program" << gmProg << "sfontId" << m_sfontId;
 }
 
 void PlayAlongSynth::addVoiceFromNotes(const std::vector<NoteEvent>& notes, int gmProg, int sfontId)

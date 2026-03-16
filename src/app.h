@@ -202,6 +202,7 @@ private:
     QList<QString> m_voiceKeyZones; // "left", "right", "all" per voice
 
     QString m_audioFilePath;
+    QString m_currentYoutubeUrl;
     QString m_beatDataPath;
     QString m_sourcesPath;
     bool m_sliderDragging = false;

@@ -316,6 +316,8 @@ void VerovioEngine::selectParts(const QList<int>& partNumbers)
 {
     if (!m_toolkit || m_musicXmlData.isEmpty()) return;
 
+    m_selectedParts = partNumbers;
+
     if (partNumbers.isEmpty()) {
         applyOptions();
         m_toolkit->LoadData(m_musicXmlData.toStdString());
@@ -591,10 +593,8 @@ std::vector<VerovioEngine::NoteInfo> VerovioEngine::getNotesForPart(
                 QString id = noteEl.attribute("id");
                 if (id.isEmpty()) continue;
 
-                // Get MIDI values from Verovio
                 NoteInfo info;
                 info.elementId = id;
-                info.pitch = 60; // default, try to get from Verovio
 
                 try {
                     std::string jsonStr = m_toolkit->GetMIDIValuesForElement(id.toStdString());
@@ -602,12 +602,145 @@ std::vector<VerovioEngine::NoteInfo> VerovioEngine::getNotesForPart(
                         QByteArray::fromStdString(jsonStr));
                     if (jdoc.isObject()) {
                         QJsonObject obj = jdoc.object();
-                        if (obj.contains("pitch"))
-                            info.pitch = obj.value("pitch").toInt(60);
+                        info.pitch = obj.value("pitch").toInt(60);
+                        info.midiTime = obj.value("time").toInt(-1);
+                        info.midiDur = obj.value("duration").toInt(0);
                     }
                 } catch (...) {}
 
                 notes.push_back(info);
+            }
+        }
+    }
+
+    // Detect tied-back notes: build a set of MIDI times that have <tie type="stop"/>
+    // from the original MusicXML. Match to SVG notes by midiTime + pitch.
+    {
+        // Find the original part ID for this filtered partIndex
+        QDomDocument xmlDoc;
+        xmlDoc.setContent(m_musicXmlData);
+        QDomElement xmlRoot = xmlDoc.documentElement();
+
+        QList<QString> allPartIds;
+        QDomElement xmlSp = xmlRoot.firstChildElement("part-list").firstChildElement("score-part");
+        while (!xmlSp.isNull()) {
+            allPartIds.append(xmlSp.attribute("id"));
+            xmlSp = xmlSp.nextSiblingElement("score-part");
+        }
+
+        // Map filtered partIndex to original part using m_selectedParts
+        int origIdx = -1;
+        if (!m_selectedParts.isEmpty() && partIndex < m_selectedParts.size()) {
+            origIdx = m_selectedParts[partIndex] - 1; // 1-based to 0-based
+        } else {
+            origIdx = partIndex; // no filtering, direct mapping
+        }
+
+        qDebug() << "Tie lookup: partIndex=" << partIndex << "origIdx=" << origIdx
+                 << "partId=" << (origIdx >= 0 && origIdx < allPartIds.size()
+                                  ? allPartIds[origIdx] : "??");
+
+        if (origIdx >= 0 && origIdx < allPartIds.size()) {
+            // Find the <part> element
+            QDomElement xmlPart = xmlRoot.firstChildElement("part");
+            while (!xmlPart.isNull() && xmlPart.attribute("id") != allPartIds[origIdx])
+                xmlPart = xmlPart.nextSiblingElement("part");
+
+            if (!xmlPart.isNull()) {
+                // Get <divisions> (ticks per quarter note in MusicXML)
+                int divisions = 1;
+                // Walk measures, accumulate time, collect tied-stop (time, pitch) pairs
+                struct TieStop { int midiTime; int pitch; };
+                std::vector<TieStop> tieStops;
+                int currentTime = 0; // in MIDI ticks (will convert from divisions)
+                // MusicXML divisions → MIDI ticks conversion: midi_ticks = xml_duration * 500 / divisions
+                // (Verovio uses 500 ticks per quarter by default)
+
+                QDomElement meas = xmlPart.firstChildElement("measure");
+                while (!meas.isNull()) {
+                    QDomElement el = meas.firstChildElement();
+                    while (!el.isNull()) {
+                        if (el.tagName() == "attributes") {
+                            QDomElement divEl = el.firstChildElement("divisions");
+                            if (!divEl.isNull()) divisions = divEl.text().toInt();
+                        }
+                        if (el.tagName() == "forward") {
+                            int dur = el.firstChildElement("duration").text().toInt();
+                            currentTime += dur * 500 / divisions;
+                        }
+                        if (el.tagName() == "backup") {
+                            int dur = el.firstChildElement("duration").text().toInt();
+                            currentTime -= dur * 500 / divisions;
+                        }
+                        if (el.tagName() == "note") {
+                            bool isRest = !el.firstChildElement("rest").isNull();
+                            bool isChord = !el.firstChildElement("chord").isNull();
+                            int dur = el.firstChildElement("duration").text().toInt();
+                            int midiTicks = dur * 500 / divisions;
+
+                            if (!isRest) {
+                                // Get pitch
+                                QDomElement pitchEl = el.firstChildElement("pitch");
+                                int step = 0, octave = 0, alter = 0;
+                                if (!pitchEl.isNull()) {
+                                    QString s = pitchEl.firstChildElement("step").text();
+                                    octave = pitchEl.firstChildElement("octave").text().toInt();
+                                    alter = pitchEl.firstChildElement("alter").text().toInt();
+                                    static const int steps[] = {9,11,0,2,4,5,7}; // A=9,B=11,C=0,...
+                                    if (s.size() == 1) step = steps[s[0].unicode() - 'A'];
+                                }
+                                int midiPitch = (octave + 1) * 12 + step + alter;
+
+                                // Check for <tie type="stop"/>
+                                bool hasTieStop = false;
+                                QDomElement tie = el.firstChildElement("tie");
+                                while (!tie.isNull()) {
+                                    if (tie.attribute("type") == "stop")
+                                        hasTieStop = true;
+                                    tie = tie.nextSiblingElement("tie");
+                                }
+                                if (hasTieStop)
+                                    tieStops.push_back({currentTime, midiPitch});
+                            }
+                            if (!isChord) currentTime += midiTicks;
+                        }
+                        el = el.nextSiblingElement();
+                    }
+                    meas = meas.nextSiblingElement("measure");
+                }
+
+                // Debug: dump all tie stops
+                qDebug() << "=== TIE STOPS from MusicXML ===";
+                for (auto& ts : tieStops) {
+                    qDebug() << "  tie-stop: midiTime=" << ts.midiTime << "pitch=" << ts.pitch;
+                }
+
+                // Match tieStops to SVG notes by (midiTime, pitch)
+                int matched = 0;
+                for (size_t ni = 0; ni < notes.size(); ++ni) {
+                    auto& note = notes[ni];
+                    for (auto& ts : tieStops) {
+                        if (note.midiTime == ts.midiTime && note.pitch == ts.pitch) {
+                            note.tiedBack = true;
+                            matched++;
+                            qDebug() << "  MATCHED note[" << ni << "] midiTime=" << note.midiTime
+                                     << "pitch=" << note.pitch << "id=" << note.elementId;
+                            break;
+                        }
+                    }
+                }
+                qDebug() << "Tie detection:" << tieStops.size() << "tie-stops in XML,"
+                         << matched << "matched to" << notes.size() << "SVG notes";
+
+                // Also dump first 30 SVG notes with midiTime for comparison
+                qDebug() << "=== FIRST 30 SVG NOTES ===";
+                for (size_t ni = 0; ni < std::min(notes.size(), size_t(30)); ++ni) {
+                    qDebug() << "  note[" << ni << "] midiTime=" << notes[ni].midiTime
+                             << "midiDur=" << notes[ni].midiDur
+                             << "pitch=" << notes[ni].pitch
+                             << "tied=" << notes[ni].tiedBack
+                             << "id=" << notes[ni].elementId;
+                }
             }
         }
     }

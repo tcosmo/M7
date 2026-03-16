@@ -33,11 +33,13 @@ Verovio's `RenderToTimemap()` returns MEI internal element IDs which are **diffe
 
 In `renderAllPagesHtml()`, after rendering all SVG pages:
 
-1. Parse each rendered SVG for `<g class="note">` elements
-2. For each note, get its SVG element ID
-3. Call `GetMIDIValuesForElement(id)` to get its MIDI onset time
-4. Store `{qstamp, elementId}` where `qstamp = midiTime / 500.0` (Verovio uses 500 MIDI ticks per quarter note)
-5. Sort by qstamp
+1. Call `RenderToMIDI()` AFTER `RenderToSVG()` so MIDI data references the same IDs
+2. Parse each rendered SVG for `<g class="note">` elements
+3. For each note, get its SVG element ID
+4. Call `GetMIDIValuesForElement(id)` to get its MIDI onset time
+5. Store `{qstamp, elementId}` where `qstamp = midiTime / 500.0` (Verovio uses 500 MIDI ticks per quarter note)
+6. Filter out entries with empty element IDs (rests)
+7. Sort by qstamp
 
 This guarantees the timemap IDs match the SVG DOM exactly.
 
@@ -47,6 +49,10 @@ This guarantees the timemap IDs match the SVG DOM exactly.
 - **SyncTimer/MuseScore**: 480 ticks per quarter note
 - **Conversion**: `qstamp = verovioTick / 500.0`, then `musescoreTick = qstamp * 480`
 - `timemapAsJs()` outputs ticks as `qstamp * 480` for the JS side
+
+### Timemap injection
+
+The timemap JS array is sent to the web view 800ms after `setEngine()` to let the page fully load. A version counter (`m_timemapVersion`) ensures stale timers from previous `setEngine()` calls are cancelled.
 
 ## SyncTimer: Time → Tick
 
@@ -68,26 +74,50 @@ Beat ticks are computed as `beatIndex * 480` (480 per quarter note).
 
 1. **Binary search** the timemap for surrounding entries `lo` and `hi`
 2. **Find SVG elements** via `document.getElementById(timemap[lo].id)` and `timemap[hi].id`
-3. **Get x positions** via `getBoundingClientRect()` (live DOM queries — simple, always correct)
-4. **Interpolate x** between the two elements if they're in the same system:
-   ```
-   t = (tick - lo.tick) / (hi.tick - lo.tick)
-   x = x1 + (x2 - x1) * t
-   ```
-   If elements are in different systems, snap to `x1` (no cross-system interpolation)
-5. **Position cursor div** at interpolated x, spanning full system height from `system.getBoundingClientRect()`
+3. **Determine systems**: `e1.closest('.system')` and `e2.closest('.system')`
 
-### Cursor div
+### Three interpolation cases
+
+#### Same system (normal case)
+Both notes are in the same system. Linearly interpolate x between their positions:
+```
+t = (tick - lo.tick) / (hi.tick - lo.tick)
+x = x1 + (x2 - x1) * t
+```
+
+#### Cross-system transition (rests at system boundaries)
+Notes are in different systems. Split the interpolation into two halves:
+
+- **First half (f < 0.5)**: cursor is still in the old system, glides from the last note toward the **right edge** of the system. This handles trailing rests at the end of a system.
+  ```
+  x = lastNoteX + (rightEdge - lastNoteX) * (f * 2)
+  ```
+
+- **Second half (f ≥ 0.5)**: cursor switches to the new system, starts at the **left edge** and glides toward the first note. This handles leading rests at the beginning of a system.
+  ```
+  x = leftEdge + (firstNoteX - leftEdge) * ((f - 0.5) * 2)
+  ```
+
+#### End of piece
+When `lo === hi` (last entry), cursor stays at the last note position.
+
+### System height caching
+
+All system heights are measured **once at page load** (300ms after load, before any highlight rects exist) and stored in `_sysHeights`. During playback, only the `top` position is recomputed from the live bounding rect (it changes with scrolling). The height stays fixed, preventing jitter from highlight rects inflating the system bounds.
+
+### Cursor div properties
 
 - `position: absolute` (moves with document scroll)
 - `background: rgba(50, 100, 255, 0.35)` (semi-transparent blue, matching MuseScore)
 - `width: 4px`
-- `height: system.height`
+- `height: cached system height`
 - `z-index: 999` (above score content)
 
-### Rest handling
+## Tracking Button Connection
 
-Entries with empty element IDs (rests) are filtered out of the timemap at build time. During a rest, the binary search lands on the last note before the rest, and the cursor stays at that position.
+- Cursor only updates when `m_trackingAction->isChecked()` is true
+- Toggling tracking off calls `hideCursor()` in JS
+- Loading a new level hides the cursor and resets `syncTimer` to tick 0
 
 ## Latency Compensation
 
@@ -99,13 +129,21 @@ m_scoreWidget->setCursorTick(m_syncTimer->currentTick());
 m_syncTimer->setTime(adjusted); // restore
 ```
 
+## Rest Handling
+
+- Entries with empty element IDs (rests) are filtered out of the timemap at build time
+- During a rest **within** a system, the cursor stays at the last note's position (no timemap entry to move toward)
+- During rests **at system boundaries**, the cross-system interpolation handles smooth transitions (right edge → left edge)
+
 ## Comparison with MuseScore Cursor
 
 | Aspect | MuseScore | Verovio |
 |--------|-----------|---------|
 | Rendering | QPainter in paintEvent (synchronous) | HTML div via JS (async IPC) |
 | X interpolation | Between score segments in measure | Between timemap entries (SVG note elements) |
-| Y span | System staff bounds from Score DOM | System `getBoundingClientRect()` |
+| System transition | Jumps at system boundary | Smooth glide via right-edge/left-edge interpolation |
+| Y span | System staff bounds from Score DOM | System `getBoundingClientRect()` (cached height) |
 | Latency | None (same paint event) | ~80ms (compensated) |
-| Position source | Score segment canvas positions | SVG element bounding rects |
+| Position source | Score segment canvas positions | SVG element bounding rects (live DOM queries) |
 | Color | `QColor(50, 100, 255, 120)` | `rgba(50, 100, 255, 0.35)` |
+| Rest handling | Interpolates to barline position | Interpolates to system edge |

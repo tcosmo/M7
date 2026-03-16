@@ -1102,9 +1102,9 @@ void ScoreWidget::highlightNoteIds(const QStringList& ids, int voice, bool scrol
         .arg(escaped.join(','), cls);
     m_webView->page()->runJavaScript(js);
 
-    // Single-voice auto-scroll: triggered by highlight update
-    if (scroll && m_autoScroll && !ids.isEmpty()) {
-        m_webView->page()->runJavaScript(QStringLiteral("autoScrollSingle()"));
+    // Auto-scroll: check if any highlight is off-screen after updating
+    if (voice == 0 && m_autoScroll && !ids.isEmpty()) {
+        m_webView->page()->runJavaScript(QStringLiteral("autoScroll()"));
     }
 }
 

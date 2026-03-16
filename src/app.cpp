@@ -2825,8 +2825,10 @@ void App::keyPressEvent(QKeyEvent* event)
                         m_playAlongSynth->playNextNoteForVoice(vi);
                     }
                 }
-                QTimer::singleShot(0, this, [this, playedNoteIds]() {
-                    // Update highlights for all voices
+                QTimer::singleShot(0, this, [this]() {
+                    // Update highlights for all voices.
+                    // Voice 0 highlight triggers auto-scroll (matching MuseScore:
+                    // only voice 0 drives scrolling).
                     for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
                         auto& vv = m_vrvVoices[vi];
                         int idx = m_playAlongSynth->nextNoteIndex(vi);
@@ -2834,17 +2836,6 @@ void App::keyPressEvent(QKeyEvent* event)
                             m_scoreWidget->highlightNoteIds({vv.elementIds[idx]}, vi);
                         else
                             m_scoreWidget->highlightNoteIds({}, vi);
-                    }
-                    // Scroll based on PLAYED notes, not highlights
-                    if (!playedNoteIds.isEmpty()) {
-                        QStringList escaped;
-                        for (const auto& id : playedNoteIds) {
-                            QString e = id;
-                            e.replace('\'', "\\'");
-                            escaped << QStringLiteral("'%1'").arg(e);
-                        }
-                        m_scoreWidget->runWebJavaScript(
-                            QStringLiteral("autoScrollMulti([%1])").arg(escaped.join(',')));
                     }
                 });
             } else {
@@ -2855,9 +2846,9 @@ void App::keyPressEvent(QKeyEvent* event)
                     auto& vv = m_vrvVoices[0];
                     int idx = m_playAlongSynth->nextNoteIndex();
                     if (idx < static_cast<int>(vv.elementIds.size()))
-                        m_scoreWidget->highlightNoteIds({vv.elementIds[idx]}, 0, true);
+                        m_scoreWidget->highlightNoteIds({vv.elementIds[idx]}, 0);
                     else
-                        m_scoreWidget->highlightNoteIds({}, 0, true);
+                        m_scoreWidget->highlightNoteIds({}, 0);
                 });
             }
         } else if (isLetter && !event->isAutoRepeat()) {

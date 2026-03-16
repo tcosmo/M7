@@ -513,7 +513,7 @@ void App::setupUI()
             for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
                 auto& vv = m_vrvVoices[vi];
                 if (!vv.elementIds.empty())
-                    m_scoreWidget->highlightNoteIds({vv.elementIds[0]}, vi);
+                    m_scoreWidget->overlayHighlight(vi, vv.elementIds[0]);
             }
             m_scoreWidget->runWebJavaScript("resetScroll()");
         } else {
@@ -633,7 +633,7 @@ void App::setupToolbar()
             for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
                 auto& vv = m_vrvVoices[vi];
                 if (!vv.elementIds.empty())
-                    m_scoreWidget->highlightNoteIds({vv.elementIds[0]}, vi);
+                    m_scoreWidget->overlayHighlight(vi, vv.elementIds[0]);
             }
         } else if (m_multiVoice) {
             for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi)
@@ -2726,7 +2726,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                     for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
                         auto& vv = m_vrvVoices[vi];
                         if (!vv.elementIds.empty()) {
-                            m_scoreWidget->highlightNoteIds({vv.elementIds[0]}, vi);
+                            m_scoreWidget->overlayHighlight(vi, vv.elementIds[0]);
                         }
                     }
                 });
@@ -2971,48 +2971,38 @@ void App::keyPressEvent(QKeyEvent* event)
                 bool isLeft = leftKeys.contains(ch);
                 bool isRight = rightKeys.contains(ch);
 
-                // Collect IDs of notes about to be played (before advancing)
-                QStringList playedNoteIds;
                 for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi) {
                     const QString& zone = m_voiceKeyZones[vi];
                     bool match = (zone == "all")
                               || (zone == "left" && isLeft)
                               || (zone == "right" && isRight);
                     if (match) {
-                        // Capture the note ID we're about to play
-                        int idx = m_playAlongSynth->nextNoteIndex(vi);
-                        if (vi < static_cast<int>(m_vrvVoices.size())
-                            && idx < static_cast<int>(m_vrvVoices[vi].elementIds.size()))
-                            playedNoteIds << m_vrvVoices[vi].elementIds[idx];
                         m_voiceKeysHeld[vi]++;
                         m_playAlongSynth->playNextNoteForVoice(vi);
                     }
                 }
-                QTimer::singleShot(0, this, [this]() {
-                    // Update highlights for all voices.
-                    // Voice 0 highlight triggers auto-scroll (matching MuseScore:
-                    // only voice 0 drives scrolling).
-                    for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
-                        auto& vv = m_vrvVoices[vi];
-                        int idx = m_playAlongSynth->nextNoteIndex(vi);
-                        if (idx < static_cast<int>(vv.elementIds.size()))
-                            m_scoreWidget->highlightNoteIds({vv.elementIds[idx]}, vi);
-                        else
-                            m_scoreWidget->highlightNoteIds({}, vi);
-                    }
-                });
+                // Update highlights via QPainter overlay (synchronous, no IPC)
+                for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
+                    auto& vv = m_vrvVoices[vi];
+                    int idx = m_playAlongSynth->nextNoteIndex(vi);
+                    if (idx < static_cast<int>(vv.elementIds.size()))
+                        m_scoreWidget->overlayHighlight(vi, vv.elementIds[idx]);
+                    else
+                        m_scoreWidget->overlayClearHighlight(vi);
+                }
+                // Auto-scroll still via JS (not latency-critical)
+                // auto-scroll triggered by overlayHighlight
             } else {
                 // Single-voice Verovio
                 m_keysHeld++;
                 m_playAlongSynth->playNextNote();
-                QTimer::singleShot(0, this, [this]() {
-                    auto& vv2 = m_vrvVoices[0];
-                    int idx = m_playAlongSynth->nextNoteIndex();
-                    if (idx < static_cast<int>(vv2.elementIds.size()))
-                        m_scoreWidget->highlightNoteIds({vv2.elementIds[idx]}, 0);
-                    else
-                        m_scoreWidget->highlightNoteIds({}, 0);
-                });
+                auto& vv = m_vrvVoices[0];
+                int idx = m_playAlongSynth->nextNoteIndex();
+                if (idx < static_cast<int>(vv.elementIds.size()))
+                    m_scoreWidget->overlayHighlight(0, vv.elementIds[idx]);
+                else
+                    m_scoreWidget->overlayClearHighlight(0);
+                // auto-scroll triggered by overlayHighlight
             }
         } else if (isLetter && !event->isAutoRepeat()) {
             if (m_multiVoice) {

@@ -10,6 +10,10 @@
 #include <QFile>
 #include <QDir>
 #include <QTimer>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QHash>
 #include <QPaintEvent>
 #include <QResizeEvent>
 #include <QMouseEvent>
@@ -40,6 +44,68 @@ using namespace mu::engraving::rendering;
 using namespace muse::draw;
 
 namespace scoretracker {
+
+// --- WebScoreOverlay ---
+
+WebScoreOverlay::WebScoreOverlay(QWidget* parent)
+    : QWidget(parent)
+{
+    setAttribute(Qt::WA_TransparentForMouseEvents);
+    setAttribute(Qt::WA_TranslucentBackground);
+    setAttribute(Qt::WA_NoSystemBackground);
+    setStyleSheet("background: transparent;");
+}
+
+void WebScoreOverlay::setNotePositions(const QHash<QString, QRectF>& positions)
+{
+    m_notePositions = positions;
+    update();
+}
+
+void WebScoreOverlay::setHighlight(int voice, const QString& elementId)
+{
+    if (voice >= 0 && voice < 2) {
+        m_hlId[voice] = elementId;
+        update();
+    }
+}
+
+void WebScoreOverlay::clearHighlight(int voice)
+{
+    if (voice >= 0 && voice < 2) {
+        m_hlId[voice].clear();
+        update();
+    }
+}
+
+void WebScoreOverlay::setScrollY(double sy)
+{
+    m_scrollY = sy;
+    update();
+}
+
+void WebScoreOverlay::paintEvent(QPaintEvent*)
+{
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    for (int v = 0; v < 2; ++v) {
+        if (m_hlId[v].isEmpty()) continue;
+        auto it = m_notePositions.find(m_hlId[v]);
+        if (it == m_notePositions.end()) continue;
+        QRectF r = it.value();
+        // Convert from document coords to widget coords
+        r.moveTop(r.top() - m_scrollY);
+        // Add padding
+        double px = 3, py = 4;
+        QRectF padded(r.x() - px, r.y() - py, r.width() + px * 2, r.height() + py * 2);
+
+        QColor color = (v == 0) ? QColor(50, 120, 255) : QColor(180, 80, 220);
+        p.setPen(QPen(color, 2.5));
+        p.setBrush(QColor(color.red(), color.green(), color.blue(), 45));
+        p.drawRoundedRect(padded, 3, 3);
+    }
+}
 
 static const int PAGE_GAP = 10; // pixels between pages
 
@@ -820,6 +886,17 @@ void ScoreWidget::setEngine(scoretracker::ScoreEngine* engine)
         m_webView->show();
         m_webView->raise();
         m_canvas->hide();
+
+        // Create overlay for QPainter-based highlights
+        if (!m_overlay) {
+            m_overlay = new WebScoreOverlay(this);
+        }
+        m_overlay->setGeometry(0, 0, width(), height());
+        m_overlay->show();
+        m_overlay->raise();
+
+        // Fetch note positions after page loads
+        QTimer::singleShot(1200, this, [this]() { fetchNotePositions(); });
     } else {
         if (m_webView) m_webView->hide();
         m_canvas->show();
@@ -920,6 +997,9 @@ void ScoreWidget::resizeEvent(QResizeEvent* event)
 
     if (m_webView && m_webView->isVisible()) {
         m_webView->setGeometry(0, 0, width(), height());
+        if (m_overlay) m_overlay->setGeometry(0, 0, width(), height());
+        // Refetch positions after resize (SVG rescales via CSS)
+        QTimer::singleShot(300, this, [this]() { fetchNotePositions(); });
         return;
     }
     zoomToFit();
@@ -1095,6 +1175,63 @@ void ScoreWidget::setCursorTick(int tick)
     }
     m_webView->page()->runJavaScript(
         QStringLiteral("setCursorTick(%1)").arg(tick));
+}
+
+void ScoreWidget::overlayHighlight(int voice, const QString& elementId)
+{
+    if (!m_overlay) return;
+    m_overlay->setHighlight(voice, elementId);
+    // Sync scroll position and trigger auto-scroll for the highlighted note
+    if (m_webView) {
+        // Query scrollY and auto-scroll in one JS call
+        QString eid = elementId;
+        eid.replace('\'', "\\'");
+        QString cls = (voice == 0) ? QStringLiteral("highlight-v0") : QStringLiteral("highlight-v1");
+        // Still use JS highlights for auto-scroll detection (but they're invisible now)
+        QString js = QStringLiteral(
+            "highlightNotes(['%1'],'%2');autoScroll();window.scrollY").arg(eid, cls);
+        m_webView->page()->runJavaScript(js,
+            [this](const QVariant& v) {
+                if (m_overlay) m_overlay->setScrollY(v.toDouble());
+            });
+    }
+}
+
+void ScoreWidget::overlayClearHighlight(int voice)
+{
+    if (m_overlay) m_overlay->clearHighlight(voice);
+}
+
+void ScoreWidget::fetchNotePositions()
+{
+    if (!m_webView || !m_overlay) return;
+    QString js = QStringLiteral(
+        "(function() {"
+        "  var r = {};"
+        "  document.querySelectorAll('g.note[id]').forEach(function(el) {"
+        "    var bb = el.getBoundingClientRect();"
+        "    r[el.id] = [bb.left + window.scrollX, bb.top + window.scrollY, bb.width, bb.height];"
+        "  });"
+        "  return JSON.stringify(r);"
+        "})()");
+    m_webView->page()->runJavaScript(js, [this](const QVariant& result) {
+        QJsonDocument doc = QJsonDocument::fromJson(result.toString().toUtf8());
+        if (!doc.isObject()) return;
+        QJsonObject obj = doc.object();
+        QHash<QString, QRectF> positions;
+        for (auto it = obj.begin(); it != obj.end(); ++it) {
+            QJsonArray arr = it.value().toArray();
+            if (arr.size() == 4) {
+                positions[it.key()] = QRectF(
+                    arr[0].toDouble(), arr[1].toDouble(),
+                    arr[2].toDouble(), arr[3].toDouble());
+            }
+        }
+        if (m_overlay) {
+            m_overlay->setNotePositions(positions);
+            qDebug() << "Overlay: cached" << positions.size() << "note positions";
+        }
+    });
 }
 
 void ScoreWidget::runWebJavaScript(const QString& js)

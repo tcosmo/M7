@@ -27,6 +27,23 @@ class ScoreEngine;
 
 namespace scoretracker {
 
+class WebScoreOverlay : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit WebScoreOverlay(QWidget* parent = nullptr);
+    void setNotePositions(const QHash<QString, QRectF>& positions);
+    void setHighlight(int voice, const QString& elementId);
+    void clearHighlight(int voice);
+    void setScrollY(double sy);
+protected:
+    void paintEvent(QPaintEvent* event) override;
+private:
+    QHash<QString, QRectF> m_notePositions;
+    QString m_hlId[2];
+    double m_scrollY = 0;
+};
+
 class ScoreCanvas : public QWidget
 {
     Q_OBJECT
@@ -164,6 +181,9 @@ public:
     void highlightNoteIds(const QStringList& ids, int voice = 0, bool scroll = false);
     void runWebJavaScript(const QString& js);
     void setCursorTick(int tick);
+    void overlayHighlight(int voice, const QString& elementId);
+    void overlayClearHighlight(int voice);
+    void fetchNotePositions();
 
 signals:
     void zoomChanged(double zoom);
@@ -184,7 +204,8 @@ private:
 
     ScoreCanvas* m_canvas = nullptr;
     QWebEngineView* m_webView = nullptr;
-    int m_timemapVersion = 0; // increments on each setEngine to cancel stale timers
+    WebScoreOverlay* m_overlay = nullptr;
+    int m_timemapVersion = 0;
     TriggerLineOverlay* m_triggerOverlay = nullptr;
     int m_overlayWidth = 0;
     bool m_autoScroll = true;

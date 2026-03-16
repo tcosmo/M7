@@ -56,7 +56,7 @@ void SyncTimer::setMeasureIndices(const std::vector<int>& indices)
 void SyncTimer::setTime(double seconds)
 {
     m_lastTime = seconds;
-    if (!m_score || m_beatTimes.empty() || m_beatTicks.empty()) return;
+    if ((!m_score && !m_engine) || m_beatTimes.empty() || m_beatTicks.empty()) return;
 
     // If time is before the first beat, snap cursor to the first beat
     if (seconds < m_beatTimes.front()) {

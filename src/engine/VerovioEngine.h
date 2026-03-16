@@ -46,6 +46,11 @@ public:
     bool usesWebRendering() const override { return true; }
     QString renderAllPagesHtml() const override;
 
+    // Get the element ID closest to the given tick (for cursor positioning)
+    QString elementIdAtTick(int tick) const;
+    // Get the timemap as a JS array string for embedding in web view
+    QString timemapAsJs() const;
+
     // Access the SVGs rendered during renderAllPagesHtml (for getNotesForPart)
     const QStringList& lastRenderedSvgs() const { return m_renderedSvgs; }
 
@@ -104,7 +109,7 @@ private:
         double qstamp;       // quarter-note position
         QString elementId;   // XML element ID
     };
-    std::vector<TimemapEntry> m_timemap;
+    mutable std::vector<TimemapEntry> m_timemap;
     int m_measCount = 0;
 };
 

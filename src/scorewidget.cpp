@@ -1,5 +1,6 @@
 #include "scorewidget.h"
 #include "engine/ScoreEngine.h"
+#include "engine/VerovioEngine.h"
 #include "syncmode.h"
 #include "theme.h"
 
@@ -8,6 +9,7 @@
 #include <QWebEnginePage>
 #include <QFile>
 #include <QDir>
+#include <QTimer>
 #include <QPaintEvent>
 #include <QResizeEvent>
 #include <QMouseEvent>
@@ -801,6 +803,17 @@ void ScoreWidget::setEngine(scoretracker::ScoreEngine* engine)
         }
         m_webView->load(QUrl::fromLocalFile(tmpPath));
 
+        // Send timemap to web view after page loads (for cursor)
+        auto* vrvEngine = dynamic_cast<scoretracker::VerovioEngine*>(engine);
+        if (vrvEngine) {
+            QString tmJs = vrvEngine->timemapAsJs();
+            // Inject after a short delay to let the page load
+            QTimer::singleShot(500, this, [this, tmJs]() {
+                if (m_webView && m_webView->isVisible())
+                    m_webView->page()->runJavaScript(tmJs);
+            });
+        }
+
         m_webView->setGeometry(0, 0, width(), height());
         m_webView->show();
         m_webView->raise();
@@ -1068,6 +1081,18 @@ void ScoreWidget::ensureHighlightVisible()
     } else if (cr.right() > scrollX + vpW - margin) {
         horizontalScrollBar()->setValue(cr.right() - vpW + margin);
     }
+}
+
+void ScoreWidget::setCursorTick(int tick)
+{
+    if (!m_webView || !m_webView->isVisible()) return;
+    static int dbgCount = 0;
+    if (dbgCount < 10) {
+        qDebug() << "setCursorTick:" << tick << "webView visible:" << m_webView->isVisible();
+        dbgCount++;
+    }
+    m_webView->page()->runJavaScript(
+        QStringLiteral("setCursorTick(%1)").arg(tick));
 }
 
 void ScoreWidget::runWebJavaScript(const QString& js)

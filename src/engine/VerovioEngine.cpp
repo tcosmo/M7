@@ -206,6 +206,37 @@ QString VerovioEngine::renderAllPagesHtml() const
         m_renderedSvgs.append(svgStr);
     }
 
+    // Build cursor timemap from SVG notes (RenderToTimemap IDs don't match SVG IDs).
+    // Parse all note elements from the rendered SVGs, get their MIDI times.
+    m_timemap.clear();
+    for (const auto& svgStr : m_renderedSvgs) {
+        QDomDocument svgDoc;
+        if (!svgDoc.setContent(svgStr)) continue;
+        QDomNodeList gs = svgDoc.elementsByTagName("g");
+        for (int gi = 0; gi < gs.count(); ++gi) {
+            QDomElement g = gs.at(gi).toElement();
+            if (g.attribute("class") != "note") continue;
+            QString id = g.attribute("id");
+            if (id.isEmpty()) continue;
+            try {
+                std::string jsonStr = m_toolkit->GetMIDIValuesForElement(id.toStdString());
+                QJsonDocument jdoc = QJsonDocument::fromJson(QByteArray::fromStdString(jsonStr));
+                if (jdoc.isObject()) {
+                    int midiTime = jdoc.object().value("time").toInt(-1);
+                    if (midiTime >= 0) {
+                        TimemapEntry entry;
+                        entry.qstamp = midiTime / 500.0; // MIDI ticks to quarter notes (500 ticks/quarter in Verovio)
+                        entry.elementId = id;
+                        m_timemap.push_back(entry);
+                    }
+                }
+            } catch (...) {}
+        }
+    }
+    std::sort(m_timemap.begin(), m_timemap.end(),
+              [](const TimemapEntry& a, const TimemapEntry& b) { return a.qstamp < b.qstamp; });
+    qDebug() << "renderAllPagesHtml: pages=" << n << "cursor timemap=" << m_timemap.size() << "entries";
+
     // Build HTML by concatenation — NOT QString::arg() —
     // because Verovio SVG contains '%' characters that arg() would corrupt.
     QString html;
@@ -276,6 +307,51 @@ QString VerovioEngine::renderAllPagesHtml() const
         "  window.scrollTo({top: Math.max(0, window.scrollY+sr.top-10), behavior:'smooth'});\n"
         "}\n"
         "function resetScroll() { window.scrollTo(0,0); }\n"
+        "// Playback cursor: blue vertical line spanning the system.\n"
+        "// Live DOM queries for element positions (simple, always correct).\n"
+        "var _cursorEl = null;\n"
+        "var _timemap = []; // [{tick, id}, ...] sorted by tick\n"
+        "function setTimemap(tm) { _timemap = tm; }\n"
+        "function setCursorTick(tick) {\n"
+        "  if (!_timemap.length) return;\n"
+        "  if (!_cursorEl) {\n"
+        "    _cursorEl = document.createElement('div');\n"
+        "    _cursorEl.style.cssText = 'position:absolute;background:rgba(50,100,255,0.35);pointer-events:none;z-index:999;';\n"
+        "    document.body.appendChild(_cursorEl);\n"
+        "  }\n"
+        "  // Binary search for surrounding entries\n"
+        "  var lo = 0, hi = _timemap.length - 1;\n"
+        "  while (lo < hi - 1) { var m = (lo+hi)>>1; if (_timemap[m].tick <= tick) lo = m; else hi = m; }\n"
+        "  var e1 = document.getElementById(_timemap[lo].id);\n"
+        "  if (!e1) { _cursorEl.style.display='none'; return; }\n"
+        "  var r1 = e1.getBoundingClientRect();\n"
+        "  var x1 = r1.left + r1.width/2;\n"
+        "  var x = x1;\n"
+        "  // Interpolate with next entry if in same system\n"
+        "  if (lo !== hi) {\n"
+        "    var e2 = document.getElementById(_timemap[hi].id);\n"
+        "    if (e2) {\n"
+        "      var s1 = e1.closest('.system'), s2 = e2.closest('.system');\n"
+        "      if (s1 && s1 === s2) {\n"
+        "        var r2 = e2.getBoundingClientRect();\n"
+        "        var t = (_timemap[hi].tick - _timemap[lo].tick);\n"
+        "        if (t > 0) {\n"
+        "          var f = Math.max(0, Math.min(1, (tick - _timemap[lo].tick) / t));\n"
+        "          x = x1 + (r2.left + r2.width/2 - x1) * f;\n"
+        "        }\n"
+        "      }\n"
+        "    }\n"
+        "  }\n"
+        "  var sys = e1.closest('.system');\n"
+        "  if (!sys) { _cursorEl.style.display='none'; return; }\n"
+        "  var sr = sys.getBoundingClientRect();\n"
+        "  _cursorEl.style.left = (x - 2 + window.scrollX) + 'px';\n"
+        "  _cursorEl.style.top = (sr.top + window.scrollY) + 'px';\n"
+        "  _cursorEl.style.width = '4px';\n"
+        "  _cursorEl.style.height = sr.height + 'px';\n"
+        "  _cursorEl.style.display = 'block';\n"
+        "}\n"
+        "function hideCursor() { if (_cursorEl) _cursorEl.style.display='none'; }\n"
         "</script>\n"
         "</head>\n<body>\n");
 
@@ -538,13 +614,49 @@ void VerovioEngine::buildTimemap()
         if (!onArr.isEmpty())
             entry.elementId = onArr.first().toString();
 
-        m_timemap.push_back(entry);
+        // Only store entries with a valid element ID (skip rests)
+        if (!entry.elementId.isEmpty())
+            m_timemap.push_back(entry);
     }
 
     std::sort(m_timemap.begin(), m_timemap.end(),
               [](const TimemapEntry& a, const TimemapEntry& b) {
                   return a.qstamp < b.qstamp;
               });
+}
+
+QString VerovioEngine::timemapAsJs() const
+{
+    qDebug() << "timemapAsJs: m_timemap has" << m_timemap.size() << "entries";
+    if (m_timemap.empty()) return QStringLiteral("setTimemap([]);");
+
+    QString js = "setTimemap([";
+    for (size_t i = 0; i < m_timemap.size(); ++i) {
+        if (i > 0) js += ",";
+        int tick = static_cast<int>(m_timemap[i].qstamp * 480.0);
+        js += QStringLiteral("{tick:%1,id:'%2'}").arg(tick).arg(m_timemap[i].elementId);
+    }
+    js += "]);";
+
+    // Debug: show first 3 entries
+    for (size_t i = 0; i < std::min(m_timemap.size(), size_t(3)); ++i) {
+        qDebug() << "  timemap[" << i << "] qstamp=" << m_timemap[i].qstamp
+                 << "tick=" << int(m_timemap[i].qstamp * 480)
+                 << "id=" << m_timemap[i].elementId;
+    }
+    return js;
+}
+
+QString VerovioEngine::elementIdAtTick(int tick) const
+{
+    if (m_timemap.empty()) return QString();
+    double qstamp = tick / 480.0;
+    int idx = 0;
+    for (int i = 0; i < static_cast<int>(m_timemap.size()); ++i) {
+        if (m_timemap[i].qstamp <= qstamp) idx = i;
+        else break;
+    }
+    return m_timemap[idx].elementId;
 }
 
 std::vector<VerovioEngine::NoteInfo> VerovioEngine::getNotesForPart(
@@ -636,9 +748,6 @@ std::vector<VerovioEngine::NoteInfo> VerovioEngine::getNotesForPart(
             origIdx = partIndex; // no filtering, direct mapping
         }
 
-        qDebug() << "Tie lookup: partIndex=" << partIndex << "origIdx=" << origIdx
-                 << "partId=" << (origIdx >= 0 && origIdx < allPartIds.size()
-                                  ? allPartIds[origIdx] : "??");
 
         if (origIdx >= 0 && origIdx < allPartIds.size()) {
             // Find the <part> element
@@ -709,37 +818,16 @@ std::vector<VerovioEngine::NoteInfo> VerovioEngine::getNotesForPart(
                     meas = meas.nextSiblingElement("measure");
                 }
 
-                // Debug: dump all tie stops
-                qDebug() << "=== TIE STOPS from MusicXML ===";
-                for (auto& ts : tieStops) {
-                    qDebug() << "  tie-stop: midiTime=" << ts.midiTime << "pitch=" << ts.pitch;
-                }
-
                 // Match tieStops to SVG notes by (midiTime, pitch)
                 int matched = 0;
-                for (size_t ni = 0; ni < notes.size(); ++ni) {
-                    auto& note = notes[ni];
+                for (auto& note : notes) {
                     for (auto& ts : tieStops) {
                         if (note.midiTime == ts.midiTime && note.pitch == ts.pitch) {
                             note.tiedBack = true;
                             matched++;
-                            qDebug() << "  MATCHED note[" << ni << "] midiTime=" << note.midiTime
-                                     << "pitch=" << note.pitch << "id=" << note.elementId;
                             break;
                         }
                     }
-                }
-                qDebug() << "Tie detection:" << tieStops.size() << "tie-stops in XML,"
-                         << matched << "matched to" << notes.size() << "SVG notes";
-
-                // Also dump first 30 SVG notes with midiTime for comparison
-                qDebug() << "=== FIRST 30 SVG NOTES ===";
-                for (size_t ni = 0; ni < std::min(notes.size(), size_t(30)); ++ni) {
-                    qDebug() << "  note[" << ni << "] midiTime=" << notes[ni].midiTime
-                             << "midiDur=" << notes[ni].midiDur
-                             << "pitch=" << notes[ni].pitch
-                             << "tied=" << notes[ni].tiedBack
-                             << "id=" << notes[ni].elementId;
                 }
             }
         }

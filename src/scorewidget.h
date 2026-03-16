@@ -163,6 +163,7 @@ public:
     void setPlayModeActive(bool active);
     void highlightNoteIds(const QStringList& ids, int voice = 0, bool scroll = false);
     void runWebJavaScript(const QString& js);
+    void setCursorTick(int tick);
 
 signals:
     void zoomChanged(double zoom);

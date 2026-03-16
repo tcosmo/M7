@@ -1227,8 +1227,16 @@ void App::onPositionChanged(double seconds)
         .arg(formatTime(playerDuration())));
 
     // Update sync timer -> cursor if tracking is on, auto-scroll, or play mode
-    if (m_trackingAction->isChecked() || m_trackingSettings->autoScrollEnabled() || m_playModeActive) {
+    bool shouldTrack = m_trackingAction->isChecked() || m_trackingSettings->autoScrollEnabled() || m_playModeActive;
+    if (shouldTrack) {
         m_syncTimer->setTime(adjusted);
+        // Verovio: send tick to web view for cursor overlay
+        // Add small forward compensation for web view IPC latency
+        if (m_useVerovio) {
+            m_syncTimer->setTime(adjusted + 0.08);
+            m_scoreWidget->setCursorTick(m_syncTimer->currentTick());
+            m_syncTimer->setTime(adjusted); // restore actual position
+        }
     }
 
     // Play mode: auto-advance past tied notes when cursor reaches them
@@ -2989,19 +2997,8 @@ void App::keyPressEvent(QKeyEvent* event)
                 });
             } else {
                 // Single-voice Verovio
-                int beforeIdx = m_playAlongSynth->nextNoteIndex();
                 m_keysHeld++;
                 m_playAlongSynth->playNextNote();
-                int afterIdx = m_playAlongSynth->nextNoteIndex();
-                auto& vv = m_vrvVoices[0];
-                // Debug: show what we played and where we landed
-                QString beforeId = (beforeIdx < static_cast<int>(vv.elementIds.size()))
-                    ? vv.elementIds[beforeIdx] : "END";
-                QString afterId = (afterIdx < static_cast<int>(vv.elementIds.size()))
-                    ? vv.elementIds[afterIdx] : "END";
-                qDebug() << "PLAY: idx" << beforeIdx << "->" << afterIdx
-                         << "(skipped" << (afterIdx - beforeIdx - 1) << "tied)"
-                         << "next=" << afterId;
                 QTimer::singleShot(0, this, [this]() {
                     auto& vv2 = m_vrvVoices[0];
                     int idx = m_playAlongSynth->nextNoteIndex();

@@ -828,12 +828,11 @@ bool App::loadScore(const QString& musicXmlPath)
     if (m_useVerovio) {
         auto engine = std::make_unique<scoretracker::VerovioEngine>();
 
-        // pageWidth controls measures per system. MuseScore fits ~8 measures at
-        // 8.5" / 0.046" spatium ≈ 185 spatiums wide. At scale=40, pageWidth=5500
-        // gives similar density. CSS width:100% scales SVG to viewport.
-        double dpi = engine->internalDPI();
-        engine->setPageSizeInches(5500.0 / dpi, 100.0);
-        engine->setMarginsInches(0.20, 0.20, 1.0, 1.0);
+        // Set Verovio pageWidth directly in Verovio units (bypasses DPI calc).
+        // Default is 2100 (≈A4 width). Wider = more measures per system.
+        // CSS width:100% scales the SVG to fit the viewport.
+        engine->setPageWidthDirect(3600);
+        engine->setMarginsInches(0.20, 0.20, 0.6, 0.6);
         engine->setSpatiumInches(0.046);
 
         if (!engine->loadMusicXML(musicXmlPath)) {

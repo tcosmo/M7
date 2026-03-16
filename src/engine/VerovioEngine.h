@@ -32,6 +32,9 @@ public:
     PartInfo partInfo(int index) const override;
     void setPartVisible(int index, bool visible) override;
 
+    // Set page width directly in Verovio units (default 2100 ≈ A4 width)
+    void setPageWidthDirect(int vrvUnits) { m_pageWidthOverride = vrvUnits; }
+
     // Load with specific parts in a specific order (1-based part numbers)
     void selectParts(const QList<int>& partNumbers);
 
@@ -66,6 +69,7 @@ private:
     QString m_musicXmlData; // raw XML content for part filtering
 
     double m_pageWidthIn = 8.5;
+    int m_pageWidthOverride = 0; // direct Verovio units, bypasses DPI calc
     double m_pageHeightIn = 11.0;
     double m_marginTop = 0.39;
     double m_marginBottom = 0.79;

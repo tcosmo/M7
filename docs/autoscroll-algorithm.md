@@ -1,28 +1,20 @@
 # Auto-Scroll Algorithm
 
-## "Keep All Visible" Algorithm
+## Simple Forward-Only Scroll
 
-Simple rule: **only scroll when a highlighted note is actually off-screen.**
+### Rule
 
-### How it works
+Only **voice 0** drives scrolling. When voice 0's highlight goes **below the viewport**, scroll it to the top. Never scroll up.
 
-1. After any note advance (any voice), gather all highlight rectangles (`.hl-v0`, `.hl-v1`)
-2. Compute their combined bounding box in viewport coordinates
-3. **All visible** (top ≥ margin AND bottom ≤ viewport - margin) → **do nothing**
-4. **Any highlight off-screen** → scroll so the topmost highlight is at `margin` from the top
-5. Smooth scroll animation
+### Algorithm
 
-### Why this works
+1. Get voice 0's highlight bounding rect
+2. If `bottom <= viewport height` → **do nothing** (note is visible)
+3. If `bottom > viewport height` → scroll so note's top is at 10px from viewport top
 
-- **Minimal scrolling**: only scrolls when actually necessary (something went off-screen)
-- **Multi-voice friendly**: considers ALL voices, not just one. Both voices stay visible as long as they fit
-- **No jitter**: won't scroll at system breaks if everything is still on screen
-- **Naturally handles single voice**: with one highlight, it simply keeps that one visible
-- **Shows maximum context**: by placing the topmost note near the top after scroll, upcoming content is maximized
+### That's it
 
-### Parameters
-- `margin` = 50px breathing room from viewport edges
-
-### Trigger
-- Called when voice 0 highlight updates (every note advance for voice 0)
-- Voice 1 highlight updates don't trigger scroll checks (voice 0 is typically the lead voice)
+- No trigger line, no target line, no comfort zone
+- No multi-voice logic
+- Never scrolls up — only forward when the note leaves the bottom
+- ~5 lines of JavaScript

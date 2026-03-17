@@ -869,17 +869,19 @@ void ScoreWidget::setEngine(scoretracker::ScoreEngine* engine)
         }
         m_webView->load(QUrl::fromLocalFile(tmpPath));
 
-        // Send timemap to web view after page loads (for cursor)
+        // Send timemap + fetch positions after page finishes loading
         auto* vrvEngine = dynamic_cast<scoretracker::VerovioEngine*>(engine);
         if (vrvEngine) {
             QString tmJs = vrvEngine->timemapAsJs();
             int ver = ++m_timemapVersion;
-            // Inject after delay; version check cancels stale timers
-            QTimer::singleShot(800, this, [this, tmJs, ver]() {
-                if (ver != m_timemapVersion) return; // stale
-                if (m_webView && m_webView->isVisible())
+            auto conn = std::make_shared<QMetaObject::Connection>();
+            *conn = connect(m_webView->page(), &QWebEnginePage::loadFinished, this,
+                [this, tmJs, ver, conn](bool ok) {
+                    disconnect(*conn);
+                    if (!ok || ver != m_timemapVersion) return;
                     m_webView->page()->runJavaScript(tmJs);
-            });
+                    fetchNotePositions();
+                });
         }
 
         m_webView->setGeometry(0, 0, width(), height());
@@ -890,13 +892,21 @@ void ScoreWidget::setEngine(scoretracker::ScoreEngine* engine)
         // Create overlay for QPainter-based highlights
         if (!m_overlay) {
             m_overlay = new WebScoreOverlay(this);
+            // Poll scroll position to keep overlay in sync with web view scrolling
+            auto* scrollTimer = new QTimer(m_overlay);
+            connect(scrollTimer, &QTimer::timeout, this, [this]() {
+                if (m_webView && m_overlay && m_webView->isVisible()) {
+                    m_webView->page()->runJavaScript(QStringLiteral("window.scrollY"),
+                        [this](const QVariant& v) {
+                            if (m_overlay) m_overlay->setScrollY(v.toDouble());
+                        });
+                }
+            });
+            scrollTimer->start(50); // 20fps scroll sync
         }
         m_overlay->setGeometry(0, 0, width(), height());
         m_overlay->show();
         m_overlay->raise();
-
-        // Fetch note positions after page loads
-        QTimer::singleShot(1200, this, [this]() { fetchNotePositions(); });
     } else {
         if (m_webView) m_webView->hide();
         m_canvas->show();

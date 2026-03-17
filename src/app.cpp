@@ -514,8 +514,11 @@ void App::setupUI()
                 auto& vv = m_vrvVoices[vi];
                 if (!vv.elementIds.empty())
                     m_scoreWidget->overlayHighlight(vi, vv.elementIds[0]);
+                else
+                    m_scoreWidget->overlayClearHighlight(vi);
             }
             m_scoreWidget->runWebJavaScript("resetScroll()");
+            m_scoreWidget->setCursorTick(0);
         } else {
             m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
         }
@@ -545,7 +548,18 @@ void App::setupUI()
         }
         // Reset tracker and synth to beginning
         m_playAlongSynth->resetPosition();
-        if (m_multiVoice) {
+        m_keysHeld = 0;
+        if (m_useVerovio && !m_vrvVoices.empty()) {
+            for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
+                auto& vv = m_vrvVoices[vi];
+                if (!vv.elementIds.empty())
+                    m_scoreWidget->overlayHighlight(vi, vv.elementIds[0]);
+                else
+                    m_scoreWidget->overlayClearHighlight(vi);
+            }
+            m_scoreWidget->runWebJavaScript("resetScroll()");
+            m_scoreWidget->setCursorTick(0);
+        } else if (m_multiVoice) {
             for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi)
                 m_voiceKeysHeld[vi] = 0;
             if (m_playAlongSynth->voiceCount() > 0)
@@ -771,35 +785,6 @@ void App::setupToolbar()
 
     m_toolbar->addSeparator();
 
-    auto* zoomOutAction = m_toolbar->addAction("-");
-    zoomOutAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus));
-    connect(zoomOutAction, &QAction::triggered, m_scoreWidget, &ScoreWidget::zoomOut);
-    m_toolbar->widgetForAction(zoomOutAction)->setCursor(Qt::PointingHandCursor);
-
-    m_zoomLabel = new QLabel("150%", this);
-    m_zoomLabel->setMinimumWidth(50);
-    m_zoomLabel->setAlignment(Qt::AlignCenter);
-    m_toolbar->addWidget(m_zoomLabel);
-
-    auto* zoomInAction = m_toolbar->addAction("+");
-    zoomInAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Equal));
-    connect(zoomInAction, &QAction::triggered, m_scoreWidget, &ScoreWidget::zoomIn);
-    m_toolbar->widgetForAction(zoomInAction)->setCursor(Qt::PointingHandCursor);
-
-    auto* fitButton = new QPushButton("Fit", this);
-    fitButton->setFlat(true);
-    fitButton->setCursor(Qt::PointingHandCursor);
-    fitButton->setStyleSheet("QPushButton:pressed { background-color: rgba(255,255,255,0.1); }");
-    fitButton->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
-    m_toolbar->addWidget(fitButton);
-    connect(fitButton, &QPushButton::clicked, m_scoreWidget, &ScoreWidget::zoomToFit);
-
-    connect(m_scoreWidget, &ScoreWidget::zoomChanged, [this](double zoom) {
-        m_zoomLabel->setText(QString("%1%").arg(static_cast<int>(zoom * 100)));
-    });
-
-    m_toolbar->addSeparator();
-
     m_instrumentAction = m_toolbar->addAction("Instrument");
     m_instrumentAction->setCheckable(true);
     m_instrumentAction->setEnabled(false); // enabled when entering play mode
@@ -810,20 +795,21 @@ void App::setupToolbar()
         m_instrumentPanel->setVisible(on);
     });
 
-    m_sidebarAction = m_toolbar->addAction("Sidebar");
+    // Sidebar action (hidden from toolbar but still functional for programmatic use)
+    m_sidebarAction = new QAction(this);
     m_sidebarAction->setCheckable(true);
     m_sidebarAction->setChecked(true);
     m_sidebarAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_B));
-    auto* sidebarWidget = m_toolbar->widgetForAction(m_sidebarAction);
-    sidebarWidget->setCursor(Qt::PointingHandCursor);
-    sidebarWidget->setStyleSheet("font-size: 12px;");
     connect(m_sidebarAction, &QAction::toggled, [this](bool on) {
         setSidebarVisible(on);
     });
 
-    auto* sidebarSpacer = new QWidget();
-    sidebarSpacer->setFixedWidth(2);
-    m_toolbar->addWidget(sidebarSpacer);
+    // Zoom label kept for internal use but hidden
+    m_zoomLabel = new QLabel(this);
+    m_zoomLabel->hide();
+    connect(m_scoreWidget, &ScoreWidget::zoomChanged, [this](double zoom) {
+        m_zoomLabel->setText(QString("%1%").arg(static_cast<int>(zoom * 100)));
+    });
 
     connect(m_audioPlayer, &AudioPlayer::playbackStarted, [this]() {
         m_playPauseAction->setText("Pause");
@@ -878,8 +864,8 @@ bool App::loadScore(const QString& musicXmlPath)
                  << "pages:" << m_engine->pageCount()
                  << "parts:" << m_engine->partCount();
 
-        // Set up widgets with engine
-        m_scoreWidget->setEngine(m_engine.get());
+        // Set up sync timer with engine (don't call setEngine on ScoreWidget yet —
+        // setVisibleParts in loadLevel will do it with filtered parts, avoiding a double reload)
         m_syncTimer->setEngine(m_engine.get());
 
         // Init FluidSynth for play-along
@@ -1192,6 +1178,8 @@ void App::onSeekSliderMoved(int value)
     double seconds = (static_cast<double>(value) / m_seekSlider->maximum()) * duration;
     playerSeekTo(seconds);
     m_syncTimer->setTime(seconds);
+    if (m_useVerovio)
+        m_scoreWidget->setCursorTick(m_syncTimer->currentTick());
     m_scoreWidget->clearLastTappedBeat();
 }
 

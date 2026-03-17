@@ -85,21 +85,35 @@ t = (tick - lo.tick) / (hi.tick - lo.tick)
 x = x1 + (x2 - x1) * t
 ```
 
-#### Cross-system transition (rests at system boundaries)
-Notes are in different systems. Split the interpolation into two halves:
+#### Cross-system transition
+Notes are in different systems. Split the interpolation 50/50:
 
-- **First half (f < 0.5)**: cursor is still in the old system, glides from the last note toward the **right edge** of the system. This handles trailing rests at the end of a system.
-  ```
-  x = lastNoteX + (rightEdge - lastNoteX) * (f * 2)
-  ```
+**First half (f < 0.5)** — exiting old system:
+- Cursor glides from the last note toward the **right edge** of the system
+- Handles trailing rests at the end of a system
+```
+x = lastNoteX + (rightEdge - lastNoteX) * (f * 2)
+```
 
-- **Second half (f ≥ 0.5)**: cursor switches to the new system, starts at the **left edge** and glides toward the first note. This handles leading rests at the beginning of a system.
-  ```
-  x = leftEdge + (firstNoteX - leftEdge) * ((f - 0.5) * 2)
-  ```
+**Second half (f ≥ 0.5)** — entering new system:
+- Find the first musical element (note OR rest) via `s2.querySelector('.note, .rest')`
+- Interpolate from that element's x toward the first note's x
+- Handles leading rests: cursor glides through rest area toward the first note
+```
+startX = firstElement.x    // first note or rest in the system
+noteX = firstNote.x        // first timemap entry in the system
+f2 = (f - 0.5) * 2         // 0 to 1 within second half
+x = startX + (noteX - startX) * f2
+```
+
+The system reference switches to the new system (`s1 = s2`) so the cursor div uses the correct system height.
 
 #### End of piece
 When `lo === hi` (last entry), cursor stays at the last note position.
+
+### Why `.note, .rest` for the start position
+
+Using just the first note would skip leading rests — the cursor would jump past them. Using the system's left edge would traverse the clef/key/time signature area. The `.note, .rest` selector finds the first actual musical content element, which is right where playable content begins.
 
 ### System height caching
 
@@ -119,6 +133,17 @@ All system heights are measured **once at page load** (300ms after load, before 
 - Toggling tracking off calls `hideCursor()` in JS
 - Loading a new level hides the cursor and resets `syncTimer` to tick 0
 
+## Restart (Cmd+R)
+
+On restart, all state rewinds to the beginning:
+1. `m_playAlongSynth->resetPosition()` — resets note index to 0
+2. Overlay highlights set to first note of each voice
+3. `resetScroll()` — JS scrolls page to top
+4. `setCursorTick(0)` — cursor jumps to first timemap entry
+5. YouTube seeks to interpretation start time
+
+Same logic applies when switching interpretations.
+
 ## Latency Compensation
 
 The web view IPC (Qt → Chromium) adds ~50-80ms latency. To compensate, the cursor tick is computed at `adjusted + 0.08` seconds, then the SyncTimer is restored to the actual position:
@@ -132,8 +157,9 @@ m_syncTimer->setTime(adjusted); // restore
 ## Rest Handling
 
 - Entries with empty element IDs (rests) are filtered out of the timemap at build time
-- During a rest **within** a system, the cursor stays at the last note's position (no timemap entry to move toward)
-- During rests **at system boundaries**, the cross-system interpolation handles smooth transitions (right edge → left edge)
+- **Rests within a system**: cursor stays at the last note's position (no timemap entry to move toward)
+- **Trailing rests (end of system)**: cursor interpolates toward the right edge of the system
+- **Leading rests (start of system)**: cursor starts at the first `.note, .rest` element and interpolates toward the first note
 
 ## Comparison with MuseScore Cursor
 
@@ -141,9 +167,9 @@ m_syncTimer->setTime(adjusted); // restore
 |--------|-----------|---------|
 | Rendering | QPainter in paintEvent (synchronous) | HTML div via JS (async IPC) |
 | X interpolation | Between score segments in measure | Between timemap entries (SVG note elements) |
-| System transition | Jumps at system boundary | Smooth glide via right-edge/left-edge interpolation |
+| System transition | Jumps at system boundary | Smooth: right-edge exit → content-start entry |
 | Y span | System staff bounds from Score DOM | System `getBoundingClientRect()` (cached height) |
 | Latency | None (same paint event) | ~80ms (compensated) |
 | Position source | Score segment canvas positions | SVG element bounding rects (live DOM queries) |
 | Color | `QColor(50, 100, 255, 120)` | `rgba(50, 100, 255, 0.35)` |
-| Rest handling | Interpolates to barline position | Interpolates to system edge |
+| Rest handling | Interpolates to barline position | Right-edge / first-element interpolation |

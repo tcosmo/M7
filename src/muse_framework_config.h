@@ -1,8 +1,8 @@
 /* Minimal muse_framework_config.h for scoretracker standalone build */
 
 /* App info */
-#define MUSE_APP_NAME "jamjammin"
-#define MUSE_APP_TITLE "JamJammin'"
+#define MUSE_APP_NAME "playbach"
+#define MUSE_APP_TITLE "PlayBach"
 #define MUSE_APP_VERSION "0.1.0"
 #define MUSE_APP_VERSION_MAJOR "0"
 #define MUSE_APP_VERSION_MINOR "1"

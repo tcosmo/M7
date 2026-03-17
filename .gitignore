@@ -30,3 +30,8 @@ compile_commands.json
 thirdparty/musescore/
 thirdparty/musescore_a/
 thirdparty/beat-and-tempo-tracking
+
+# Web (Next.js)
+web/node_modules/
+web/.next/
+web/.env*.local

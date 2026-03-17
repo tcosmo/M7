@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(jamjammin LANGUAGES CXX C OBJCXX)
+project(playbach LANGUAGES CXX C OBJCXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
@@ -146,7 +146,7 @@ set_source_files_properties(
 find_library(AppKit_Lib NAMES AppKit)
 target_link_libraries(muse_global PRIVATE ${AppKit_Lib})
 
-add_executable(jamjammin
+add_executable(playbach
     src/main.cpp
     src/app.h
     src/app.cpp
@@ -185,7 +185,7 @@ add_executable(jamjammin
     src/miniaudio_impl.c
 )
 
-qt_add_resources(jamjammin "icons"
+qt_add_resources(playbach "icons"
     PREFIX "/"
     FILES
         src/icons/youtube.png
@@ -195,9 +195,9 @@ set_target_properties(engraving PROPERTIES COMPILE_FLAGS "-fPIC")
 set_target_properties(muse_global PROPERTIES COMPILE_FLAGS "-fPIC")
 set_target_properties(muse_draw PROPERTIES COMPILE_FLAGS "-fPIC")
 set_target_properties(iex_musicxml PROPERTIES COMPILE_FLAGS "-fPIC")
-set_target_properties(jamjammin PROPERTIES COMPILE_FLAGS "-fPIC")
+set_target_properties(playbach PROPERTIES COMPILE_FLAGS "-fPIC")
 
-target_include_directories(jamjammin PUBLIC
+target_include_directories(playbach PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_LIST_DIR}/src
     ${CMAKE_CURRENT_LIST_DIR}/thirdparty
@@ -210,9 +210,9 @@ target_include_directories(jamjammin PUBLIC
     ${FLUIDSYNTH_INC}
 )
 
-target_compile_options(jamjammin PRIVATE ${PCH_FIX})
+target_compile_options(playbach PRIVATE ${PCH_FIX})
 
-target_include_directories(jamjammin PRIVATE
+target_include_directories(playbach PRIVATE
     ${VEROVIO_SOURCE_DIR}/include/vrv
     ${VEROVIO_SOURCE_DIR}/include/json
     ${VEROVIO_SOURCE_DIR}/include/pugi
@@ -224,7 +224,7 @@ target_include_directories(jamjammin PRIVATE
     ${VEROVIO_SOURCE_DIR}/libmei/dist
     ${VEROVIO_SOURCE_DIR}/libmei/addons
 )
-target_link_libraries(jamjammin PRIVATE
+target_link_libraries(playbach PRIVATE
     verovio
     muse_global
     muse_draw

@@ -77,7 +77,7 @@ static LayoutMode comboIndexToLayoutMode(int index)
 App::App(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle("JamJammin'");
+    setWindowTitle("PlayBach");
     resize(1250, 850);
 
     m_audioPlayer = new AudioPlayer(this);
@@ -882,7 +882,7 @@ bool App::loadScore(const QString& musicXmlPath)
         m_partPanel->setScore(nullptr);
         m_partPanel->setRenderer(nullptr);
 
-        setWindowTitle("JamJammin'");
+        setWindowTitle("PlayBach");
         QTimer::singleShot(0, m_scoreWidget, &ScoreWidget::zoomToFit);
         return true;
     }
@@ -1017,7 +1017,7 @@ bool App::loadScore(const QString& musicXmlPath)
     if (remaining < 0) remaining = 0;
     m_sidebarSplitter->setSizes({partsHeight, trackingHeight, displayHeight, remaining});
 
-    setWindowTitle("JamJammin'");
+    setWindowTitle("PlayBach");
 
     // Fit score to viewport after layout settles
     QTimer::singleShot(0, m_scoreWidget, &ScoreWidget::zoomToFit);

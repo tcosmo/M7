@@ -78,8 +78,8 @@ public:
     StandaloneApp()
         : m_ctx(std::make_shared<muse::modularity::Context>()) {}
 
-    muse::String name() const override { return muse::String(u"jamjammin"); }
-    muse::String title() const override { return muse::String(u"JamJammin'"); }
+    muse::String name() const override { return muse::String(u"playbach"); }
+    muse::String title() const override { return muse::String(u"PlayBach'"); }
     bool unstable() const override { return false; }
     muse::Version version() const override { return muse::Version(0, 1, 0); }
     muse::Version fullVersion() const override { return version(); }
@@ -109,7 +109,7 @@ private:
 int main(int argc, char* argv[])
 {
     QApplication qapp(argc, argv);
-    qapp.setApplicationName("JamJammin");
+    qapp.setApplicationName("PlayBach");
     qapp.setOrganizationName("MMMM");
 
     // Force dark Discord-style palette — no light mode

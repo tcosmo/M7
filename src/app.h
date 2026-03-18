@@ -136,6 +136,9 @@ private:
     QAction* m_sidebarAction = nullptr;
     QPushButton* m_trackingButton = nullptr;
     QSlider* m_seekSlider = nullptr;
+    QSlider* m_volumeSlider = nullptr;
+    QPushButton* m_interpButton = nullptr;
+    QMenu* m_interpMenu = nullptr;
     QLabel* m_timeLabel = nullptr;
     QLabel* m_zoomLabel = nullptr;
     QAction* m_instrumentAction = nullptr;

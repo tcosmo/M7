@@ -229,6 +229,7 @@ void App::setupUI()
     m_centralSplitter = new QSplitter(Qt::Vertical, this);
     m_centralSplitter->setChildrenCollapsible(false);
     m_centralSplitter->setHandleWidth(5);
+    m_centralSplitter->setFocusPolicy(Qt::NoFocus);
     m_centralSplitter->setStyleSheet(
         "QSplitter::handle:vertical { background: #202225; }");
 
@@ -515,7 +516,7 @@ void App::setupUI()
                 auto* view = m_youtubePlayer->videoWidget();
                 if (view) {
                     view->setParent(nullptr);
-                    view->deleteLater();
+                    delete view;
                 }
                 delete m_youtubePlayer;
                 m_youtubePlayer = nullptr;
@@ -529,6 +530,13 @@ void App::setupUI()
                 m_expandedVideoContainer->setParent(nullptr);
             }
             m_videoExpanded = false;
+            // Reset score cursor immediately
+            m_scoreWidget->setCursorRect(QRectF(), -1);
+            m_scoreWidget->setCursorVisible(false);
+            m_scoreWidget->scrollToTop();
+            if (m_useVerovio)
+                m_scoreWidget->runWebJavaScript("hideCursor()");
+            m_syncTimer->setTime(0);
             m_centralStack->setCurrentIndex(0);
             m_toolbar->hide();
             m_worldSidebar->clearInterpretations();
@@ -633,7 +641,7 @@ void App::setupToolbar()
     m_seekSlider = new QSlider(Qt::Horizontal, this);
     m_seekSlider->setCursor(Qt::PointingHandCursor);
     m_seekSlider->setRange(0, 1000);
-    m_seekSlider->setMinimumWidth(300);
+    m_seekSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     connect(m_seekSlider, &QSlider::sliderPressed, [this]() { m_sliderDragging = true; });
     connect(m_seekSlider, &QSlider::sliderReleased, [this]() {
         m_sliderDragging = false;
@@ -645,6 +653,70 @@ void App::setupToolbar()
     m_timeLabel = new QLabel("0:00 / 0:00", this);
     m_timeLabel->setMinimumWidth(120);
     m_toolbar->addWidget(m_timeLabel);
+
+    m_toolbar->addSeparator();
+
+    // Interpretation button with popup menu
+    m_interpButton = new QPushButton("Interpretation", this);
+    m_interpButton->setFlat(true);
+    m_interpButton->setCursor(Qt::PointingHandCursor);
+    m_interpButton->setFocusPolicy(Qt::NoFocus);
+    m_interpButton->setStyleSheet(
+        "QPushButton { padding: 2px 4px; }"
+        "QPushButton:pressed { background: transparent; }");
+    m_interpMenu = new QMenu(m_interpButton);
+    m_interpMenu->setStyleSheet(QString(
+        "QMenu { background: %1; color: %2; border: 1px solid %3; }"
+        "QMenu::item { padding: 6px 20px; }"
+        "QMenu::item:selected { background: %3; }"
+    ).arg(Theme::panelBg().name(), Theme::textPrimary().name(), Theme::inputBg().name()));
+    m_interpButton->setMenu(m_interpMenu);
+    m_toolbar->addWidget(m_interpButton);
+
+    m_toolbar->addSeparator();
+
+    // Volume button with popup vertical slider
+    auto* volButton = new QPushButton("Volume", this);
+    volButton->setFlat(true);
+    volButton->setCursor(Qt::PointingHandCursor);
+    volButton->setFocusPolicy(Qt::NoFocus);
+    volButton->setStyleSheet(
+        "QPushButton { padding: 2px 4px; }"
+        "QPushButton:pressed { background: transparent; }");
+
+    m_volumeSlider = new QSlider(Qt::Vertical);
+    m_volumeSlider->setRange(0, 100);
+    m_volumeSlider->setValue(80);
+    m_volumeSlider->setFixedSize(30, 120);
+    m_volumeSlider->setToolTip("Volume: 80%");
+    m_volumeSlider->setStyleSheet(QString(
+        "QSlider::groove:vertical { background: %1; width: 4px; border-radius: 2px; }"
+        "QSlider::handle:vertical { background: %2; width: 16px; height: 16px;"
+        "  margin: 0 -6px; border-radius: 8px; }"
+        "QSlider::sub-page:vertical { background: %1; }"
+        "QSlider::add-page:vertical { background: %3; }"
+    ).arg(Theme::inputBg().name(), Theme::accent().name(), Theme::accent().name()));
+    connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int val) {
+        m_volumeSlider->setToolTip(QString("Volume: %1%").arg(val));
+        if (m_youtubePlayer)
+            m_youtubePlayer->setVolume(std::min(val, 100));
+    });
+
+    auto* volPopup = new QWidget(this, Qt::Popup);
+    volPopup->setFixedSize(36, 130);
+    volPopup->setStyleSheet(QString(
+        "background: %1; border: none; border-radius: 8px;"
+    ).arg(Theme::panelBg().name()));
+    auto* volLay = new QVBoxLayout(volPopup);
+    volLay->setContentsMargins(8, 8, 8, 8);
+    volLay->addWidget(m_volumeSlider);
+
+    connect(volButton, &QPushButton::clicked, this, [volButton, volPopup]() {
+        QPoint pos = volButton->mapToGlobal(QPoint(volButton->width() / 2 - 20, volButton->height()));
+        volPopup->move(pos);
+        volPopup->show();
+    });
+    m_toolbar->addWidget(volButton);
 
     m_toolbar->addSeparator();
 
@@ -1520,7 +1592,7 @@ void App::loadYouTube(const QString& url, bool /*preview*/)
         auto* oldView = m_youtubePlayer->videoWidget();
         if (oldView) {
             oldView->setParent(nullptr);
-            oldView->deleteLater();
+            delete oldView;
         }
         delete m_youtubePlayer;
         m_youtubePlayer = nullptr;
@@ -2330,7 +2402,7 @@ void App::showWorldBrowser()
         auto* view = m_youtubePlayer->videoWidget();
         if (view) {
             view->setParent(nullptr);
-            view->deleteLater();
+            delete view;
         }
         delete m_youtubePlayer;
         m_youtubePlayer = nullptr;
@@ -2344,6 +2416,14 @@ void App::showWorldBrowser()
         m_expandedVideoContainer->setParent(nullptr);
     }
     m_videoExpanded = false;
+
+    // Reset score cursor immediately so it doesn't flash at old position on next level
+    m_scoreWidget->setCursorRect(QRectF(), -1);
+    m_scoreWidget->setCursorVisible(false);
+    m_scoreWidget->scrollToTop();
+    if (m_useVerovio)
+        m_scoreWidget->runWebJavaScript("hideCursor()");
+    m_syncTimer->setTime(0);
 
     // Show the active world in the level browser
     if (m_activeWorldIndex >= 0 && m_activeWorldIndex < m_worlds.size()) {
@@ -2377,7 +2457,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         auto* view = m_youtubePlayer->videoWidget();
         if (view) {
             view->setParent(nullptr);
-            view->deleteLater();
+            delete view;
         }
         delete m_youtubePlayer;
         m_youtubePlayer = nullptr;
@@ -2386,16 +2466,23 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
     }
     m_currentYoutubeUrl.clear();
     m_useYouTube = false;
-    if (m_expandedVideoContainer) {
+    // Keep the expanded container in place (black background) if it's already visible.
+    // Only mark as not expanded so loadYouTube re-inserts if needed.
+    bool wasExpanded = m_videoExpanded;
+    if (!wasExpanded && m_expandedVideoContainer) {
         m_expandedVideoContainer->hide();
         m_expandedVideoContainer->setParent(nullptr);
     }
-    m_videoExpanded = false;
+    // Process pending deletions so Chromium releases resources before new player
+    QApplication::processEvents();
 
     if (m_audioPlayer)
         m_audioPlayer->pause();
     if (m_useVerovio)
         m_scoreWidget->runWebJavaScript("hideCursor()");
+    m_scoreWidget->setCursorRect(QRectF(), -1);
+    m_scoreWidget->setCursorVisible(false);
+    m_scoreWidget->scrollToTop();
     m_syncTimer->setTime(0);
     m_needsSeekOnPlay = true;
 
@@ -2472,6 +2559,8 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             m_expandedVideoContainer->installEventFilter(this);
 
             int videoH = 394;
+            // YouTube ToS: minimum 200x200. Prevent user from shrinking below initial height.
+            m_expandedVideoContainer->setMinimumHeight(videoH);
             QList<int> sizes;
             for (int i = 0; i < m_centralSplitter->count(); ++i) {
                 if (m_centralSplitter->widget(i) == m_expandedVideoContainer)
@@ -2865,6 +2954,20 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             }
         }
 #endif // USE_MUSESCORE
+
+        // Populate interpretation menu
+        m_interpMenu->clear();
+        for (int i = 0; i < m_sourceLabels.size(); ++i) {
+            auto* action = m_interpMenu->addAction(m_sourceLabels[i]);
+            action->setCheckable(true);
+            action->setChecked(i == m_activeInterpretation);
+            connect(action, &QAction::triggered, this, [this, i]() {
+                m_preselectedInterpretation = i;
+                m_levelBrowser->setSelectedInterpretation(i);
+                // Reload the level with the new interpretation
+                loadLevel(m_activeWorldIndex, m_activeSectionIndex, m_activeLevelIndex);
+            });
+        }
 
         m_levelBrowser->showLoading(false);
 

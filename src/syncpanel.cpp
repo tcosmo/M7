@@ -1,4 +1,7 @@
 #include "syncpanel.h"
+
+#ifdef USE_MUSESCORE
+
 #include "syncmode.h"
 #include "theme.h"
 
@@ -223,3 +226,5 @@ void SyncPanel::setBeatDataPath(const QString& path)
 }
 
 } // namespace scoretracker
+
+#endif // USE_MUSESCORE

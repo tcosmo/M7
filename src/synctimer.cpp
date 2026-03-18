@@ -3,6 +3,7 @@
 
 #include <QRectF>
 
+#ifdef USE_MUSESCORE
 #include "engraving/dom/score.h"
 #include "engraving/dom/measure.h"
 #include "engraving/dom/segment.h"
@@ -10,10 +11,13 @@
 #include "engraving/dom/staff.h"
 #include "engraving/dom/page.h"
 #include "engraving/types/fraction.h"
+#endif
 
 #include <algorithm>
 
+#ifdef USE_MUSESCORE
 using namespace mu::engraving;
+#endif
 
 namespace scoretracker {
 
@@ -22,10 +26,12 @@ SyncTimer::SyncTimer(QObject* parent)
 {
 }
 
+#ifdef USE_MUSESCORE
 void SyncTimer::setScore(Score* score)
 {
     m_score = score;
 }
+#endif
 
 void SyncTimer::setEngine(scoretracker::ScoreEngine* engine)
 {
@@ -56,14 +62,20 @@ void SyncTimer::setMeasureIndices(const std::vector<int>& indices)
 void SyncTimer::setTime(double seconds)
 {
     m_lastTime = seconds;
-    if ((!m_score && !m_engine) || m_beatTimes.empty() || m_beatTicks.empty()) return;
+    if ((
+#ifdef USE_MUSESCORE
+        !m_score &&
+#endif
+        !m_engine) || m_beatTimes.empty() || m_beatTicks.empty()) return;
 
     // If time is before the first beat, snap cursor to the first beat
     if (seconds < m_beatTimes.front()) {
+#ifdef USE_MUSESCORE
         Fraction tick = Fraction::fromTicks(m_beatTicks.front());
         int pageIndex = 0;
-        muse::RectF rect = resolveCursorRect(tick, pageIndex);
+        QRectF rect = resolveCursorRect(tick, pageIndex);
         emit cursorRectChanged(rect, pageIndex);
+#endif
         return;
     }
 
@@ -114,13 +126,16 @@ void SyncTimer::setTime(double seconds)
     if (m_engine) {
         // Use engine abstraction for cursor resolution
         QRectF qr = m_engine->resolveCursorRect(interpTick, pageIndex);
-        muse::RectF rect(qr.x(), qr.y(), qr.width(), qr.height());
-        emit cursorRectChanged(rect, pageIndex);
-    } else {
-        Fraction tick = Fraction::fromTicks(interpTick);
-        muse::RectF rect = resolveCursorRect(tick, pageIndex);
+        QRectF rect = qr;
         emit cursorRectChanged(rect, pageIndex);
     }
+#ifdef USE_MUSESCORE
+    else {
+        Fraction tick = Fraction::fromTicks(interpTick);
+        QRectF rect = resolveCursorRect(tick, pageIndex);
+        emit cursorRectChanged(rect, pageIndex);
+    }
+#endif
 }
 
 void SyncTimer::refresh()
@@ -128,21 +143,22 @@ void SyncTimer::refresh()
     setTime(m_lastTime);
 }
 
-muse::RectF SyncTimer::resolveCursorRect(const Fraction& tick, int& outPageIndex) const
+#ifdef USE_MUSESCORE
+QRectF SyncTimer::resolveCursorRect(const Fraction& tick, int& outPageIndex) const
 {
     outPageIndex = 0;
-    if (!m_score) return muse::RectF();
+    if (!m_score) return QRectF();
 
     // Use MuseScore's tick2measureMM to find the measure
     const Measure* measure = m_score->tick2measureMM(tick);
     if (!measure) {
         measure = m_score->tick2measureMM(Fraction(0, 1));
-        if (!measure) return muse::RectF();
+        if (!measure) return QRectF();
     }
 
     const System* system = measure->system();
     if (!system || !system->page() || system->staves().empty()) {
-        return muse::RectF();
+        return QRectF();
     }
 
     // Interpolate x position within the measure using segment positions
@@ -209,7 +225,8 @@ muse::RectF SyncTimer::resolveCursorRect(const Fraction& tick, int& outPageIndex
     double pageX = cursorPage ? cursorPage->pos().x() : 0;
     double pageY = cursorPage ? cursorPage->pos().y() : 0;
 
-    return muse::RectF(x - pageX, y - pageY, w, h);
+    return QRectF(x - pageX, y - pageY, w, h);
 }
+#endif
 
 } // namespace scoretracker

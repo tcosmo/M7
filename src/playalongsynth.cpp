@@ -3,6 +3,7 @@
 #include <fluidsynth.h>
 #include <miniaudio/miniaudio.h>
 
+#ifdef USE_MUSESCORE
 #include "engraving/dom/score.h"
 #include "engraving/dom/part.h"
 #include "engraving/dom/instrument.h"
@@ -13,14 +14,18 @@
 #include "engraving/dom/spanner.h"
 #include "engraving/dom/spannermap.h"
 #include "engraving/types/types.h"
+#endif
 
 #include <QDebug>
 #include <algorithm>
 
+#ifdef USE_MUSESCORE
 using namespace mu::engraving;
+#endif
 
 namespace scoretracker {
 
+#ifdef USE_MUSESCORE
 // Compute the MIDI pitch one diatonic step above in the given key
 static int trillUpperPitch(int midiPitch, Key key)
 {
@@ -65,6 +70,7 @@ static void annotateTrills(Score* score, const Part* part, std::vector<NoteEvent
         }
     }
 }
+#endif
 
 // Accessor helpers for void* members
 static fluid_synth_t* fs(void* p) { return static_cast<fluid_synth_t*>(p); }
@@ -202,6 +208,7 @@ int PlayAlongSynth::ensureSoundfont(const QString& path)
     return id;
 }
 
+#ifdef USE_MUSESCORE
 void PlayAlongSynth::addVoice(Part* part, int gmProg, int sfontId, Score* score)
 {
     if (!part || !score) return;
@@ -256,6 +263,7 @@ void PlayAlongSynth::addVoice(Part* part, int gmProg, int sfontId, Score* score)
     qDebug() << "PlayAlongSynth: addVoice" << name << "channel" << channel
              << "program" << gmProg << "notes:" << m_voices.back().notes.size();
 }
+#endif
 
 void PlayAlongSynth::playNextNoteForVoice(int voiceIdx)
 {
@@ -336,6 +344,7 @@ QList<QPair<int, QString>> PlayAlongSynth::presets() const
     return result;
 }
 
+#ifdef USE_MUSESCORE
 void PlayAlongSynth::setVoice(Part* part, int gmProg, Score* score)
 {
     if (!part || !score) return;
@@ -388,6 +397,7 @@ void PlayAlongSynth::setVoice(Part* part, int gmProg, Score* score)
     qDebug() << "PlayAlongSynth: setVoice" << name << "program" << gmProg
              << "notes:" << m_voices[0].notes.size();
 }
+#endif
 
 void PlayAlongSynth::setVoiceFromNotes(const std::vector<NoteEvent>& notes, int gmProg)
 {
@@ -551,6 +561,7 @@ double PlayAlongSynth::pitchOffset() const
     return m_pitchOffset;
 }
 
+#ifdef USE_MUSESCORE
 void PlayAlongSynth::buildNoteTables(Score* score)
 {
     if (!score) return;
@@ -609,6 +620,7 @@ void PlayAlongSynth::buildNoteTableForPart(Score* score, Voice& voice)
 
     qDebug() << "PlayAlongSynth: built" << voice.notes.size() << "notes for" << voice.partName;
 }
+#endif
 
 void PlayAlongSynth::playNextNote()
 {

@@ -5,7 +5,7 @@
 #include <QGestureEvent>
 #include <memory>
 
-#include "types/geometry.h"
+#include <QRectF>
 
 #include <QPointF>
 #include <QElapsedTimer>
@@ -13,12 +13,14 @@
 
 class QWebEngineView;
 
+#ifdef USE_MUSESCORE
 namespace mu::engraving {
 class Score;
 namespace rendering {
 class IScoreRenderer;
 }
 }
+#endif
 
 namespace scoretracker {
 class SyncMode;
@@ -58,10 +60,12 @@ public:
         double systemTop;
     };
 
+#ifdef USE_MUSESCORE
     void setScore(mu::engraving::Score* score);
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
+#endif
     void setEngine(scoretracker::ScoreEngine* engine);
-    void setCursorRect(const muse::RectF& rect, int pageIndex);
+    void setCursorRect(const QRectF& rect, int pageIndex);
     void setZoom(double zoom);
     double zoom() const { return m_zoom; }
     double scale() const;
@@ -98,15 +102,17 @@ protected:
 public:
     void updateCanvasSize();
 private:
-    muse::RectF mapToRenderCoords(const muse::RectF& pageRelRect, int pageIndex) const;
+    QRectF mapToRenderCoords(const QRectF& pageRelRect, int pageIndex) const;
     void paintSyncDots(QPainter& painter);
     int hitTestDot(const QPoint& pos) const;
 
+#ifdef USE_MUSESCORE
     mu::engraving::Score* m_score = nullptr;
     mu::engraving::rendering::IScoreRenderer* m_renderer = nullptr;
+#endif
     scoretracker::ScoreEngine* m_engine = nullptr;
     scoretracker::SyncMode* m_syncMode = nullptr;
-    muse::RectF m_cursorRect;
+    QRectF m_cursorRect;
     int m_cursorPageIndex = 0;
     double m_zoom = 1.0;
     bool m_cursorVisible = true;
@@ -149,8 +155,10 @@ class ScoreWidget : public QScrollArea
 public:
     explicit ScoreWidget(QWidget* parent = nullptr);
 
+#ifdef USE_MUSESCORE
     void setScore(mu::engraving::Score* score);
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
+#endif
     void setEngine(scoretracker::ScoreEngine* engine);
     void setZoom(double zoom);
     double zoom() const;
@@ -191,7 +199,7 @@ signals:
     void beatDoubleClicked(int beatIndex);
 
 public slots:
-    void setCursorRect(const muse::RectF& rect, int pageIndex);
+    void setCursorRect(const QRectF& rect, int pageIndex);
 
 protected:
     bool event(QEvent* event) override;

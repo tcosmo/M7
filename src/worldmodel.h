@@ -38,6 +38,7 @@ struct World {
     QString title;
     QString composer;
     QString catalogue;      // e.g. "BWV 243"
+    QString description;    // short historical blurb about the work
     QString coverPath;      // absolute path to cover image
     QPixmap cover;          // loaded pixmap
     int order = 0;          // sort order (lower = first)

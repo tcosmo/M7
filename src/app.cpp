@@ -3,9 +3,11 @@
 #include "audioplayer.h"
 #include "youtubeplayer.h"
 #include "synctimer.h"
+#ifdef USE_MUSESCORE
 #include "syncmode.h"
 #include "syncpanel.h"
 #include "waveformwidget.h"
+#endif
 #include "partpanel.h"
 #include "displaysettings.h"
 #include "trackingsettings.h"
@@ -14,7 +16,9 @@
 #include "worldbrowser.h"
 #include "theme.h"
 #include "engine/ScoreEngine.h"
+#ifdef USE_MUSESCORE
 #include "engine/MuseScoreEngine.h"
+#endif
 #include "engine/VerovioEngine.h"
 #include <QFile>
 #include <QJsonDocument>
@@ -23,8 +27,8 @@
 #include <QMenu>
 #include <QRegularExpression>
 
+#ifdef USE_MUSESCORE
 #include "modularity/ioc.h"
-
 #include "engraving/dom/masterscore.h"
 #include "engraving/dom/part.h"
 #include "engraving/dom/instrument.h"
@@ -37,8 +41,8 @@
 #include "engraving/types/fraction.h"
 #include "engraving/dom/tempo.h"
 #include "engraving/rendering/layoutoptions.h"
-
 #include "importexport/musicxml/internal/import/importmusicxml.h"
+#endif // USE_MUSESCORE
 
 #include <QDebug>
 #include <QPushButton>
@@ -59,11 +63,14 @@
 #include <QSplitter>
 #include <numeric>
 
+#ifdef USE_MUSESCORE
 using namespace mu::engraving;
 using namespace mu::engraving::rendering;
+#endif
 
 namespace scoretracker {
 
+#ifdef USE_MUSESCORE
 static LayoutMode comboIndexToLayoutMode(int index)
 {
     switch (index) {
@@ -73,6 +80,7 @@ static LayoutMode comboIndexToLayoutMode(int index)
     default: return LayoutMode::SYSTEM;
     }
 }
+#endif // USE_MUSESCORE
 
 App::App(QWidget* parent)
     : QMainWindow(parent)
@@ -82,12 +90,16 @@ App::App(QWidget* parent)
 
     m_audioPlayer = new AudioPlayer(this);
     m_syncTimer = new SyncTimer(this);
+#ifdef USE_MUSESCORE
     m_syncMode = new SyncMode(this);
+#endif
     m_playAlongSynth = new PlayAlongSynth();
 
     setupUI();
     setupToolbar();
+    m_toolbar->hide(); // hidden until a level is loaded or playback starts
 
+#ifdef USE_MUSESCORE
     // Sync mode signals
     connect(m_syncMode, &SyncMode::beatSynced, this, [this](int) {
         m_scoreWidget->widget()->update();
@@ -112,6 +124,7 @@ App::App(QWidget* parent)
     connect(m_syncMode, &SyncMode::exited, this, [this]() {
         m_scoreWidget->setScore(m_score);
     });
+#endif // USE_MUSESCORE
 
     // Wire audio position to sync timer to score widget
     connect(m_audioPlayer, &AudioPlayer::positionChanged,
@@ -121,7 +134,9 @@ App::App(QWidget* parent)
             m_scoreWidget, &ScoreWidget::setCursorRect);
 
     connect(m_partPanel, &PartPanel::partsChanged, [this]() {
+#ifdef USE_MUSESCORE
         m_scoreWidget->setScore(m_score); // refresh
+#endif
         m_syncTimer->refresh();
     });
 
@@ -162,10 +177,11 @@ App::App(QWidget* parent)
                 m_syncTimer->setTime(playerCurrentTime());
             }
         } else if (!tracking && !autoScroll) {
-            m_scoreWidget->setCursorRect(muse::RectF(), -1);
+            m_scoreWidget->setCursorRect(QRectF(), -1);
         }
     });
 
+#ifdef USE_MUSESCORE
     connect(m_displaySettings, &DisplaySettings::settingChanged, [this]() {
         if (!m_score || !m_renderer) return;
         m_score->setLayoutMode(comboIndexToLayoutMode(m_displaySettings->layoutMode()));
@@ -178,6 +194,7 @@ App::App(QWidget* parent)
         m_scoreWidget->setScore(m_score); // refresh
         m_scoreWidget->scrollToTop();
     });
+#endif
 
     // Apply initial tracking settings
     {
@@ -201,7 +218,9 @@ App::~App()
     delete m_playAlongSynth;
     // Score is owned by MuseScoreEngine (via m_engine), don't delete here.
     // m_score is just a non-owning pointer for legacy access.
+#ifdef USE_MUSESCORE
     m_score = nullptr;
+#endif
 }
 
 void App::setupUI()
@@ -213,6 +232,7 @@ void App::setupUI()
     m_centralSplitter->setStyleSheet(
         "QSplitter::handle:vertical { background: #202225; }");
 
+#ifdef USE_MUSESCORE
     m_waveformWidget = new WaveformWidget(m_centralSplitter);
     m_waveformWidget->hide();
     m_centralSplitter->addWidget(m_waveformWidget);
@@ -223,10 +243,12 @@ void App::setupUI()
         onPositionChanged(t);
         m_scoreWidget->clearLastTappedBeat();
     });
+#endif
 
     m_scoreWidget = new ScoreWidget(m_centralSplitter);
     m_centralSplitter->addWidget(m_scoreWidget);
 
+#ifdef USE_MUSESCORE
     // Beat click on score → seek audio + scroll waveform + update waveform display
     connect(m_scoreWidget, &ScoreWidget::beatClicked, this, [this](int beatIndex) {
         if (!m_syncMode || beatIndex < 0 || beatIndex >= m_syncMode->totalBeats()) return;
@@ -253,6 +275,7 @@ void App::setupUI()
             onPositionChanged(beat.effectiveTime());
         }
     });
+#endif
 
     // Instrument panel (hidden by default, shown via toolbar button)
     m_instrumentPanel = new QWidget();
@@ -450,6 +473,8 @@ void App::setupUI()
     });
     connect(m_levelBrowser, &LevelBrowser::resumeRequested, this, [this]() {
         m_centralStack->setCurrentIndex(1);
+        m_toolbar->show();
+        if (m_videoExpandButton) m_videoExpandButton->show();
         if (!m_videoExpanded) {
             QTimer::singleShot(0, this, &App::toggleVideoExpand);
         }
@@ -477,6 +502,8 @@ void App::setupUI()
             // Collapse video to sidebar when browsing
             if (m_videoExpanded) toggleVideoExpand();
             m_centralStack->setCurrentIndex(0);
+            m_toolbar->hide();
+            if (m_videoExpandButton) m_videoExpandButton->hide();
         }
     });
     connect(m_worldSidebar, &WorldSidebar::interpretationSelected, this, [this](int index) {
@@ -600,7 +627,9 @@ void App::setupUI()
 void App::resizeEvent(QResizeEvent* event)
 {
     QMainWindow::resizeEvent(event);
+#ifdef USE_MUSESCORE
     repositionSyncSidebar();
+#endif
 }
 
 bool App::eventFilter(QObject* obj, QEvent* event)
@@ -743,7 +772,7 @@ void App::setupToolbar()
     connect(m_trackingAction, &QAction::toggled, [this](bool on) {
         updateTrackingIcon();
         if (!on && !m_trackingSettings->autoScrollEnabled()) {
-            m_scoreWidget->setCursorRect(muse::RectF(), -1);
+            m_scoreWidget->setCursorRect(QRectF(), -1);
         }
     });
 
@@ -836,10 +865,14 @@ bool App::loadScore(const QString& musicXmlPath)
     // Disconnect old part-panel signals to avoid duplicate/stale connections
     disconnect(m_partPanel, nullptr, this, nullptr);
 
-    // Clean up old engine (which owns the score)
+    // Clean up old engine (which owns the score).
+    // Clear ScoreWidget's reference first to avoid dangling pointer during resize.
+    m_scoreWidget->setEngine(nullptr);
     m_engine.reset();
+#ifdef USE_MUSESCORE
     m_score = nullptr;
     m_renderer.reset();
+#endif
 
     // Create the appropriate engine
     if (m_useVerovio) {
@@ -879,14 +912,17 @@ bool App::loadScore(const QString& musicXmlPath)
         m_playAlongSynth->init(sf3Path);
 
         // PartPanel not used in Verovio mode
+#ifdef USE_MUSESCORE
         m_partPanel->setScore(nullptr);
         m_partPanel->setRenderer(nullptr);
+#endif
 
         setWindowTitle("PlayBach");
         QTimer::singleShot(0, m_scoreWidget, &ScoreWidget::zoomToFit);
         return true;
     }
 
+#ifdef USE_MUSESCORE
     // --- MuseScore engine path ---
     auto msEngine = std::make_unique<scoretracker::MuseScoreEngine>();
 
@@ -1023,6 +1059,10 @@ bool App::loadScore(const QString& musicXmlPath)
     QTimer::singleShot(0, m_scoreWidget, &ScoreWidget::zoomToFit);
 
     return true;
+#else
+    // No MuseScore engine available
+    return false;
+#endif // USE_MUSESCORE
 }
 
 void App::setVisibleParts(const QList<int>& partNumbers)
@@ -1037,15 +1077,19 @@ void App::setVisibleParts(const QList<int>& partNumbers)
         }
         return;
     }
+#ifdef USE_MUSESCORE
     m_partPanel->showOnlyParts(partNumbers);
+#endif
 }
 
+#ifdef USE_MUSESCORE
 void App::startSyncMode()
 {
     // Sync mode archived — enter directly via CLI flag
     enterSyncMode();
     m_trackingAction->setChecked(false);
 }
+#endif
 
 void App::startPlayMode()
 {
@@ -1237,8 +1281,9 @@ void App::onPositionChanged(double seconds)
         }
     }
 
+#ifdef USE_MUSESCORE
     // Update sync mode widgets
-    if (m_syncMode->isActive()) {
+    if (m_syncMode && m_syncMode->isActive()) {
         m_scoreWidget->setPlaybackTime(seconds);
         if (m_waveformWidget) m_waveformWidget->setPlaybackTime(seconds);
 
@@ -1259,6 +1304,7 @@ void App::onPositionChanged(double seconds)
             }
         }
     }
+#endif
 }
 
 QString App::formatTime(double seconds) const
@@ -1605,8 +1651,9 @@ void App::loadYouTube(const QString& url)
     m_worldSidebar->setVideoWidget(videoWidget);
 
     // Expand button — placed above the video, not overlaid
-    m_videoExpandButton = new QPushButton("\xe2\x96\xa1"); // □ expand icon
+    m_videoExpandButton = new QPushButton("Expand");
     m_videoExpandButton->setFixedHeight(20);
+    m_videoExpandButton->hide(); // only visible when in a level
     m_videoExpandButton->setCursor(Qt::PointingHandCursor);
     m_videoExpandButton->setFocusPolicy(Qt::NoFocus);
     m_videoExpandButton->setStyleSheet(
@@ -1699,7 +1746,7 @@ void App::toggleVideoExpand()
 
         // Hide sidebar video container and update button text
         m_worldSidebar->videoContainer()->setFixedHeight(0);
-        m_videoExpandButton->setText("\xc3\x97"); // × collapse
+        m_videoExpandButton->setText("Collapse");
         m_videoExpanded = true;
     } else {
         // Collapse: move video back to sidebar
@@ -1718,18 +1765,22 @@ void App::toggleVideoExpand()
         sidebarContainer->setFixedHeight(200);
         m_youtubePlayer->resizePlayer(240, 200);
 
-        m_videoExpandButton->setText("\xe2\x96\xa1"); // □ expand
+        m_videoExpandButton->setText("Expand");
         m_videoExpanded = false;
     }
 }
 
 void App::enterPlayMode()
 {
-    if (m_syncMode->isActive()) {
+#ifdef USE_MUSESCORE
+    if (m_syncMode && m_syncMode->isActive()) {
         exitSyncMode();
     }
+#endif
     m_playModeActive = true;
+#ifdef USE_MUSESCORE
     m_partPanel->setPlayModeActive(true);
+#endif
     m_scoreWidget->setPlayModeActive(true);
     m_instrumentAction->setEnabled(true);
     updateTrackingIcon(); // show "Record" if no beat data
@@ -1932,6 +1983,7 @@ void App::finalizeRecordedTracking()
 
     // Compute measure starts by interpolating score measure boundaries
     std::vector<double> measureStarts;
+#ifdef USE_MUSESCORE
     if (m_score) {
         for (auto* measure = m_score->firstMeasure(); measure; measure = measure->nextMeasure()) {
             int mTick = measure->tick().ticks();
@@ -1953,6 +2005,7 @@ void App::finalizeRecordedTracking()
             }
         }
     }
+#endif
 
     // Feed into SyncTimer
     m_syncTimer->setBeatTimes(beatTimes, 0);
@@ -2078,7 +2131,9 @@ void App::exitPlayMode()
     m_scoreWidget->setHighlightElement(nullptr);
     m_scoreWidget->setHighlightElement2(nullptr);
     m_scoreWidget->setPlayModeActive(false);
+#ifdef USE_MUSESCORE
     m_partPanel->setPlayModeActive(false);
+#endif
     m_keysHeld = 0;
     m_multiVoice = false;
     m_voiceKeysHeld.clear();
@@ -2088,6 +2143,7 @@ void App::exitPlayMode()
     m_instrumentAction->setEnabled(false);
 }
 
+#ifdef USE_MUSESCORE
 void App::enterSyncMode()
 {
     if (!m_score || !m_renderer) return;
@@ -2227,7 +2283,9 @@ void App::enterSyncMode()
                 Qt::UniqueConnection);
     }
 }
+#endif // USE_MUSESCORE — enterSyncMode
 
+#ifdef USE_MUSESCORE
 void App::exitSyncMode()
 {
     // Save sync state before exiting
@@ -2275,7 +2333,9 @@ void App::exitSyncMode()
         m_scoreWidget->setOverlayWidth(0);
     }
 }
+#endif // USE_MUSESCORE — exitSyncMode
 
+#ifdef USE_MUSESCORE
 void App::setupSyncSidebar()
 {
     if (m_syncSidebarWidget) return; // already created
@@ -2334,7 +2394,9 @@ void App::setupSyncSidebar()
     m_syncSidebarHandle->hide();
     m_syncSidebarWidget->hide();
 }
+#endif // USE_MUSESCORE — setupSyncSidebar
 
+#ifdef USE_MUSESCORE
 void App::repositionSyncSidebar()
 {
     if (!m_syncSidebarWidget || !m_syncSidebarWidget->isVisible()) return;
@@ -2346,7 +2408,9 @@ void App::repositionSyncSidebar()
     m_syncSidebarWidget->raise();
     m_syncSidebarHandle->raise();
 }
+#endif // USE_MUSESCORE — repositionSyncSidebar
 
+#ifdef USE_MUSESCORE
 void App::saveSyncData()
 {
     if (!m_syncMode->isActive() || m_beatDataPath.isEmpty()) return;
@@ -2361,7 +2425,9 @@ void App::saveSyncData()
         qDebug() << "Saved sync data to" << m_beatDataPath;
     }
 }
+#endif // USE_MUSESCORE — saveSyncData
 
+#ifdef USE_MUSESCORE
 void App::updateSyncTimerFromSyncMode()
 {
     if (!m_syncMode || !m_syncMode->isActive()) return;
@@ -2395,6 +2461,7 @@ void App::updateSyncTimerFromSyncMode()
     m_syncTimer->setMeasureStarts(measureStarts);
     m_syncTimer->setMeasureIndices(measureIndices);
 }
+#endif // USE_MUSESCORE — updateSyncTimerFromSyncMode
 
 void App::loadWorlds(const QString& worldsDir)
 {
@@ -2418,6 +2485,8 @@ void App::showWorldBrowser()
         m_levelBrowser->setCurrentLevel(m_activeSectionIndex, m_activeLevelIndex);
     }
     m_centralStack->setCurrentIndex(0);
+    m_toolbar->hide();
+    if (m_videoExpandButton) m_videoExpandButton->hide();
 }
 
 void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
@@ -2492,6 +2561,8 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
 
         // Switch to score view
         m_centralStack->setCurrentIndex(1);
+        m_toolbar->show();
+        if (m_videoExpandButton) m_videoExpandButton->show();
 
         // Enter play mode (block partPanel signals so auto-select doesn't
         // override the level's instrument setup below)
@@ -2499,6 +2570,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         m_playModeButton->setChecked(true);
         m_partPanel->blockSignals(false);
 
+#ifdef USE_MUSESCORE
         // Part map used by MuseScore path for voice setup and staff reordering
         std::map<int, Part*> origPartMap;
         if (!m_useVerovio) {
@@ -2544,6 +2616,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                 }
             }
         }
+#endif
 
         // Show only the relevant parts
         if (!level.parts.isEmpty()) {
@@ -2724,6 +2797,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         }
 
         // Multi-voice or single-voice setup (skip for Verovio — already set up above)
+#ifdef USE_MUSESCORE
         if (m_useVerovio) {
             // Verovio play-along was already configured above; skip MuseScore setup
         } else if (!level.voices.isEmpty()) {
@@ -2848,6 +2922,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                 }
             }
         }
+#endif // USE_MUSESCORE
 
         m_levelBrowser->showLoading(false);
 
@@ -2872,7 +2947,10 @@ void App::keyPressEvent(QKeyEvent* event)
 {
     // Escape returns to world browser from score view
     if (event->key() == Qt::Key_Escape && m_centralStack->currentIndex() == 1
-        && !m_syncMode->isActive()) {
+#ifdef USE_MUSESCORE
+        && (!m_syncMode || !m_syncMode->isActive())
+#endif
+        ) {
         if (m_recordTrackingActive) {
             stopRecordTracking();
         }
@@ -2881,7 +2959,8 @@ void App::keyPressEvent(QKeyEvent* event)
         return;
     }
 
-    if (m_syncMode->isActive()) {
+#ifdef USE_MUSESCORE
+    if (m_syncMode && m_syncMode->isActive()) {
         // Delete/Backspace: unsync the selected or next-to-tap beat
         if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
             int sel = m_scoreWidget->selectedBeatIndex();
@@ -2919,6 +2998,7 @@ void App::keyPressEvent(QKeyEvent* event)
             return;
         }
     }
+#endif
 
     // Instrument volume: 1/& = down, 2/é = up (always available in play mode)
     if (m_playModeActive && m_instrumentVolSlider) {

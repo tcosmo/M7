@@ -3,12 +3,17 @@
 #include <QObject>
 #include <vector>
 
-#include "types/geometry.h"
-#include "engraving/types/fraction.h"
+#include <QRectF>
 
+#ifdef USE_MUSESCORE
+#include "engraving/types/fraction.h"
+#endif
+
+#ifdef USE_MUSESCORE
 namespace mu::engraving {
 class Score;
 }
+#endif
 
 namespace scoretracker {
 class ScoreEngine;
@@ -23,7 +28,9 @@ class SyncTimer : public QObject
 public:
     explicit SyncTimer(QObject* parent = nullptr);
 
+#ifdef USE_MUSESCORE
     void setScore(mu::engraving::Score* score);
+#endif
     void setEngine(scoretracker::ScoreEngine* engine);
     void setMeasureStarts(const std::vector<double>& measureStarts);
     void setBeatTimes(const std::vector<double>& beatTimes, int beatsPerMeasure);
@@ -41,12 +48,16 @@ public slots:
     void refresh();
 
 signals:
-    void cursorRectChanged(const muse::RectF& rect, int pageIndex);
+    void cursorRectChanged(const QRectF& rect, int pageIndex);
 
 private:
-    muse::RectF resolveCursorRect(const mu::engraving::Fraction& tick, int& outPageIndex) const;
+#ifdef USE_MUSESCORE
+    QRectF resolveCursorRect(const mu::engraving::Fraction& tick, int& outPageIndex) const;
+#endif
 
+#ifdef USE_MUSESCORE
     mu::engraving::Score* m_score = nullptr;
+#endif
     scoretracker::ScoreEngine* m_engine = nullptr;
     std::vector<double> m_measureStarts;
     std::vector<double> m_beatTimes;

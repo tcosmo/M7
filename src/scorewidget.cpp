@@ -22,6 +22,7 @@
 #include <QPinchGesture>
 #include <QDebug>
 
+#ifdef USE_MUSESCORE
 #include "draw/painter.h"
 #include "draw/internal/qpainterprovider.h"
 #include "engraving/rendering/iscorerenderer.h"
@@ -42,6 +43,7 @@
 using namespace mu::engraving;
 using namespace mu::engraving::rendering;
 using namespace muse::draw;
+#endif
 
 namespace scoretracker {
 
@@ -120,6 +122,7 @@ ScoreCanvas::ScoreCanvas(QWidget* parent)
     setPalette(pal);
 }
 
+#ifdef USE_MUSESCORE
 void ScoreCanvas::setScore(Score* score)
 {
     m_score = score;
@@ -132,6 +135,7 @@ void ScoreCanvas::setRenderer(IScoreRenderer* renderer)
     m_renderer = renderer;
     update();
 }
+#endif
 
 void ScoreCanvas::setEngine(scoretracker::ScoreEngine* engine)
 {
@@ -140,10 +144,10 @@ void ScoreCanvas::setEngine(scoretracker::ScoreEngine* engine)
     update();
 }
 
-void ScoreCanvas::setCursorRect(const muse::RectF& rect, int pageIndex)
+void ScoreCanvas::setCursorRect(const QRectF& rect, int pageIndex)
 {
     if (pageIndex < 0 || rect.isNull()) {
-        m_cursorRect = muse::RectF();
+        m_cursorRect = QRectF();
         update();
         return;
     }
@@ -199,7 +203,11 @@ QRect ScoreCanvas::cursorWidgetRect() const
 QRect ScoreCanvas::pageWidgetRect(int pageIndex) const
 {
     int nPages = m_engine ? m_engine->pageCount()
+#ifdef USE_MUSESCORE
                           : (m_score ? static_cast<int>(m_score->pages().size()) : 0);
+#else
+                          : 0;
+#endif
     if (pageIndex < 0 || pageIndex >= nPages)
         return QRect();
 
@@ -208,14 +216,22 @@ QRect ScoreCanvas::pageWidgetRect(int pageIndex) const
 
     for (int i = 0; i < pageIndex; ++i) {
         QSizeF pg = m_engine ? QSizeF(m_engine->pageSize(i))
+#ifdef USE_MUSESCORE
                              : QSizeF(m_score->pages()[i]->ldata()->bbox().width(),
                                       m_score->pages()[i]->ldata()->bbox().height());
+#else
+                             : QSizeF();
+#endif
         yOffset += pg.height() * s + PAGE_GAP;
     }
 
     QSizeF pg = m_engine ? QSizeF(m_engine->pageSize(pageIndex))
+#ifdef USE_MUSESCORE
                          : QSizeF(m_score->pages()[pageIndex]->ldata()->bbox().width(),
                                   m_score->pages()[pageIndex]->ldata()->bbox().height());
+#else
+                         : QSizeF();
+#endif
     double pageW = pg.width() * s;
     double pageH = pg.height() * s;
     double xOffset = (width() - pageW) / 2.0;
@@ -232,7 +248,11 @@ QRect ScoreCanvas::pageWidgetRect(int pageIndex) const
 void ScoreCanvas::updateCanvasSize()
 {
     int nPages = m_engine ? m_engine->pageCount()
+#ifdef USE_MUSESCORE
                           : ((m_score && m_renderer) ? static_cast<int>(m_score->pages().size()) : 0);
+#else
+                          : 0;
+#endif
     if (nPages == 0) return;
 
     double s = scale();
@@ -241,8 +261,12 @@ void ScoreCanvas::updateCanvasSize()
 
     for (int i = 0; i < nPages; ++i) {
         QSizeF pg = m_engine ? QSizeF(m_engine->pageSize(i))
+#ifdef USE_MUSESCORE
                              : QSizeF(m_score->pages()[i]->ldata()->bbox().width(),
                                       m_score->pages()[i]->ldata()->bbox().height());
+#else
+                             : QSizeF();
+#endif
         maxWidth = std::max(maxWidth, pg.width() * s);
         totalHeight += pg.height() * s + PAGE_GAP;
     }
@@ -261,20 +285,28 @@ double ScoreCanvas::maxPageWidthScore() const
             maxW = std::max(maxW, m_engine->pageSize(i).width());
         return maxW;
     }
+#ifdef USE_MUSESCORE
     if (!m_score) return 0;
     double maxW = 0;
     for (const Page* page : m_score->pages()) {
         maxW = std::max(maxW, page->ldata()->bbox().width());
     }
     return maxW;
+#else
+    return 0;
+#endif
 }
 
-muse::RectF ScoreCanvas::mapToRenderCoords(const muse::RectF& pageRelRect, int pageIndex) const
+QRectF ScoreCanvas::mapToRenderCoords(const QRectF& pageRelRect, int pageIndex) const
 {
     if (pageRelRect.isNull()) return pageRelRect;
 
     int nPages = m_engine ? m_engine->pageCount()
+#ifdef USE_MUSESCORE
                           : (m_score ? static_cast<int>(m_score->pages().size()) : 0);
+#else
+                          : 0;
+#endif
     if (nPages == 0 || pageIndex < 0 || pageIndex >= nPages)
         return pageRelRect;
 
@@ -283,25 +315,39 @@ muse::RectF ScoreCanvas::mapToRenderCoords(const muse::RectF& pageRelRect, int p
     double pageW;
     if (m_engine) {
         pageW = m_engine->pageSize(pageIndex).width();
-    } else {
+    }
+#ifdef USE_MUSESCORE
+    else {
         pageW = m_score->pages()[pageIndex]->ldata()->bbox().width();
     }
+#else
+    else {
+        pageW = 0;
+    }
+#endif
 
     double yOffsetScore = PAGE_GAP / (2.0 * s);
     for (int i = 0; i < pageIndex; ++i) {
         double h;
         if (m_engine) {
             h = m_engine->pageSize(i).height();
-        } else {
+        }
+#ifdef USE_MUSESCORE
+        else {
             h = m_score->pages()[i]->ldata()->bbox().height();
         }
+#else
+        else {
+            h = 0;
+        }
+#endif
         yOffsetScore += h + PAGE_GAP / s;
     }
 
     double xOffsetScore = (width() / s - pageW) / 2.0;
     if (xOffsetScore < 0) xOffsetScore = 0;
 
-    return muse::RectF(
+    return QRectF(
         xOffsetScore + pageRelRect.x(),
         yOffsetScore + pageRelRect.y(),
         pageRelRect.width(),
@@ -318,14 +364,22 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
     }
 
     bool hasEngine = m_engine && m_engine->pageCount() > 0;
+#ifdef USE_MUSESCORE
     bool hasMuseScore = m_score && m_renderer;
+#else
+    bool hasMuseScore = false;
+#endif
     if (!hasEngine && !hasMuseScore) {
         QWidget::paintEvent(event);
         return;
     }
 
     double s = scale();
+#ifdef USE_MUSESCORE
     int nPages = hasEngine ? m_engine->pageCount() : static_cast<int>(m_score->pages().size());
+#else
+    int nPages = hasEngine ? m_engine->pageCount() : 0;
+#endif
     QRect clipRect = event->rect();
 
     // Score rendering in its own scope so qp is destroyed before overlay painters
@@ -342,10 +396,17 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
             if (hasEngine) {
                 QSizeF pg = m_engine->pageSize(pi);
                 pgW = pg.width(); pgH = pg.height();
-            } else {
-                muse::RectF bbox = m_score->pages()[pi]->ldata()->bbox();
+            }
+#ifdef USE_MUSESCORE
+            else {
+                QRectF bbox = m_score->pages()[pi]->ldata()->bbox().toQRectF();
                 pgW = bbox.width(); pgH = bbox.height();
             }
+#else
+            else {
+                pgW = 0; pgH = 0;
+            }
+#endif
 
             double pageScreenH = pgH * s;
             double pageScreenW = pgW * s;
@@ -372,7 +433,9 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
                 qp.fillRect(QRectF(0, 0, pgW, pgH), Qt::white);
                 m_engine->renderPage(pi, qp);
                 qp.restore();
-            } else {
+            }
+#ifdef USE_MUSESCORE
+            else {
                 // Legacy MuseScore direct rendering
                 Painter painter(QPainterProvider::make(&qp, false), "scorewidget");
                 painter.setAntialiasing(true);
@@ -397,6 +460,7 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
                 painter.restore();
                 painter.endDraw();
             }
+#endif
 
             yOffsetScore += pgH + PAGE_GAP / s;
         }
@@ -412,6 +476,7 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
         );
     }
 
+#ifdef USE_MUSESCORE
     // Draw box highlight on next note to play
     if (m_highlightElement && m_score) {
         auto* note = static_cast<mu::engraving::Note*>(m_highlightElement);
@@ -423,8 +488,8 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
             int pageIdx = pg ? pg->no() : 0;
             double pageX = pg ? pg->pos().x() : 0;
             double pageY = pg ? pg->pos().y() : 0;
-            muse::RectF pageRel(bbox.x() - pageX, bbox.y() - pageY, bbox.width(), bbox.height());
-            muse::RectF mapped = mapToRenderCoords(pageRel, pageIdx);
+            QRectF pageRel(bbox.x() - pageX, bbox.y() - pageY, bbox.width(), bbox.height());
+            QRectF mapped = mapToRenderCoords(pageRel, pageIdx);
 
             QPainter hlPainter(this);
             hlPainter.setRenderHint(QPainter::Antialiasing, true);
@@ -448,8 +513,8 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
             int pageIdx2 = pg2 ? pg2->no() : 0;
             double pageX2 = pg2 ? pg2->pos().x() : 0;
             double pageY2 = pg2 ? pg2->pos().y() : 0;
-            muse::RectF pageRel2(bbox2.x() - pageX2, bbox2.y() - pageY2, bbox2.width(), bbox2.height());
-            muse::RectF mapped2 = mapToRenderCoords(pageRel2, pageIdx2);
+            QRectF pageRel2(bbox2.x() - pageX2, bbox2.y() - pageY2, bbox2.width(), bbox2.height());
+            QRectF mapped2 = mapToRenderCoords(pageRel2, pageIdx2);
 
             QPainter hlPainter2(this);
             hlPainter2.setRenderHint(QPainter::Antialiasing, true);
@@ -461,15 +526,19 @@ void ScoreCanvas::paintEvent(QPaintEvent* event)
             hlPainter2.drawRoundedRect(hlRect2, 3, 3);
         }
     }
+#endif
 
+#ifdef USE_MUSESCORE
     // Draw sync dots (fixed pixel size, independent of zoom)
     if (m_syncMode && m_syncMode->isActive()) {
         QPainter dotPainter(this);
         dotPainter.resetTransform();
         paintSyncDots(dotPainter);
     }
+#endif
 }
 
+#ifdef USE_MUSESCORE
 static void colorChord(mu::engraving::Note* note, const muse::draw::Color& color)
 {
     if (!note) return;
@@ -485,22 +554,27 @@ static void colorChord(mu::engraving::Note* note, const muse::draw::Color& color
     if (chord->stem()) chord->stem()->setColor(color);
     if (chord->hook()) chord->hook()->setColor(color);
 }
+#endif
 
 void ScoreCanvas::setHighlightElement(void* element)
 {
     if (m_highlightElement == element) return;
 
+#ifdef USE_MUSESCORE
     if (m_highlightElement) {
         colorChord(static_cast<mu::engraving::Note*>(m_highlightElement),
                    muse::draw::Color::BLACK);
     }
+#endif
 
     m_highlightElement = element;
 
+#ifdef USE_MUSESCORE
     if (m_highlightElement) {
         colorChord(static_cast<mu::engraving::Note*>(m_highlightElement),
                    muse::draw::Color(50, 120, 255));
     }
+#endif
 
     update();
 }
@@ -509,23 +583,28 @@ void ScoreCanvas::setHighlightElement2(void* element)
 {
     if (m_highlightElement2 == element) return;
 
+#ifdef USE_MUSESCORE
     if (m_highlightElement2) {
         colorChord(static_cast<mu::engraving::Note*>(m_highlightElement2),
                    muse::draw::Color::BLACK);
     }
+#endif
 
     m_highlightElement2 = element;
 
+#ifdef USE_MUSESCORE
     if (m_highlightElement2) {
         colorChord(static_cast<mu::engraving::Note*>(m_highlightElement2),
                    muse::draw::Color(180, 80, 220)); // violet
     }
+#endif
 
     update();
 }
 
 QRect ScoreCanvas::highlightWidgetRect() const
 {
+#ifdef USE_MUSESCORE
     if (!m_highlightElement || !m_score) return QRect();
     auto* note = static_cast<mu::engraving::Note*>(m_highlightElement);
     auto* chord = note->chord();
@@ -537,8 +616,8 @@ QRect ScoreCanvas::highlightWidgetRect() const
     int pageIdx = pg ? pg->no() : 0;
     double pageX = pg ? pg->pos().x() : 0;
     double pageY = pg ? pg->pos().y() : 0;
-    muse::RectF pageRel(bbox.x() - pageX, bbox.y() - pageY, bbox.width(), bbox.height());
-    muse::RectF mapped = mapToRenderCoords(pageRel, pageIdx);
+    QRectF pageRel(bbox.x() - pageX, bbox.y() - pageY, bbox.width(), bbox.height());
+    QRectF mapped = mapToRenderCoords(pageRel, pageIdx);
 
     double s = scale();
     return QRect(
@@ -547,6 +626,9 @@ QRect ScoreCanvas::highlightWidgetRect() const
         static_cast<int>(mapped.width() * s) + 10,
         static_cast<int>(mapped.height() * s) + 10
     );
+#else
+    return QRect();
+#endif
 }
 
 void ScoreCanvas::setSyncMode(scoretracker::SyncMode* syncMode)
@@ -569,9 +651,11 @@ QPoint ScoreCanvas::dotWidgetPos(int beatIndex) const
 void ScoreCanvas::setPlaybackTime(double time)
 {
     m_playbackTime = time;
+#ifdef USE_MUSESCORE
     if (m_syncMode && m_syncMode->isActive()) {
         update();
     }
+#endif
 }
 
 void ScoreCanvas::setPlaying(bool playing)
@@ -599,6 +683,7 @@ void ScoreCanvas::setSelectedBeat(int beatIndex)
 
 void ScoreCanvas::paintSyncDots(QPainter& painter)
 {
+#ifdef USE_MUSESCORE
     if (!m_score || !m_syncMode) return;
 
     painter.setRenderHint(QPainter::Antialiasing, true);
@@ -649,10 +734,10 @@ void ScoreCanvas::paintSyncDots(QPainter& painter)
             // Map to render coordinates (same as mapToRenderCoords)
             double yOffsetScore = PAGE_GAP / (2.0 * s);
             for (int pi = 0; pi < pageIndex; ++pi) {
-                muse::RectF bbox = pages[pi]->ldata()->bbox();
+                QRectF bbox = pages[pi]->ldata()->bbox().toQRectF();
                 yOffsetScore += bbox.height() + PAGE_GAP / s;
             }
-            muse::RectF pageBBox = pages[pageIndex]->ldata()->bbox();
+            QRectF pageBBox = pages[pageIndex]->ldata()->bbox().toQRectF();
             double xOffsetScore = (width() / s - pageBBox.width()) / 2.0;
             if (xOffsetScore < 0) xOffsetScore = 0;
 
@@ -714,6 +799,9 @@ void ScoreCanvas::paintSyncDots(QPainter& painter)
 
         }
     }
+#else
+    Q_UNUSED(painter);
+#endif
 }
 
 int ScoreCanvas::hitTestDot(const QPoint& pos) const
@@ -730,6 +818,7 @@ int ScoreCanvas::hitTestDot(const QPoint& pos) const
 
 void ScoreCanvas::mousePressEvent(QMouseEvent* event)
 {
+#ifdef USE_MUSESCORE
     if (m_syncMode && m_syncMode->isActive() && event->button() == Qt::LeftButton) {
         int hit = hitTestDot(event->pos());
         if (hit >= 0) {
@@ -762,15 +851,18 @@ void ScoreCanvas::mousePressEvent(QMouseEvent* event)
             update();
         }
     }
+#endif
     QWidget::mousePressEvent(event);
 }
 
 void ScoreCanvas::mouseMoveEvent(QMouseEvent* event)
 {
+#ifdef USE_MUSESCORE
     if (m_syncMode && m_syncMode->isActive()) {
         int hit = hitTestDot(event->pos());
         setCursor(hit >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
     }
+#endif
     QWidget::mouseMoveEvent(event);
 }
 
@@ -838,6 +930,7 @@ ScoreWidget::ScoreWidget(QWidget* parent)
     m_canvas->setZoom(ZOOM_DEFAULT);
 }
 
+#ifdef USE_MUSESCORE
 void ScoreWidget::setScore(Score* score)
 {
     m_canvas->setScore(score);
@@ -847,6 +940,7 @@ void ScoreWidget::setRenderer(IScoreRenderer* renderer)
 {
     m_canvas->setRenderer(renderer);
 }
+#endif
 
 void ScoreWidget::setEngine(scoretracker::ScoreEngine* engine)
 {
@@ -935,6 +1029,7 @@ void ScoreWidget::zoomOut()
 
 void ScoreWidget::zoomToFit()
 {
+    if (!m_canvas) return;
     // Web-rendered engines handle their own scaling
     if (m_canvas->engineUsesWebRendering()) return;
 
@@ -990,7 +1085,7 @@ bool ScoreWidget::event(QEvent* event)
     return QScrollArea::event(event);
 }
 
-void ScoreWidget::setCursorRect(const muse::RectF& rect, int pageIndex)
+void ScoreWidget::setCursorRect(const QRectF& rect, int pageIndex)
 {
     m_canvas->setCursorRect(rect, pageIndex);
 
@@ -1002,6 +1097,7 @@ void ScoreWidget::setCursorRect(const muse::RectF& rect, int pageIndex)
 void ScoreWidget::resizeEvent(QResizeEvent* event)
 {
     QScrollArea::resizeEvent(event);
+    if (!m_triggerOverlay) return;
     m_triggerOverlay->setGeometry(viewport()->geometry());
     m_triggerOverlay->raise();
 

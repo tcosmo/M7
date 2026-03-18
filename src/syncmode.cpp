@@ -1,3 +1,5 @@
+#ifdef USE_MUSESCORE
+
 #include "syncmode.h"
 
 #include "engraving/dom/masterscore.h"
@@ -319,3 +321,5 @@ void SyncMode::fromJson(const QJsonObject& obj)
 }
 
 } // namespace scoretracker
+
+#endif // USE_MUSESCORE

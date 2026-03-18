@@ -6,10 +6,12 @@
 #include <QList>
 #include <QPair>
 
+#ifdef USE_MUSESCORE
 namespace mu::engraving {
 class Score;
 class Part;
 }
+#endif
 
 namespace scoretracker {
 
@@ -44,7 +46,9 @@ public:
 
     // Returns list of (program number, preset name) from the loaded soundfont (bank 0 only)
     QList<QPair<int, QString>> presets() const;
+#ifdef USE_MUSESCORE
     void buildNoteTables(mu::engraving::Score* score);
+#endif
     void playNextNote();
     void stopNote();
     void resetPosition();
@@ -55,12 +59,16 @@ public:
     bool advanceTiedNotes(int currentTick);
 
     // Set the voice to play along with (clears previous, builds note table)
+#ifdef USE_MUSESCORE
     void setVoice(mu::engraving::Part* part, int gmProgram, mu::engraving::Score* score);
+#endif
 
     // Multi-voice support
     void clearVoices();
     int ensureSoundfont(const QString& path); // load if needed, return sfont_id
+#ifdef USE_MUSESCORE
     void addVoice(mu::engraving::Part* part, int gmProgram, int sfontId, mu::engraving::Score* score);
+#endif
     void playNextNoteForVoice(int voiceIdx);
     void stopNoteForVoice(int voiceIdx);
     void* nextNoteElementForVoice(int voiceIdx) const;
@@ -104,7 +112,9 @@ public:
     void trillToggle();
 
 private:
+#ifdef USE_MUSESCORE
     static void buildNoteTableForPart(mu::engraving::Score* score, Voice& voice);
+#endif
 
     void* m_settings = nullptr;
     void* m_synth = nullptr;

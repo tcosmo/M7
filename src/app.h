@@ -19,12 +19,14 @@
 
 #include "worldmodel.h"
 
+#ifdef USE_MUSESCORE
 namespace mu::engraving {
 class MasterScore;
 namespace rendering {
 class IScoreRenderer;
 }
 }
+#endif
 
 namespace scoretracker {
 class ScoreEngine;
@@ -36,8 +38,10 @@ class ScoreWidget;
 class AudioPlayer;
 class YouTubePlayer;
 class SyncTimer;
+#ifdef USE_MUSESCORE
 class SyncMode;
 class SyncPanel;
+#endif
 class WaveformWidget;
 class PartPanel;
 class DisplaySettings;
@@ -54,14 +58,18 @@ public:
     explicit App(QWidget* parent = nullptr);
     ~App();
 
-    void setUseVerovio(bool use) { m_useVerovio = use; }
+#ifdef USE_MUSESCORE
+    void setUseMuseScore(bool use) { m_useVerovio = !use; }
+#endif
     bool loadScore(const QString& musicXmlPath);
     bool loadAudio(const QString& audioPath);
     bool loadBeatData(const QString& jsonPath);
     void loadYouTube(const QString& url);
     void loadSources(const QString& jsonPath);
     void setVisibleParts(const QList<int>& partNumbers);
+#ifdef USE_MUSESCORE
     void startSyncMode();
+#endif
     void startPlayMode();
     void selectFileSource();
     void loadWorlds(const QString& worldsDir);
@@ -95,12 +103,14 @@ private:
     void finalizeRecordedTracking();
     void saveRecordedTracking();
 
+#ifdef USE_MUSESCORE
     void enterSyncMode();
     void exitSyncMode();
     void setupSyncSidebar();
     void repositionSyncSidebar();
     void saveSyncData();
     void updateSyncTimerFromSyncMode();
+#endif
 
     // Player dispatch helpers (route to active player)
     void playerPlay();
@@ -160,15 +170,19 @@ private:
     double m_interpEnd = 0;            // active interpretation end time (0 = no limit)
     QString m_sourceAudioFile;
     SyncTimer* m_syncTimer = nullptr;
+#ifdef USE_MUSESCORE
     SyncMode* m_syncMode = nullptr;
+#endif
     bool m_playModeActive = false;
     QPushButton* m_playModeButton = nullptr;
     // Sync mode archived — button removed from toolbar but code retained
     // QPushButton* m_syncModeButton = nullptr;
+#ifdef USE_MUSESCORE
     QWidget* m_syncSidebarWidget = nullptr;
     QWidget* m_syncSidebarHandle = nullptr;
     SyncPanel* m_syncPanel = nullptr;
     WaveformWidget* m_waveformWidget = nullptr;
+#endif
     QSplitter* m_centralSplitter = nullptr;
     bool m_savedSidebarVisible = true;
     bool m_savedTrackingOn = false;
@@ -181,7 +195,7 @@ private:
 
     // Score engine (abstraction over MuseScore / Verovio)
     std::unique_ptr<scoretracker::ScoreEngine> m_engine;
-    bool m_useVerovio = false;
+    bool m_useVerovio = true;
 
     // Verovio play-along: per-voice note tables with element IDs for highlighting
     struct VrvVoice {
@@ -190,9 +204,11 @@ private:
     };
     std::vector<VrvVoice> m_vrvVoices;
 
+#ifdef USE_MUSESCORE
     // Legacy MuseScore pointers (valid when using MuseScoreEngine)
     mu::engraving::MasterScore* m_score = nullptr;
     std::shared_ptr<mu::engraving::rendering::IScoreRenderer> m_renderer;
+#endif
 
     PlayAlongSynth* m_playAlongSynth = nullptr;
     int m_keysHeld = 0;

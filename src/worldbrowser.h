@@ -7,6 +7,8 @@
 #include <QComboBox>
 #include <QLabel>
 #include <QSlider>
+#include <QTabWidget>
+#include <QStackedWidget>
 #include <QList>
 #include <QStringList>
 

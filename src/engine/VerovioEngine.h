@@ -2,6 +2,7 @@
 
 #include "ScoreEngine.h"
 #include <QDomDocument>
+#include <QList>
 #include <map>
 #include <set>
 

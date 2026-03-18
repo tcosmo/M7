@@ -1,4 +1,7 @@
 #include "waveformwidget.h"
+
+#ifdef USE_MUSESCORE
+
 #include "syncmode.h"
 #include "theme.h"
 
@@ -600,3 +603,5 @@ void WaveformWidget::updateHeight()
 }
 
 } // namespace scoretracker
+
+#endif // USE_MUSESCORE

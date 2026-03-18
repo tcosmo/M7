@@ -29,9 +29,9 @@ struct Theme {
     static QColor iconHidden()  { return QColor(0x4f, 0x54, 0x5c); }
     static QColor arrowColor()  { return QColor(0xb9, 0xbb, 0xbe); }
 
-    // Accent colors — dark orange + friends
-    static QColor accent()      { return QColor(0xE0, 0x7A, 0x2F); } // dark orange — buttons, active
-    static QColor accentHover() { return QColor(0xC4, 0x6A, 0x28); } // darker orange pressed
+    // Accent colors — refined slate blue
+    static QColor accent()      { return QColor(0x5B, 0x8D, 0xBF); } // slate blue — buttons, active
+    static QColor accentHover() { return QColor(0x4A, 0x7A, 0xA8); } // darker slate pressed
     static QColor green()       { return QColor(0x57, 0xF2, 0x87); } // online / tracking on
     static QColor red()         { return QColor(0xED, 0x42, 0x45); } // danger / stop
     static QColor yellow()      { return QColor(0xFE, 0xE7, 0x5C); } // idle / warning

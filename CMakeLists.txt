@@ -11,84 +11,133 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
 endif()
 
-set(MU_ROOT ${CMAKE_CURRENT_LIST_DIR}/thirdparty/musescore)
-set(PROJECT_ROOT_DIR ${MU_ROOT})
-set(MUSE_FRAMEWORK_PATH ${MU_ROOT}/src)
+option(USE_MUSESCORE "Build with MuseScore engine support (adds --musescore flag)" OFF)
 
-set(CMAKE_MODULE_PATH
-    ${MU_ROOT}/buildscripts
-    ${MU_ROOT}/buildscripts/cmake
-    ${MU_ROOT}/src/framework/cmake
-    ${CMAKE_MODULE_PATH}
-)
+# --- MuseScore build infrastructure (only when enabled) ---
+if(USE_MUSESCORE)
+    set(MU_ROOT ${CMAKE_CURRENT_LIST_DIR}/thirdparty/musescore)
+    set(PROJECT_ROOT_DIR ${MU_ROOT})
+    set(MUSE_FRAMEWORK_PATH ${MU_ROOT}/src)
 
-include(SetupBuildEnvironment)
-include(GetPlatformInfo)
+    set(CMAKE_MODULE_PATH
+        ${MU_ROOT}/buildscripts
+        ${MU_ROOT}/buildscripts/cmake
+        ${MU_ROOT}/src/framework/cmake
+        ${CMAKE_MODULE_PATH}
+    )
 
-find_package(Qt6 6.3 REQUIRED COMPONENTS Core Gui Widgets Svg Xml Quick WebEngineWidgets WebChannel)
+    include(SetupBuildEnvironment)
+    include(GetPlatformInfo)
+endif()
+
+find_package(Qt6 6.3 REQUIRED COMPONENTS Core Gui Widgets Svg Xml WebEngineWidgets WebChannel)
 qt_standard_project_setup()
 
-include(MuseCreateModule)
+if(USE_MUSESCORE)
+    find_package(Qt6 6.3 REQUIRED COMPONENTS Quick)
+    include(MuseCreateModule)
+endif()
 
-# Verovio engine (built before global include_directories to avoid name clashes)
+# Verovio engine
 set(VEROVIO_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/thirdparty/verovio)
 set(BUILD_AS_LIBRARY ON)
 add_subdirectory(${VEROVIO_SOURCE_DIR}/cmake ${CMAKE_CURRENT_BINARY_DIR}/build/verovio)
 
-include_directories(
-    ${CMAKE_CURRENT_LIST_DIR}/src
-    ${CMAKE_CURRENT_LIST_DIR}/thirdparty
-    ${MU_ROOT}/thirdparty/dtl
-    ${MU_ROOT}/thirdparty
-)
+if(USE_MUSESCORE)
+    include_directories(
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/thirdparty
+        ${MU_ROOT}/thirdparty/dtl
+        ${MU_ROOT}/thirdparty
+    )
 
-set(THIRDPARTY_DIR ${MU_ROOT}/thirdparty)
-set(MUSE_QT_SUPPORT ON)
+    set(THIRDPARTY_DIR ${MU_ROOT}/thirdparty)
+    set(MUSE_QT_SUPPORT ON)
 
-# Disable features we don't need (CMake variables for subdirectory CMakeLists)
-set(ENGRAVING_NO_ACCESSIBILITY ON)
-set(MUSICXML_NO_INTERNAL ON)
-set(GLOBAL_NO_INTERNAL ON)
+    # Disable features we don't need
+    set(ENGRAVING_NO_ACCESSIBILITY ON)
+    set(MUSICXML_NO_INTERNAL ON)
+    set(GLOBAL_NO_INTERNAL ON)
 
-# Compile definitions
-add_compile_definitions(
-    MUSICXML_NO_INTERNAL
-    ENGRAVING_NO_API
-)
+    add_compile_definitions(
+        MUSICXML_NO_INTERNAL
+        ENGRAVING_NO_API
+    )
 
-# Generate muse_framework_config.h
-configure_file(
-    ${CMAKE_CURRENT_LIST_DIR}/src/muse_framework_config.h
-    ${CMAKE_CURRENT_BINARY_DIR}/muse_framework_config.h
-    COPYONLY
-)
+    # Generate muse_framework_config.h
+    configure_file(
+        ${CMAKE_CURRENT_LIST_DIR}/src/muse_framework_config.h
+        ${CMAKE_CURRENT_BINARY_DIR}/muse_framework_config.h
+        COPYONLY
+    )
 
-# Add MuseScore modules (with full internal support)
-add_subdirectory(${MU_ROOT}/src/framework/global global)
-add_subdirectory(${MU_ROOT}/src/framework/draw draw)
-add_subdirectory(${MU_ROOT}/src/engraving engraving)
-add_subdirectory(${MU_ROOT}/src/importexport/musicxml iex_musicxml)
+    # Add MuseScore modules
+    add_subdirectory(${MU_ROOT}/src/framework/global global)
+    add_subdirectory(${MU_ROOT}/src/framework/draw draw)
+    add_subdirectory(${MU_ROOT}/src/engraving engraving)
+    add_subdirectory(${MU_ROOT}/src/importexport/musicxml iex_musicxml)
 
-# Fix: Some modules use Qt macros that are normally provided via PCH
-configure_file(
-    ${CMAKE_CURRENT_LIST_DIR}/src/pch_fix.h
-    ${CMAKE_CURRENT_BINARY_DIR}/pch_fix.h
-    COPYONLY
-)
-set(PCH_FIX "$<$<COMPILE_LANGUAGE:CXX>:-include${CMAKE_CURRENT_BINARY_DIR}/pch_fix.h>")
-target_compile_options(muse_global PRIVATE ${PCH_FIX})
-target_compile_options(muse_draw PRIVATE ${PCH_FIX})
-target_compile_options(engraving PRIVATE ${PCH_FIX})
-target_compile_options(iex_musicxml PRIVATE ${PCH_FIX})
+    # Fix: Some modules use Qt macros that are normally provided via PCH
+    configure_file(
+        ${CMAKE_CURRENT_LIST_DIR}/src/pch_fix.h
+        ${CMAKE_CURRENT_BINARY_DIR}/pch_fix.h
+        COPYONLY
+    )
+    set(PCH_FIX "$<$<COMPILE_LANGUAGE:CXX>:-include${CMAKE_CURRENT_BINARY_DIR}/pch_fix.h>")
+    target_compile_options(muse_global PRIVATE ${PCH_FIX})
+    target_compile_options(muse_draw PRIVATE ${PCH_FIX})
+    target_compile_options(engraving PRIVATE ${PCH_FIX})
+    target_compile_options(iex_musicxml PRIVATE ${PCH_FIX})
 
-# Fix: engraving and musicxml use thirdparty/ relative includes
-target_include_directories(engraving PRIVATE ${MU_ROOT})
-target_include_directories(iex_musicxml PRIVATE ${MU_ROOT})
+    target_include_directories(engraving PRIVATE ${MU_ROOT})
+    target_include_directories(iex_musicxml PRIVATE ${MU_ROOT})
+    target_link_libraries(iex_musicxml PRIVATE muse_draw)
 
-# Fix: iex_musicxml uses muse_draw for FontMetrics but doesn't link it
-target_link_libraries(iex_musicxml PRIVATE muse_draw)
+    # Exclude API v1 source files from engraving
+    get_target_property(ENG_SOURCES engraving SOURCES)
+    list(FILTER ENG_SOURCES EXCLUDE REGEX ".*/api/v1/.*")
+    set_target_properties(engraving PROPERTIES SOURCES "${ENG_SOURCES}")
 
-# FluidSynth static library (for trumpet synth)
+    # Add back internal files that engraving/draw modules need
+    set(GLOBAL_SRC_DIR ${MU_ROOT}/src/framework/global)
+    target_sources(muse_global PRIVATE
+        ${GLOBAL_SRC_DIR}/settings.cpp
+        ${GLOBAL_SRC_DIR}/settings.h
+        ${GLOBAL_SRC_DIR}/io/internal/filesystem.cpp
+        ${GLOBAL_SRC_DIR}/io/internal/filesystem.h
+        ${GLOBAL_SRC_DIR}/internal/globalconfiguration.cpp
+        ${GLOBAL_SRC_DIR}/internal/globalconfiguration.h
+        ${GLOBAL_SRC_DIR}/internal/interactive.cpp
+        ${GLOBAL_SRC_DIR}/internal/interactive.h
+        ${GLOBAL_SRC_DIR}/internal/cryptographichash.cpp
+        ${GLOBAL_SRC_DIR}/internal/cryptographichash.h
+        ${GLOBAL_SRC_DIR}/internal/process.cpp
+        ${GLOBAL_SRC_DIR}/internal/process.h
+        ${GLOBAL_SRC_DIR}/internal/systeminfo.cpp
+        ${GLOBAL_SRC_DIR}/internal/systeminfo.h
+        ${GLOBAL_SRC_DIR}/internal/tickerprovider.cpp
+        ${GLOBAL_SRC_DIR}/internal/tickerprovider.h
+    )
+
+    # macOS-specific global sources
+    target_sources(muse_global PRIVATE
+        ${GLOBAL_SRC_DIR}/internal/platform/macos/macosinteractivehelper.mm
+        ${GLOBAL_SRC_DIR}/internal/platform/macos/macosinteractivehelper.h
+    )
+    set_source_files_properties(
+        ${GLOBAL_SRC_DIR}/internal/platform/macos/macosinteractivehelper.mm
+        PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON SKIP_PRECOMPILE_HEADERS ON
+    )
+    find_library(AppKit_Lib NAMES AppKit)
+    target_link_libraries(muse_global PRIVATE ${AppKit_Lib})
+else()
+    include_directories(
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/thirdparty
+    )
+endif()
+
+# FluidSynth static library (used by both engines for play-along)
 set(MU_A_ROOT ${CMAKE_CURRENT_LIST_DIR}/thirdparty/musescore_a)
 set(FLUIDSYNTH_CMAKE_DIR ${MU_A_ROOT}/src/framework/audio/thirdparty/fluidsynth)
 include(${FLUIDSYNTH_CMAKE_DIR}/fluidsynth.cmake)
@@ -107,52 +156,12 @@ target_compile_definitions(fluidsynth_lib PUBLIC
 )
 set_target_properties(fluidsynth_lib PROPERTIES COMPILE_FLAGS "-fPIC")
 
-# Exclude API v1 source files from engraving (they need full QML/MOC support)
-get_target_property(ENG_SOURCES engraving SOURCES)
-list(FILTER ENG_SOURCES EXCLUDE REGEX ".*/api/v1/.*")
-set_target_properties(engraving PROPERTIES SOURCES "${ENG_SOURCES}")
-
-# GLOBAL_NO_INTERNAL excludes globalmodule, settings, API files, and internals.
-# Add back the specific internal files that engraving/draw modules need.
-set(GLOBAL_SRC_DIR ${MU_ROOT}/src/framework/global)
-target_sources(muse_global PRIVATE
-    ${GLOBAL_SRC_DIR}/settings.cpp
-    ${GLOBAL_SRC_DIR}/settings.h
-    ${GLOBAL_SRC_DIR}/io/internal/filesystem.cpp
-    ${GLOBAL_SRC_DIR}/io/internal/filesystem.h
-    ${GLOBAL_SRC_DIR}/internal/globalconfiguration.cpp
-    ${GLOBAL_SRC_DIR}/internal/globalconfiguration.h
-    ${GLOBAL_SRC_DIR}/internal/interactive.cpp
-    ${GLOBAL_SRC_DIR}/internal/interactive.h
-    ${GLOBAL_SRC_DIR}/internal/cryptographichash.cpp
-    ${GLOBAL_SRC_DIR}/internal/cryptographichash.h
-    ${GLOBAL_SRC_DIR}/internal/process.cpp
-    ${GLOBAL_SRC_DIR}/internal/process.h
-    ${GLOBAL_SRC_DIR}/internal/systeminfo.cpp
-    ${GLOBAL_SRC_DIR}/internal/systeminfo.h
-    ${GLOBAL_SRC_DIR}/internal/tickerprovider.cpp
-    ${GLOBAL_SRC_DIR}/internal/tickerprovider.h
-)
-
-# macOS-specific global sources
-target_sources(muse_global PRIVATE
-    ${GLOBAL_SRC_DIR}/internal/platform/macos/macosinteractivehelper.mm
-    ${GLOBAL_SRC_DIR}/internal/platform/macos/macosinteractivehelper.h
-)
-set_source_files_properties(
-    ${GLOBAL_SRC_DIR}/internal/platform/macos/macosinteractivehelper.mm
-    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON SKIP_PRECOMPILE_HEADERS ON
-)
-find_library(AppKit_Lib NAMES AppKit)
-target_link_libraries(muse_global PRIVATE ${AppKit_Lib})
-
-add_executable(playbach
+# --- Executable sources ---
+set(PLAYBACH_SOURCES
     src/main.cpp
     src/app.h
     src/app.cpp
     src/engine/ScoreEngine.h
-    src/engine/MuseScoreEngine.h
-    src/engine/MuseScoreEngine.cpp
     src/engine/VerovioEngine.h
     src/engine/VerovioEngine.cpp
     src/scorewidget.h
@@ -185,32 +194,51 @@ add_executable(playbach
     src/miniaudio_impl.c
 )
 
+if(USE_MUSESCORE)
+    list(APPEND PLAYBACH_SOURCES
+        src/engine/MuseScoreEngine.h
+        src/engine/MuseScoreEngine.cpp
+    )
+endif()
+
+add_executable(playbach ${PLAYBACH_SOURCES})
+
 qt_add_resources(playbach "icons"
     PREFIX "/"
     FILES
         src/icons/youtube.png
 )
 
-set_target_properties(engraving PROPERTIES COMPILE_FLAGS "-fPIC")
-set_target_properties(muse_global PROPERTIES COMPILE_FLAGS "-fPIC")
-set_target_properties(muse_draw PROPERTIES COMPILE_FLAGS "-fPIC")
-set_target_properties(iex_musicxml PROPERTIES COMPILE_FLAGS "-fPIC")
 set_target_properties(playbach PROPERTIES COMPILE_FLAGS "-fPIC")
 
-target_include_directories(playbach PUBLIC
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_LIST_DIR}/src
-    ${CMAKE_CURRENT_LIST_DIR}/thirdparty
-    ${MU_ROOT}/src/framework
-    ${MU_ROOT}/src/framework/global
-    ${MU_ROOT}/src/framework/draw
-    ${MU_ROOT}/src
-    ${MU_ROOT}/src/engraving
-    ${MU_ROOT}
-    ${FLUIDSYNTH_INC}
-)
+if(USE_MUSESCORE)
+    target_compile_definitions(playbach PRIVATE USE_MUSESCORE)
 
-target_compile_options(playbach PRIVATE ${PCH_FIX})
+    set_target_properties(engraving PROPERTIES COMPILE_FLAGS "-fPIC")
+    set_target_properties(muse_global PROPERTIES COMPILE_FLAGS "-fPIC")
+    set_target_properties(muse_draw PROPERTIES COMPILE_FLAGS "-fPIC")
+    set_target_properties(iex_musicxml PROPERTIES COMPILE_FLAGS "-fPIC")
+
+    target_include_directories(playbach PUBLIC
+        ${CMAKE_CURRENT_BINARY_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/thirdparty
+        ${MU_ROOT}/src/framework
+        ${MU_ROOT}/src/framework/global
+        ${MU_ROOT}/src/framework/draw
+        ${MU_ROOT}/src
+        ${MU_ROOT}/src/engraving
+        ${MU_ROOT}
+        ${FLUIDSYNTH_INC}
+    )
+    target_compile_options(playbach PRIVATE ${PCH_FIX})
+else()
+    target_include_directories(playbach PUBLIC
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/thirdparty
+        ${FLUIDSYNTH_INC}
+    )
+endif()
 
 target_include_directories(playbach PRIVATE
     ${VEROVIO_SOURCE_DIR}/include/vrv
@@ -224,12 +252,9 @@ target_include_directories(playbach PRIVATE
     ${VEROVIO_SOURCE_DIR}/libmei/dist
     ${VEROVIO_SOURCE_DIR}/libmei/addons
 )
-target_link_libraries(playbach PRIVATE
+
+set(PLAYBACH_LIBS
     verovio
-    muse_global
-    muse_draw
-    engraving
-    iex_musicxml
     fluidsynth_lib
     Qt6::Core
     Qt6::Gui
@@ -245,3 +270,14 @@ target_link_libraries(playbach PRIVATE
     "-framework AVFoundation"
     "-framework Accelerate"
 )
+
+if(USE_MUSESCORE)
+    list(APPEND PLAYBACH_LIBS
+        muse_global
+        muse_draw
+        engraving
+        iex_musicxml
+    )
+endif()
+
+target_link_libraries(playbach PRIVATE ${PLAYBACH_LIBS})

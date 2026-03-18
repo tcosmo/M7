@@ -1,6 +1,7 @@
 #include "partpanel.h"
 #include "theme.h"
 
+#ifdef USE_MUSESCORE
 #include "engraving/dom/score.h"
 #include "engraving/dom/part.h"
 #include "engraving/dom/staff.h"
@@ -19,6 +20,7 @@
 #include "engraving/types/fraction.h"
 #include "engraving/types/types.h"
 #include "engraving/style/styledef.h"
+#endif
 
 #include <QPainter>
 #include <QPainterPath>
@@ -33,8 +35,10 @@
 #include <QJsonArray>
 #include <QDebug>
 
+#ifdef USE_MUSESCORE
 using namespace mu::engraving;
 using namespace mu::engraving::rendering;
+#endif
 
 namespace scoretracker {
 
@@ -125,6 +129,7 @@ static QIcon makeEarIcon(bool active)
     return QIcon(px);
 }
 
+#ifdef USE_MUSESCORE
 // ---------------------------------------------------------------------------
 // Octave-shifted clef helpers
 // ---------------------------------------------------------------------------
@@ -199,7 +204,9 @@ static bool clefSupportsOctave(ClefType base)
 {
     return base == ClefType::G || base == ClefType::F;
 }
+#endif // USE_MUSESCORE
 
+#ifdef USE_MUSESCORE
 // ---------------------------------------------------------------------------
 // PartRow
 // ---------------------------------------------------------------------------
@@ -474,7 +481,9 @@ PartRow::PartRow(Part* part, const QString& name, QWidget* parent)
         m_nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textHidden().name()));
     }
 }
+#endif // USE_MUSESCORE
 
+#ifdef USE_MUSESCORE
 void PartRow::applyPitchMode(bool concert)
 {
     if (!m_isTransposing) return;
@@ -576,6 +585,7 @@ void PartRow::applyPitchMode(bool concert)
         m_writtenRadio->blockSignals(false);
     }
 }
+#endif // USE_MUSESCORE
 
 void PartRow::setPitchControlEnabled(bool enabled)
 {
@@ -590,8 +600,10 @@ void PartRow::setClefControlEnabled(bool enabled)
     if (m_octaveCombo) {
         if (!enabled)
             m_octaveCombo->setEnabled(false);
+#ifdef USE_MUSESCORE
         else
             updateOctaveCombo();
+#endif
     }
 }
 
@@ -600,11 +612,14 @@ void PartRow::setOctaveControlEnabled(bool enabled)
     if (m_octaveCombo) {
         if (!enabled)
             m_octaveCombo->setEnabled(false);
+#ifdef USE_MUSESCORE
         else
             updateOctaveCombo();
+#endif
     }
 }
 
+#ifdef USE_MUSESCORE
 void PartRow::updateOctaveCombo()
 {
     if (!m_octaveCombo || !m_clefCombo) return;
@@ -658,6 +673,7 @@ QString PartRow::partName() const
 {
     return m_part->partName().toQString();
 }
+#endif // USE_MUSESCORE
 
 int PartRow::clefComboValue() const
 {
@@ -669,6 +685,7 @@ int PartRow::octaveComboValue() const
     return m_octaveCombo ? m_octaveCombo->currentData().toInt() : 0;
 }
 
+#ifdef USE_MUSESCORE
 void PartRow::setClefFromSettings(int clef, int octave)
 {
     if (!m_clefCombo || !m_octaveCombo) return;
@@ -769,6 +786,7 @@ void PartRow::updateEyeIcon()
                          : Theme::textHidden().name()));
     }
 }
+#endif // USE_MUSESCORE
 
 void PartRow::setPlayAlongActive(bool active)
 {
@@ -846,7 +864,9 @@ void PartRow::applyTheme()
     }
 
     // Eye icon + ear icon + name label color
+#ifdef USE_MUSESCORE
     updateEyeIcon();
+#endif
     updateEarIcon();
 
     // Arrow button
@@ -958,6 +978,7 @@ PartPanel::PartPanel(QWidget* parent)
 
     layout->addWidget(clefSection);
 
+#ifdef USE_MUSESCORE
     // Connect global settings
     auto pitchChanged = [this](bool checked) {
         if (!checked) return;
@@ -975,6 +996,7 @@ PartPanel::PartPanel(QWidget* parent)
     };
     connect(m_globalClefWritten, &QRadioButton::toggled, clefChanged);
     connect(m_globalClefPerPart, &QRadioButton::toggled, clefChanged);
+#endif
 
     // --- Buttons ---
     auto* btnLayout = new QHBoxLayout();
@@ -985,8 +1007,10 @@ PartPanel::PartPanel(QWidget* parent)
     btnLayout->addWidget(btnSolo);
     layout->addLayout(btnLayout);
 
+#ifdef USE_MUSESCORE
     connect(btnAll, &QPushButton::clicked, this, &PartPanel::showAllParts);
     connect(btnSolo, &QPushButton::clicked, this, &PartPanel::showSoloPart);
+#endif
 
     // Volume slider (hidden until Play Mode)
     auto* volumeRow = new QHBoxLayout();
@@ -1025,6 +1049,7 @@ PartPanel::PartPanel(QWidget* parent)
     setFocusPolicy(Qt::ClickFocus);
 }
 
+#ifdef USE_MUSESCORE
 void PartPanel::setScore(Score* score)
 {
     m_score = score;
@@ -1035,6 +1060,7 @@ void PartPanel::setRenderer(IScoreRenderer* renderer)
 {
     m_renderer = renderer;
 }
+#endif // USE_MUSESCORE
 
 int PartPanel::desiredHeight() const
 {
@@ -1045,6 +1071,7 @@ int PartPanel::desiredHeight() const
     return totalRowH + 30 + 14 + 10;
 }
 
+#ifdef USE_MUSESCORE
 void PartPanel::populateList()
 {
     // Clear existing rows
@@ -1131,7 +1158,9 @@ void PartPanel::populateList()
     // Apply current global settings to new rows
     applyGlobalSettings();
 }
+#endif // USE_MUSESCORE
 
+#ifdef USE_MUSESCORE
 void PartPanel::applyGlobalSettings()
 {
     bool perPart = m_globalPitchPerPart->isChecked();
@@ -1197,7 +1226,9 @@ void PartPanel::showOnlyParts(const QList<int>& partNumbers)
     }
     relayout();
 }
+#endif // USE_MUSESCORE
 
+#ifdef USE_MUSESCORE
 void PartPanel::activatePlayAlong(int rowIndex, int gmProgram)
 {
     if (rowIndex < 0 || rowIndex >= static_cast<int>(m_rows.size())) return;
@@ -1216,7 +1247,9 @@ void PartPanel::updateRow(int index, bool visible)
     if (index < 0 || index >= static_cast<int>(m_rows.size())) return;
     m_rows[index]->setPartVisible(visible);
 }
+#endif // USE_MUSESCORE
 
+#ifdef USE_MUSESCORE
 void PartPanel::relayout()
 {
     if (!m_score || !m_renderer) return;
@@ -1237,11 +1270,14 @@ void PartPanel::relayout()
     m_renderer->layoutScore(m_score, Fraction(0, 1), Fraction(-1, 1));
     emit partsChanged();
 }
+#endif // USE_MUSESCORE
 
 void PartPanel::setScoreFileName(const QString& fileName)
 {
     m_scoreFileName = fileName;
+#ifdef USE_MUSESCORE
     loadSettings();
+#endif
 }
 
 static QString settingsPath()
@@ -1249,6 +1285,7 @@ static QString settingsPath()
     return QCoreApplication::applicationDirPath() + "/settings.json";
 }
 
+#ifdef USE_MUSESCORE
 void PartPanel::loadSettings()
 {
     if (m_scoreFileName.isEmpty() || m_rows.empty()) return;
@@ -1293,7 +1330,9 @@ void PartPanel::loadSettings()
         m_globalClefPerPart->setChecked(true);
     }
 }
+#endif // USE_MUSESCORE
 
+#ifdef USE_MUSESCORE
 void PartPanel::saveSettings()
 {
     if (m_scoreFileName.isEmpty()) return;
@@ -1361,6 +1400,7 @@ void PartPanel::saveSettings()
         file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     }
 }
+#endif // USE_MUSESCORE
 
 void PartPanel::updateTransposingLabel()
 {
@@ -1390,6 +1430,7 @@ void PartPanel::resizeEvent(QResizeEvent* event)
     updateTransposingLabel();
 }
 
+#ifdef USE_MUSESCORE
 void PartPanel::setPlayModeActive(bool active)
 {
     m_playModeActive = active;
@@ -1410,6 +1451,7 @@ void PartPanel::setPlayModeActive(bool active)
         emit playAlongChanged(first->part(), first->playAlongGmProgram());
     }
 }
+#endif // USE_MUSESCORE
 
 void PartPanel::applyTheme()
 {

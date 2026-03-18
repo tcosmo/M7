@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef USE_MUSESCORE
+
 #include <QWidget>
 #include <QScrollArea>
 #include <QImage>
@@ -106,3 +108,5 @@ private:
 };
 
 } // namespace scoretracker
+
+#endif // USE_MUSESCORE

@@ -1,5 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<?xml version='1.0' encoding='UTF-8'?>
 <score-partwise version="4.0">
   <work>
     <work-title>Magnificat in D Major</work-title>
@@ -7,20 +6,12 @@
   <identification>
     <creator type="composer">Johann Sebastian Bach</creator>
     <encoding>
-      <software>MuseScore Studio 4.6.4</software>
-      <encoding-date>2026-03-10</encoding-date>
       <supports element="accidental" type="yes" />
       <supports element="beam" type="yes" />
       <supports element="print" attribute="new-page" type="no" />
       <supports element="print" attribute="new-system" type="no" />
       <supports element="stem" type="yes" />
       </encoding>
-    <source>https://musescore.com/user/6725176/scores/5253909</source>
-    <miscellaneous>
-      <miscellaneous-field name="creationDate">2017-12-17</miscellaneous-field>
-      <miscellaneous-field name="mscVersion">4.60</miscellaneous-field>
-      <miscellaneous-field name="platform">Microsoft Windows</miscellaneous-field>
-      </miscellaneous>
     </identification>
   <part-list>
     <part-group type="start" number="1">

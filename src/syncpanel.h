@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef USE_MUSESCORE
+
 #include <QWidget>
 #include <QLabel>
 #include <QPushButton>
@@ -49,3 +51,5 @@ private:
 };
 
 } // namespace scoretracker
+
+#endif // USE_MUSESCORE

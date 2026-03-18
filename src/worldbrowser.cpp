@@ -132,7 +132,7 @@ WorldSidebar::WorldSidebar(QWidget* parent)
     m_outerLayout->setSpacing(0);
 
     // Header
-    auto* header = new QLabel("  Worlds", this);
+    auto* header = new QLabel("  PlayBach", this);
     QFont hf = header->font();
     hf.setPointSize(13);
     hf.setBold(true);
@@ -175,7 +175,7 @@ WorldSidebar::WorldSidebar(QWidget* parent)
     volLayout->setContentsMargins(8, 4, 8, 8);
     volLayout->setSpacing(6);
     auto* volLabel = new QLabel("Vol");
-    volLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(Theme::textSecondary().name()));
+    volLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name()));
     volLayout->addWidget(volLabel);
     m_volumeSlider = new QSlider(Qt::Horizontal);
     m_volumeSlider->setRange(0, 100);
@@ -355,40 +355,44 @@ void LevelBrowser::rebuild()
     m_playButtons.clear();
     setWidget(m_content);
 
-    m_content->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    m_content->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     auto* layout = new QVBoxLayout(m_content);
     layout->setContentsMargins(32, 24, 32, 24);
     layout->setSpacing(6);
 
-    // World header — cover + title
+    // World header — cover + title block side by side
+    int coverSize = 180;
     auto* headerRow = new QWidget();
     auto* headerLayout = new QHBoxLayout(headerRow);
     headerLayout->setContentsMargins(0, 0, 0, 0);
-    headerLayout->setSpacing(20);
+    headerLayout->setSpacing(24);
 
     if (!m_world.cover.isNull()) {
         auto* coverLabel = new QLabel();
-        QPixmap scaled = m_world.cover.scaled(120 * 2, 120 * 2, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-        scaled = scaled.copy((scaled.width() - 120*2)/2, (scaled.height() - 120*2)/2, 120*2, 120*2);
+        QPixmap scaled = m_world.cover.scaled(coverSize * 2, coverSize * 2,
+            Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        scaled = scaled.copy((scaled.width() - coverSize*2)/2,
+            (scaled.height() - coverSize*2)/2, coverSize*2, coverSize*2);
         scaled.setDevicePixelRatio(2);
         coverLabel->setPixmap(scaled);
-        coverLabel->setFixedSize(120, 120);
-        coverLabel->setStyleSheet("border-radius: 8px;");
+        coverLabel->setFixedSize(coverSize, coverSize);
+        coverLabel->setStyleSheet("border-radius: 10px;");
+        coverLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         headerLayout->addWidget(coverLabel, 0, Qt::AlignTop);
     }
 
     auto* titleBlock = new QWidget();
     auto* titleLayout = new QVBoxLayout(titleBlock);
-    titleLayout->setContentsMargins(0, 8, 0, 0);
+    titleLayout->setContentsMargins(0, 4, 0, 0);
     titleLayout->setSpacing(4);
 
     auto* composerLabel = new QLabel(m_world.composer);
-    composerLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textHint().name()));
+    composerLabel->setStyleSheet(QString("color: %1; font-size: 13px;").arg(Theme::textHint().name()));
     titleLayout->addWidget(composerLabel);
 
     auto* titleLabel = new QLabel(m_world.title);
     QFont titleFont = titleLabel->font();
-    titleFont.setPointSize(22);
+    titleFont.setPointSize(26);
     titleFont.setBold(true);
     titleLabel->setFont(titleFont);
     titleLabel->setStyleSheet(QString("color: %1;").arg(Theme::textPrimary().name()));
@@ -396,45 +400,129 @@ void LevelBrowser::rebuild()
     titleLayout->addWidget(titleLabel);
 
     auto* catLabel = new QLabel(m_world.catalogue);
-    catLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name()));
+    catLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textSecondary().name()));
     titleLayout->addWidget(catLabel);
-    titleLayout->addStretch();
+
+    // Description tucked under the catalogue
+    if (!m_world.description.isEmpty()) {
+        titleLayout->addSpacing(8);
+        auto* descLabel = new QLabel(m_world.description);
+        descLabel->setWordWrap(true);
+        descLabel->setMaximumWidth(600);
+        descLabel->setStyleSheet(QString("color: %1; font-size: 12px;")
+            .arg(Theme::textHint().name()));
+        titleLayout->addWidget(descLabel);
+    }
 
     headerLayout->addWidget(titleBlock, 1);
     layout->addWidget(headerRow);
     layout->addSpacing(20);
 
-    // "Levels" heading
-    auto* levelsLabel = new QLabel("Levels");
-    QFont lf = levelsLabel->font();
-    lf.setPointSize(16);
-    lf.setBold(true);
-    levelsLabel->setFont(lf);
-    levelsLabel->setStyleSheet(QString("color: %1;").arg(Theme::textPrimary().name()));
-    layout->addWidget(levelsLabel);
-    layout->addSpacing(8);
+    // --- Custom tab bar ---
+    struct TabDef { QString title; QString subtitle; };
+    TabDef tabDefs[] = {
+        { "Levels",   "One movement, one mission" },
+        { "Campaign", "Play the entire work, no interruption" },
+        { "Sandbox",  "Pick any part, build your own level" },
+    };
 
-    // Sections
+    auto* tabBarRow = new QHBoxLayout();
+    tabBarRow->setContentsMargins(0, 0, 0, 0);
+    tabBarRow->setSpacing(0);
+
+    auto* stack = new QStackedWidget();
+    QList<QWidget*> tabButtons;
+
+    for (int t = 0; t < 3; ++t) {
+        auto* btn = new QWidget();
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setFixedHeight(52);
+        auto* btnLayout = new QVBoxLayout(btn);
+        btnLayout->setContentsMargins(0, 8, 0, 6);
+        btnLayout->setSpacing(2);
+
+        auto* titleLbl = new QLabel(tabDefs[t].title);
+        titleLbl->setAlignment(Qt::AlignCenter);
+        QFont tf = titleLbl->font();
+        tf.setPointSize(15);
+        tf.setBold(true);
+        titleLbl->setFont(tf);
+        titleLbl->setStyleSheet(QString("color: %1;").arg(
+            t == 0 ? Theme::accent().name() : Theme::textHint().name()));
+        titleLbl->setObjectName("tabTitle");
+        btnLayout->addWidget(titleLbl);
+
+        auto* subLbl = new QLabel(tabDefs[t].subtitle);
+        subLbl->setAlignment(Qt::AlignCenter);
+        subLbl->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textHint().name()));
+        subLbl->setObjectName("tabSub");
+        btnLayout->addWidget(subLbl);
+
+        tabButtons.append(btn);
+        tabBarRow->addWidget(btn, 1);
+    }
+
+    // Bottom accent line (only under selected tab)
+    auto updateTabStyles = [tabButtons, stack](int sel) {
+        for (int i = 0; i < tabButtons.size(); ++i) {
+            auto* w = tabButtons[i];
+            auto* title = w->findChild<QLabel*>("tabTitle");
+            auto* sub = w->findChild<QLabel*>("tabSub");
+            if (i == sel) {
+                w->setStyleSheet(QString("border-bottom: 2px solid %1;").arg(Theme::accent().name()));
+                if (title) title->setStyleSheet(QString("color: %1;").arg(Theme::accent().name()));
+                if (sub) sub->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name()));
+            } else {
+                w->setStyleSheet("border-bottom: 2px solid transparent;");
+                if (title) title->setStyleSheet(QString("color: %1;").arg(Theme::textHint().name()));
+                if (sub) sub->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textHint().name()));
+            }
+        }
+        stack->setCurrentIndex(sel);
+    };
+
+    // Click handling via transparent overlay buttons
+    for (int t = 0; t < 3; ++t) {
+        auto* clickBtn = new QPushButton(tabButtons[t]);
+        clickBtn->setFixedSize(9999, 52);
+        clickBtn->setStyleSheet("background: transparent; border: none;");
+        clickBtn->setCursor(Qt::PointingHandCursor);
+        clickBtn->setFocusPolicy(Qt::NoFocus);
+        connect(clickBtn, &QPushButton::clicked, this, [updateTabStyles, t]() {
+            updateTabStyles(t);
+        });
+    }
+
+    layout->addLayout(tabBarRow);
+
+    // --- Tab 1: Levels ---
+    auto* levelsScroll = new QScrollArea();
+    levelsScroll->setWidgetResizable(true);
+    levelsScroll->setFrameShape(QFrame::NoFrame);
+    levelsScroll->setStyleSheet(Theme::scrollBarStyleStr());
+    auto* levelsWidget = new QWidget();
+    auto* levelsLayout = new QVBoxLayout(levelsWidget);
+    levelsLayout->setContentsMargins(0, 16, 0, 12);
+    levelsLayout->setSpacing(6);
+
     for (int si = 0; si < m_world.sections.size(); ++si) {
         const auto& section = m_world.sections[si];
 
-        // Section header
         auto* sectionLabel = new QLabel(section.title);
         QFont sf = sectionLabel->font();
         sf.setPointSize(14);
         sf.setBold(true);
         sectionLabel->setFont(sf);
         sectionLabel->setStyleSheet(QString("color: %1; padding-top: 8px;").arg(Theme::textPrimary().name()));
-        layout->addWidget(sectionLabel);
+        levelsLayout->addWidget(sectionLabel);
 
         if (section.levels.isEmpty()) {
             auto* comingSoon = new QLabel("Coming soon...");
             comingSoon->setStyleSheet(QString("color: %1; font-size: 11px; font-style: italic; padding-left: 8px;")
                 .arg(Theme::textDisabled().name()));
-            layout->addWidget(comingSoon);
+            levelsLayout->addWidget(comingSoon);
         }
 
-        // Level cards
         for (int li = 0; li < section.levels.size(); ++li) {
             const auto& level = section.levels[li];
             bool isCurrent = (si == m_currentSection && li == m_currentLevel);
@@ -458,10 +546,9 @@ void LevelBrowser::rebuild()
             auto* cardLayout = new QHBoxLayout(card);
             cardLayout->setContentsMargins(16, 0, 16, 0);
 
-            // Playing indicator (always present to keep alignment)
             auto* dot = new QLabel("\u25B6");
             dot->setFixedWidth(16);
-            dot->setStyleSheet(QString("color: %1; font-size: 10px;")
+            dot->setStyleSheet(QString("color: %1; font-size: 11px;")
                 .arg(isCurrent ? Theme::accent().name() : "transparent"));
             cardLayout->addWidget(dot);
 
@@ -471,10 +558,10 @@ void LevelBrowser::rebuild()
             cardLayout->addWidget(nameLabel);
 
             if (!level.description.isEmpty()) {
-                auto* descLabel = new QLabel(level.description);
-                descLabel->setStyleSheet(QString("color: %1; font-size: 11px;")
+                auto* ldesc = new QLabel(level.description);
+                ldesc->setStyleSheet(QString("color: %1; font-size: 11px;")
                     .arg(Theme::textHint().name()));
-                cardLayout->addWidget(descLabel);
+                cardLayout->addWidget(ldesc);
             }
 
             cardLayout->addSpacing(16);
@@ -489,7 +576,6 @@ void LevelBrowser::rebuild()
             m_playButtons.append(playBtn);
 
             if (isCurrent) {
-                // "Resume" navigates back to score view
                 connect(playBtn, &QPushButton::clicked, this, [this]() {
                     emit resumeRequested();
                 });
@@ -499,11 +585,44 @@ void LevelBrowser::rebuild()
                 });
             }
 
-            layout->addWidget(card);
+            levelsLayout->addWidget(card);
         }
 
-        layout->addSpacing(8);
+        levelsLayout->addSpacing(8);
     }
+    levelsLayout->addStretch();
+    levelsScroll->setWidget(levelsWidget);
+    stack->addWidget(levelsScroll);
+
+    // --- Tab 2: Campaign ---
+    auto* campaignWidget = new QWidget();
+    auto* campaignLayout = new QVBoxLayout(campaignWidget);
+    campaignLayout->setContentsMargins(0, 24, 0, 12);
+    campaignLayout->setSpacing(12);
+    auto* campaignSoon = new QLabel("Coming soon...");
+    campaignSoon->setStyleSheet(QString("color: %1; font-size: 13px; font-style: italic;")
+        .arg(Theme::textDisabled().name()));
+    campaignSoon->setAlignment(Qt::AlignCenter);
+    campaignLayout->addWidget(campaignSoon);
+    campaignLayout->addStretch();
+    stack->addWidget(campaignWidget);
+
+    // --- Tab 3: Sandbox ---
+    auto* sandboxWidget = new QWidget();
+    auto* sandboxLayout = new QVBoxLayout(sandboxWidget);
+    sandboxLayout->setContentsMargins(0, 24, 0, 12);
+    sandboxLayout->setSpacing(12);
+    auto* sandboxSoon = new QLabel("Coming soon...");
+    sandboxSoon->setStyleSheet(QString("color: %1; font-size: 13px; font-style: italic;")
+        .arg(Theme::textDisabled().name()));
+    sandboxSoon->setAlignment(Qt::AlignCenter);
+    sandboxLayout->addWidget(sandboxSoon);
+    sandboxLayout->addStretch();
+    stack->addWidget(sandboxWidget);
+
+    // Select first tab
+    updateTabStyles(0);
+    layout->addWidget(stack, 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +649,7 @@ QList<World> loadWorlds(const QString& worldsDir)
         world.title = obj["title"].toString();
         world.composer = obj["composer"].toString();
         world.catalogue = obj["catalogue"].toString();
+        world.description = obj["description"].toString();
         world.order = obj.value("order").toInt(0);
 
         // Resolve paths relative to the JSON file

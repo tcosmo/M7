@@ -8,6 +8,8 @@
 #include <QStyleFactory>
 
 #include "theme.h"
+
+#ifdef USE_MUSESCORE
 #include "modularity/ioc.h"
 #include "iapplication.h"
 #include "io/ifilesystem.h"
@@ -29,9 +31,11 @@
 #include "draw/drawmodule.h"
 #include "engraving/engravingmodule.h"
 #include "importexport/musicxml/imusicxmlconfiguration.h"
+#endif // USE_MUSESCORE
 
 #include "app.h"
 
+#ifdef USE_MUSESCORE
 // Minimal IMusicXmlConfiguration stub
 class MusicXmlConfigStub : public mu::iex::musicxml::IMusicXmlConfiguration
 {
@@ -105,6 +109,7 @@ public:
 private:
     muse::modularity::ContextPtr m_ctx;
 };
+#endif // USE_MUSESCORE
 
 int main(int argc, char* argv[])
 {
@@ -141,14 +146,17 @@ int main(int argc, char* argv[])
     bool startSyncMode = false;
     bool startPlayMode = false;
     bool preferFile = false;
-    bool useVerovio = false;
+    bool useMuseScore = false;
     int screenIndex = -1;
 
     QStringList args = qapp.arguments();
     for (int i = 1; i < args.size(); ++i) {
-        if (args[i] == "--verovio") {
-            useVerovio = true;
-        } else if (args[i] == "--screen" && i + 1 < args.size()) {
+#ifdef USE_MUSESCORE
+        if (args[i] == "--musescore") {
+            useMuseScore = true;
+        } else
+#endif
+        if (args[i] == "--screen" && i + 1 < args.size()) {
             screenIndex = args[++i].toInt();
         } else if (args[i] == "--sync") {
             startSyncMode = true;
@@ -175,6 +183,7 @@ int main(int argc, char* argv[])
         }
     }
 
+#ifdef USE_MUSESCORE
     // Set up IoC manually (since we skip GlobalModule)
     auto* ioc = muse::modularity::globalIoc();
 
@@ -197,30 +206,25 @@ int main(int argc, char* argv[])
     muse::draw::DrawModule drawModule;
     mu::engraving::EngravingModule engravingModule;
 
-    // 1. Register exports
     drawModule.registerExports();
     engravingModule.registerExports();
-
-    // 2. Resolve imports
     drawModule.resolveImports();
     engravingModule.resolveImports();
-
-    // 3. Register resources (Q_INIT_RESOURCE for fonts)
     engravingModule.registerResources();
-
-    // 4. Register UI types
     engravingModule.registerUiTypes();
 
-    // 5. Init
     auto runMode = muse::IApplication::RunMode::GuiApp;
     drawModule.onInit(runMode);
     engravingModule.onInit(runMode);
 
     qDebug() << "MuseScore modules initialized successfully";
+#endif // USE_MUSESCORE
 
     // Create and show the app
     scoretracker::App app;
-    if (useVerovio) app.setUseVerovio(true);
+#ifdef USE_MUSESCORE
+    if (useMuseScore) app.setUseMuseScore(true);
+#endif
 
     // Move window to requested screen (keep default size, just reposition)
     if (screenIndex >= 0) {
@@ -240,8 +244,10 @@ int main(int argc, char* argv[])
         // No CLI args — show world browser
         app.show();
         int ret = qapp.exec();
+#ifdef USE_MUSESCORE
         engravingModule.onDeinit();
         engravingModule.onDestroy();
+#endif
         return ret;
     }
 
@@ -279,17 +285,21 @@ int main(int argc, char* argv[])
     // CLI mode: jump straight to score view
     app.findChild<QStackedWidget*>()->setCurrentIndex(1);
 
+#ifdef USE_MUSESCORE
     if (startSyncMode) {
         app.startSyncMode();
-    } else if (startPlayMode) {
+    } else
+#endif
+    if (startPlayMode) {
         app.startPlayMode();
     }
 
     int ret = qapp.exec();
 
-    // Cleanup
+#ifdef USE_MUSESCORE
     engravingModule.onDeinit();
     engravingModule.onDestroy();
+#endif
 
     return ret;
 }

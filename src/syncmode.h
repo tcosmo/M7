@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef USE_MUSESCORE
+
 #include <QObject>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -83,3 +85,5 @@ private:
 };
 
 } // namespace scoretracker
+
+#endif // USE_MUSESCORE

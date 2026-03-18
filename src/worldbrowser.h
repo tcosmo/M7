@@ -106,6 +106,7 @@ private:
     int m_selectedInterp = 0;
     QList<QPushButton*> m_playButtons;
     QList<QWidget*> m_interpCards;
+    class YouTubePlayer* m_previewPlayer = nullptr;
 };
 
 // Load all world definitions from a directory of JSON files

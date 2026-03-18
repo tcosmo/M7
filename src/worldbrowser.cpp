@@ -1,5 +1,6 @@
 #include "worldbrowser.h"
 #include "theme.h"
+#include "youtubeplayer.h"
 
 #include <QPainter>
 #include <QPainterPath>
@@ -419,6 +420,15 @@ private:
 
 void LevelBrowser::rebuild()
 {
+    // Destroy preview player BEFORE deleting content (its video widget is a child)
+    if (m_previewPlayer) {
+        auto* pv = m_previewPlayer->videoWidget();
+        if (pv) pv->setParent(nullptr);
+        m_previewPlayer->stop();
+        delete m_previewPlayer;
+        m_previewPlayer = nullptr;
+    }
+
     // Delete old content
     delete m_content;
     m_content = new QWidget();
@@ -508,7 +518,7 @@ void LevelBrowser::rebuild()
         interpScroll->setFrameShape(QFrame::NoFrame);
         interpScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         interpScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        interpScroll->setFixedHeight(152);
+        interpScroll->setFixedHeight(230);
         interpScroll->setStyleSheet("background: transparent;");
 
         auto* interpRow = new QWidget();
@@ -518,37 +528,76 @@ void LevelBrowser::rebuild()
 
         auto* nam = new QNetworkAccessManager(this);
         int thumbW = 180, thumbH = 101; // 16:9
-        int selThumbW = 216, selThumbH = 122;
+        // Selected: YouTube ToS min 200x200. Use 320x200 (close to 16:10)
+        int selW = 320, selH = 200;
 
         for (int idx = 0; idx < m_world.interpretations.size(); ++idx) {
             const auto& interp = m_world.interpretations[idx];
             bool sel = (idx == m_selectedInterp);
-            int tw = sel ? selThumbW : thumbW;
-            int th = sel ? selThumbH : thumbH;
+            int tw = sel ? selW : thumbW;
+            int th = sel ? selH : thumbH;
 
             auto* card = new QWidget();
             card->setObjectName("interpCard");
             card->setCursor(Qt::PointingHandCursor);
-            card->setFixedSize(tw + 6, th + 24); // +6 for border space
+            card->setFixedSize(tw, th + 20);
 
             auto* cardLayout = new QVBoxLayout(card);
             cardLayout->setContentsMargins(0, 0, 0, 0);
-            cardLayout->setSpacing(3);
+            cardLayout->setSpacing(2);
 
-            auto* thumbLabel = new QLabel();
-            thumbLabel->setObjectName("interpThumb");
-            thumbLabel->setFixedSize(tw, th);
-            thumbLabel->setAlignment(Qt::AlignCenter);
-            if (sel) {
-                thumbLabel->setStyleSheet(QString(
-                    "background: %1; border-radius: 6px; border: 3px solid %2;"
-                ).arg(Theme::panelBg().name(), Theme::accent().name()));
+            if (sel && !interp.youtubeUrl.isEmpty()) {
+                // Selected: embed a live YouTube player
+                m_previewPlayer = new YouTubePlayer(this);
+                auto* videoWidget = m_previewPlayer->videoWidget();
+                // Match page background so any YouTube letterboxing blends in
+                auto* webView = qobject_cast<QWebEngineView*>(videoWidget);
+                if (webView)
+                    webView->page()->setBackgroundColor(Theme::contentBg());
+
+                // Wrap in a border container (QWebEngineView ignores CSS border)
+                auto* borderWrap = new QWidget();
+                borderWrap->setFixedSize(tw, th);
+                borderWrap->setStyleSheet(QString(
+                    "background: %1; border: 3px solid %2; border-radius: 8px;"
+                ).arg(Theme::contentBg().name(), Theme::accent().name()));
+                auto* wrapLay = new QVBoxLayout(borderWrap);
+                wrapLay->setContentsMargins(3, 3, 3, 3);
+                videoWidget->setMinimumSize(0, 0);
+                videoWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+                wrapLay->addWidget(videoWidget);
+                cardLayout->addWidget(borderWrap);
+
+                m_previewPlayer->load(interp.youtubeUrl);
             } else {
+                // Non-selected: thumbnail image
+                auto* thumbLabel = new QLabel();
+                thumbLabel->setObjectName("interpThumb");
+                thumbLabel->setFixedSize(tw, th);
+                thumbLabel->setAlignment(Qt::AlignCenter);
                 thumbLabel->setStyleSheet(QString(
                     "background: %1; border-radius: 6px; border: 3px solid transparent;"
                 ).arg(Theme::panelBg().name()));
+                cardLayout->addWidget(thumbLabel);
+
+                if (!interp.videoId.isEmpty()) {
+                    QString thumbUrl = QString("https://img.youtube.com/vi/%1/mqdefault.jpg").arg(interp.videoId);
+                    QNetworkReply* reply = nam->get(QNetworkRequest(QUrl(thumbUrl)));
+                    connect(reply, &QNetworkReply::finished, thumbLabel, [reply, thumbLabel, tw, th]() {
+                        reply->deleteLater();
+                        if (reply->error() != QNetworkReply::NoError) return;
+                        QPixmap pix;
+                        pix.loadFromData(reply->readAll());
+                        if (pix.isNull()) return;
+                        QPixmap scaled = pix.scaled(tw * 2, th * 2,
+                            Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                        scaled = scaled.copy((scaled.width() - tw*2)/2,
+                            (scaled.height() - th*2)/2, tw*2, th*2);
+                        scaled.setDevicePixelRatio(2);
+                        thumbLabel->setPixmap(scaled);
+                    });
+                }
             }
-            cardLayout->addWidget(thumbLabel);
 
             auto* nameLabel = new QLabel(interp.label);
             nameLabel->setObjectName("interpName");
@@ -563,32 +612,15 @@ void LevelBrowser::rebuild()
             m_interpCards.append(card);
             interpRowLayout->addWidget(card);
 
-            // Click to select
-            auto* clickBtn = new QPushButton(card);
-            clickBtn->setGeometry(0, 0, tw + 6, th + 24);
-            clickBtn->setStyleSheet("background: transparent; border: none;");
-            clickBtn->setCursor(Qt::PointingHandCursor);
-            clickBtn->setFocusPolicy(Qt::NoFocus);
-            connect(clickBtn, &QPushButton::clicked, this, [this, idx]() {
-                selectInterpretation(idx);
-            });
-
-            // Download thumbnail
-            if (!interp.videoId.isEmpty()) {
-                QString thumbUrl = QString("https://img.youtube.com/vi/%1/mqdefault.jpg").arg(interp.videoId);
-                QNetworkReply* reply = nam->get(QNetworkRequest(QUrl(thumbUrl)));
-                connect(reply, &QNetworkReply::finished, thumbLabel, [reply, thumbLabel, tw, th]() {
-                    reply->deleteLater();
-                    if (reply->error() != QNetworkReply::NoError) return;
-                    QPixmap pix;
-                    pix.loadFromData(reply->readAll());
-                    if (pix.isNull()) return;
-                    QPixmap scaled = pix.scaled(tw * 2, th * 2,
-                        Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-                    scaled = scaled.copy((scaled.width() - tw*2)/2,
-                        (scaled.height() - th*2)/2, tw*2, th*2);
-                    scaled.setDevicePixelRatio(2);
-                    thumbLabel->setPixmap(scaled);
+            // Click to select (only for non-selected — clicking selected does nothing)
+            if (!sel) {
+                auto* clickBtn = new QPushButton(card);
+                clickBtn->setGeometry(0, 0, tw, th + 20);
+                clickBtn->setStyleSheet("background: transparent; border: none;");
+                clickBtn->setCursor(Qt::PointingHandCursor);
+                clickBtn->setFocusPolicy(Qt::NoFocus);
+                connect(clickBtn, &QPushButton::clicked, this, [this, idx]() {
+                    selectInterpretation(idx);
                 });
             }
         }
@@ -610,7 +642,7 @@ void LevelBrowser::rebuild()
     struct TabDef { QString title; QString subtitle; };
     TabDef tabDefs[] = {
         { "Levels",   "One movement, one mission" },
-        { "Campaign", "Play the entire work, no interruption" },
+        { "Campaigns", "Play the entire work, no interruption" },
         { "Sandbox",  "Pick any part, build your own level" },
     };
 

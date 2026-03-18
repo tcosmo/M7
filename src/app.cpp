@@ -2483,6 +2483,10 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
     m_scoreWidget->setCursorRect(QRectF(), -1);
     m_scoreWidget->setCursorVisible(false);
     m_scoreWidget->scrollToTop();
+    m_scoreWidget->setHighlightElement(nullptr);
+    m_scoreWidget->setHighlightElement2(nullptr);
+    m_syncTimer->setBeatTimes({}, 3);
+    m_syncTimer->setBeatTicks({});
     m_syncTimer->setTime(0);
     m_needsSeekOnPlay = true;
 

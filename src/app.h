@@ -246,8 +246,6 @@ private:
     // Video expand
     bool m_videoExpanded = false;
     QWidget* m_expandedVideoContainer = nullptr;
-    QPushButton* m_videoExpandButton = nullptr;
-    void toggleVideoExpand();
 };
 
 } // namespace scoretracker

@@ -815,8 +815,8 @@ void LevelBrowser::rebuild()
             accLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textHint().name()));
             rl->addWidget(accLabel);
 
-            // Play button
-            auto* playBtn = new QPushButton(isCurrent ? "Resume" : "Play");
+            // Play button — always says "Play", always goes through levelSelected
+            auto* playBtn = new QPushButton("Play");
             playBtn->setFixedSize(76, 28);
             playBtn->setStyleSheet(QString(
                 "QPushButton { background: %1; color: white; border-radius: 14px; font-size: 11px; font-weight: bold; }"
@@ -825,19 +825,14 @@ void LevelBrowser::rebuild()
             rl->addWidget(playBtn);
             m_playButtons.append(playBtn);
 
-            // Both row click and button click trigger the same action
-            auto emitLevel = [this, isCurrent, si, li]() {
-                if (isCurrent)
-                    emit resumeRequested();
-                else
-                    emit levelSelected(si, li);
-            };
-            connect(playBtn, &QPushButton::clicked, this, emitLevel);
+            // Both row click and button click trigger levelSelected
+            connect(playBtn, &QPushButton::clicked, this, [this, si, li]() {
+                emit levelSelected(si, li);
+            });
 
             // Store indices on the row for click handling
             row->setProperty("si", si);
             row->setProperty("li", li);
-            row->setProperty("isCurrent", isCurrent);
             row->installEventFilter(this);
 
             levelsLayout->addWidget(row);
@@ -887,11 +882,7 @@ bool LevelBrowser::eventFilter(QObject* obj, QEvent* event)
         if (w && w->objectName() == "levelRow") {
             int si = w->property("si").toInt();
             int li = w->property("li").toInt();
-            bool cur = w->property("isCurrent").toBool();
-            if (cur)
-                emit resumeRequested();
-            else
-                emit levelSelected(si, li);
+            emit levelSelected(si, li);
             return true;
         }
     }

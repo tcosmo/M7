@@ -2466,13 +2466,13 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
     }
     m_currentYoutubeUrl.clear();
     m_useYouTube = false;
-    // Keep the expanded container in place (black background) if it's already visible.
-    // Only mark as not expanded so loadYouTube re-inserts if needed.
-    bool wasExpanded = m_videoExpanded;
-    if (!wasExpanded && m_expandedVideoContainer) {
+    // Keep the expanded container in place (black background) if already visible,
+    // so the video area doesn't disappear/reappear during interpretation switch.
+    if (!m_videoExpanded && m_expandedVideoContainer) {
         m_expandedVideoContainer->hide();
         m_expandedVideoContainer->setParent(nullptr);
     }
+    m_videoExpanded = false;
     // Process pending deletions so Chromium releases resources before new player
     QApplication::processEvents();
 

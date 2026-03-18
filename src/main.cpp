@@ -113,6 +113,9 @@ private:
 
 int main(int argc, char* argv[])
 {
+    // Tell Chromium (Qt WebEngine) not to use proxy auto-detection (WPAD)
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--no-proxy-server");
+
     QApplication qapp(argc, argv);
     qapp.setApplicationName("PlayBach");
     qapp.setOrganizationName("MMMM");

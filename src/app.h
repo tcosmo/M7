@@ -64,7 +64,7 @@ public:
     bool loadScore(const QString& musicXmlPath);
     bool loadAudio(const QString& audioPath);
     bool loadBeatData(const QString& jsonPath);
-    void loadYouTube(const QString& url);
+    void loadYouTube(const QString& url, bool preview = false);
     void loadSources(const QString& jsonPath);
     void setVisibleParts(const QList<int>& partNumbers);
 #ifdef USE_MUSESCORE
@@ -166,6 +166,7 @@ private:
     QList<double> m_sourceStartTimes;  // per-interpretation start offset in seconds, 0 = from beginning
     QList<double> m_sourceEndTimes;    // per-interpretation end time in seconds, 0 = no limit
     int m_activeInterpretation = 0;
+    int m_preselectedInterpretation = 0;
     double m_interpStart = 0;          // active interpretation start offset
     double m_interpEnd = 0;            // active interpretation end time (0 = no limit)
     QString m_sourceAudioFile;
@@ -222,6 +223,7 @@ private:
     QString m_beatDataPath;
     QString m_sourcesPath;
     bool m_sliderDragging = false;
+    bool m_needsSeekOnPlay = false;
     int m_sidebarWidth = 300;
 
     // Record tracking

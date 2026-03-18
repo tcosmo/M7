@@ -74,7 +74,7 @@ private:
 };
 
 // Central pane showing sections and levels for a world
-class LevelBrowser : public QScrollArea
+class LevelBrowser : public QWidget
 {
     Q_OBJECT
 public:
@@ -83,19 +83,29 @@ public:
     void setCurrentLevel(int sectionIndex, int levelIndex);
     void showLoading(bool show);
 
+    int selectedInterpretation() const { return m_selectedInterp; }
+    void setSelectedInterpretation(int index) { m_selectedInterp = index; }
+
 signals:
     void levelSelected(int sectionIndex, int levelIndex);
     void resumeRequested();
+    void interpretationSelected(int index);
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override;
 
 private:
     void rebuild();
+    void selectInterpretation(int index);
 
     World m_world;
     QWidget* m_content = nullptr;
     QLabel* m_loadingLabel = nullptr;
     int m_currentSection = -1;
     int m_currentLevel = -1;
+    int m_selectedInterp = 0;
     QList<QPushButton*> m_playButtons;
+    QList<QWidget*> m_interpCards;
 };
 
 // Load all world definitions from a directory of JSON files

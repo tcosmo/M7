@@ -11,7 +11,13 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
+#include <QRegularExpression>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QScrollBar>
+#include <QTimer>
 #include <algorithm>
+#include <cmath>
 
 namespace scoretracker {
 
@@ -121,7 +127,8 @@ void WorldCard::paintEvent(QPaintEvent*)
 WorldSidebar::WorldSidebar(QWidget* parent)
     : QWidget(parent)
 {
-    setFixedWidth(240);
+    setFixedWidth(220);
+    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
     setAutoFillBackground(true);
     QPalette pal = palette();
     pal.setColor(QPalette::Window, Theme::surfaceBg());
@@ -163,6 +170,7 @@ WorldSidebar::WorldSidebar(QWidget* parent)
 
     // Interpretation list — below the video
     m_interpContainer = new QWidget(this);
+    m_interpContainer->setMaximumWidth(220);
     m_interpLayout = new QVBoxLayout(m_interpContainer);
     m_interpLayout->setContentsMargins(8, 4, 8, 8);
     m_interpLayout->setSpacing(2);
@@ -171,6 +179,7 @@ WorldSidebar::WorldSidebar(QWidget* parent)
 
     // Volume slider — below interpretations
     m_volumeContainer = new QWidget(this);
+    m_volumeContainer->setMaximumWidth(220);
     auto* volLayout = new QHBoxLayout(m_volumeContainer);
     volLayout->setContentsMargins(8, 4, 8, 8);
     volLayout->setSpacing(6);
@@ -194,8 +203,11 @@ void WorldSidebar::setVideoWidget(QWidget* videoWidget)
 {
     if (!videoWidget) return;
     videoWidget->setParent(m_videoContainer);
-    videoWidget->setFixedSize(240, 200);
-    m_videoContainer->setFixedHeight(200);
+    videoWidget->setFixedSize(220, 200);
+    videoWidget->setMinimumSize(0, 0);
+    videoWidget->setMaximumWidth(220);
+    m_videoContainer->setFixedSize(220, 200);
+    m_videoContainer->setMaximumWidth(220);
     auto* vl = new QVBoxLayout(m_videoContainer);
     vl->setContentsMargins(0, 0, 0, 0);
     vl->addWidget(videoWidget);
@@ -292,21 +304,18 @@ void WorldSidebar::setWorlds(const QList<World>& worlds)
 // ---------------------------------------------------------------------------
 
 LevelBrowser::LevelBrowser(QWidget* parent)
-    : QScrollArea(parent)
+    : QWidget(parent)
 {
-    setWidgetResizable(true);
-    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    setFrameShape(QFrame::NoFrame);
-
     QPalette pal = palette();
     pal.setColor(QPalette::Window, Theme::contentBg());
     setPalette(pal);
     setAutoFillBackground(true);
 
-    setStyleSheet(Theme::scrollBarStyleStr());
-
+    auto* rootLayout = new QVBoxLayout(this);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
     m_content = new QWidget();
-    setWidget(m_content);
+    rootLayout->addWidget(m_content);
 }
 
 void LevelBrowser::setWorld(const World& world)
@@ -347,17 +356,78 @@ void LevelBrowser::showLoading(bool show)
     }
 }
 
+// Star rating widget that draws 3 stars with partial fill
+class StarRatingWidget : public QWidget
+{
+public:
+    StarRatingWidget(double rating, QColor fillColor, QColor emptyColor, QWidget* parent = nullptr)
+        : QWidget(parent), m_rating(rating), m_fill(fillColor), m_empty(emptyColor)
+    {
+        setFixedSize(60, 16);
+        setAttribute(Qt::WA_TranslucentBackground);
+    }
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        int starSize = 14;
+        int spacing = 4;
+        int totalW = 3 * starSize + 2 * spacing;
+        int x0 = (width() - totalW) / 2;
+        int y0 = (height() - starSize) / 2;
+
+        for (int i = 0; i < 3; ++i) {
+            int sx = x0 + i * (starSize + spacing);
+            double fill = std::clamp(m_rating - i, 0.0, 1.0);
+            drawStar(p, sx, y0, starSize, fill);
+        }
+    }
+private:
+    void drawStar(QPainter& p, int x, int y, int size, double fill) {
+        // Build star polygon
+        QPainterPath star;
+        double cx = x + size / 2.0, cy = y + size / 2.0;
+        double outer = size / 2.0, inner = outer * 0.38;
+        for (int i = 0; i < 10; ++i) {
+            double angle = M_PI / 2.0 + i * M_PI / 5.0;
+            double r = (i % 2 == 0) ? outer : inner;
+            double px = cx + r * cos(angle);
+            double py = cy - r * sin(angle);
+            if (i == 0) star.moveTo(px, py);
+            else star.lineTo(px, py);
+        }
+        star.closeSubpath();
+
+        // Draw empty star background
+        p.setPen(Qt::NoPen);
+        p.setBrush(m_empty);
+        p.drawPath(star);
+
+        if (fill > 0.0) {
+            // Clip to left portion for partial fill
+            p.save();
+            QRectF clipRect(x, y, size * fill, size);
+            p.setClipRect(clipRect);
+            p.setBrush(m_fill);
+            p.drawPath(star);
+            p.restore();
+        }
+    }
+    double m_rating;
+    QColor m_fill, m_empty;
+};
+
 void LevelBrowser::rebuild()
 {
     // Delete old content
     delete m_content;
     m_content = new QWidget();
     m_playButtons.clear();
-    setWidget(m_content);
+    layout()->addWidget(m_content);
 
     m_content->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     auto* layout = new QVBoxLayout(m_content);
-    layout->setContentsMargins(32, 24, 32, 24);
+    layout->setContentsMargins(16, 24, 32, 24);
     layout->setSpacing(6);
 
     // World header — cover + title block side by side
@@ -416,7 +486,125 @@ void LevelBrowser::rebuild()
 
     headerLayout->addWidget(titleBlock, 1);
     layout->addWidget(headerRow);
-    layout->addSpacing(20);
+
+    // --- Interpretations ---
+    m_interpCards.clear();
+    if (!m_world.interpretations.isEmpty()) {
+        if (m_selectedInterp >= m_world.interpretations.size())
+            m_selectedInterp = 0;
+
+        layout->addSpacing(16);
+        auto* interpLabel = new QLabel("Interpretations");
+        QFont ilf = interpLabel->font();
+        ilf.setPointSize(18);
+        ilf.setBold(true);
+        interpLabel->setFont(ilf);
+        interpLabel->setStyleSheet(QString("color: %1;").arg(Theme::textPrimary().name()));
+        layout->addWidget(interpLabel);
+        layout->addSpacing(4);
+
+        auto* interpScroll = new QScrollArea();
+        interpScroll->setWidgetResizable(true);
+        interpScroll->setFrameShape(QFrame::NoFrame);
+        interpScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        interpScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        interpScroll->setFixedHeight(152);
+        interpScroll->setStyleSheet("background: transparent;");
+
+        auto* interpRow = new QWidget();
+        auto* interpRowLayout = new QHBoxLayout(interpRow);
+        interpRowLayout->setContentsMargins(0, 0, 0, 0);
+        interpRowLayout->setSpacing(12);
+
+        auto* nam = new QNetworkAccessManager(this);
+        int thumbW = 180, thumbH = 101; // 16:9
+        int selThumbW = 216, selThumbH = 122;
+
+        for (int idx = 0; idx < m_world.interpretations.size(); ++idx) {
+            const auto& interp = m_world.interpretations[idx];
+            bool sel = (idx == m_selectedInterp);
+            int tw = sel ? selThumbW : thumbW;
+            int th = sel ? selThumbH : thumbH;
+
+            auto* card = new QWidget();
+            card->setObjectName("interpCard");
+            card->setCursor(Qt::PointingHandCursor);
+            card->setFixedSize(tw + 6, th + 24); // +6 for border space
+
+            auto* cardLayout = new QVBoxLayout(card);
+            cardLayout->setContentsMargins(0, 0, 0, 0);
+            cardLayout->setSpacing(3);
+
+            auto* thumbLabel = new QLabel();
+            thumbLabel->setObjectName("interpThumb");
+            thumbLabel->setFixedSize(tw, th);
+            thumbLabel->setAlignment(Qt::AlignCenter);
+            if (sel) {
+                thumbLabel->setStyleSheet(QString(
+                    "background: %1; border-radius: 6px; border: 3px solid %2;"
+                ).arg(Theme::panelBg().name(), Theme::accent().name()));
+            } else {
+                thumbLabel->setStyleSheet(QString(
+                    "background: %1; border-radius: 6px; border: 3px solid transparent;"
+                ).arg(Theme::panelBg().name()));
+            }
+            cardLayout->addWidget(thumbLabel);
+
+            auto* nameLabel = new QLabel(interp.label);
+            nameLabel->setObjectName("interpName");
+            nameLabel->setAlignment(Qt::AlignCenter);
+            nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;")
+                .arg(sel ? Theme::accent().name() : Theme::textSecondary().name()));
+            nameLabel->setMaximumWidth(tw);
+            QFontMetrics fm(nameLabel->font());
+            nameLabel->setText(fm.elidedText(interp.label, Qt::ElideRight, tw));
+            cardLayout->addWidget(nameLabel);
+
+            m_interpCards.append(card);
+            interpRowLayout->addWidget(card);
+
+            // Click to select
+            auto* clickBtn = new QPushButton(card);
+            clickBtn->setGeometry(0, 0, tw + 6, th + 24);
+            clickBtn->setStyleSheet("background: transparent; border: none;");
+            clickBtn->setCursor(Qt::PointingHandCursor);
+            clickBtn->setFocusPolicy(Qt::NoFocus);
+            connect(clickBtn, &QPushButton::clicked, this, [this, idx]() {
+                selectInterpretation(idx);
+            });
+
+            // Download thumbnail
+            if (!interp.videoId.isEmpty()) {
+                QString thumbUrl = QString("https://img.youtube.com/vi/%1/mqdefault.jpg").arg(interp.videoId);
+                QNetworkReply* reply = nam->get(QNetworkRequest(QUrl(thumbUrl)));
+                connect(reply, &QNetworkReply::finished, thumbLabel, [reply, thumbLabel, tw, th]() {
+                    reply->deleteLater();
+                    if (reply->error() != QNetworkReply::NoError) return;
+                    QPixmap pix;
+                    pix.loadFromData(reply->readAll());
+                    if (pix.isNull()) return;
+                    QPixmap scaled = pix.scaled(tw * 2, th * 2,
+                        Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                    scaled = scaled.copy((scaled.width() - tw*2)/2,
+                        (scaled.height() - th*2)/2, tw*2, th*2);
+                    scaled.setDevicePixelRatio(2);
+                    thumbLabel->setPixmap(scaled);
+                });
+            }
+        }
+
+        interpRowLayout->addStretch();
+        interpScroll->setWidget(interpRow);
+        layout->addWidget(interpScroll);
+
+        // Scroll to make the selected interpretation visible
+        if (m_selectedInterp >= 0 && m_selectedInterp < m_interpCards.size()) {
+            QWidget* targetCard = m_interpCards[m_selectedInterp];
+            QTimer::singleShot(0, targetCard, [interpScroll, targetCard]() {
+                interpScroll->ensureWidgetVisible(targetCard, 20, 0);
+            });
+        }
+    }
 
     // --- Custom tab bar ---
     struct TabDef { QString title; QString subtitle; };
@@ -499,12 +687,16 @@ void LevelBrowser::rebuild()
     auto* levelsScroll = new QScrollArea();
     levelsScroll->setWidgetResizable(true);
     levelsScroll->setFrameShape(QFrame::NoFrame);
-    levelsScroll->setStyleSheet(Theme::scrollBarStyleStr());
+    levelsScroll->setStyleSheet(
+        QString("QScrollArea { background: %1; } %2")
+        .arg(Theme::contentBg().name(), Theme::scrollBarStyleStr()));
     auto* levelsWidget = new QWidget();
+    levelsWidget->setStyleSheet(QString("background: %1;").arg(Theme::contentBg().name()));
     auto* levelsLayout = new QVBoxLayout(levelsWidget);
-    levelsLayout->setContentsMargins(0, 16, 0, 12);
-    levelsLayout->setSpacing(6);
+    levelsLayout->setContentsMargins(0, 4, 0, 12);
+    levelsLayout->setSpacing(0);
 
+    int levelNum = 0;
     for (int si = 0; si < m_world.sections.size(); ++si) {
         const auto& section = m_world.sections[si];
 
@@ -523,69 +715,132 @@ void LevelBrowser::rebuild()
             levelsLayout->addWidget(comingSoon);
         }
 
+        // Column header row
+        if (!section.levels.isEmpty()) {
+            auto* headerRow = new QWidget();
+            headerRow->setFixedHeight(28);
+            auto* hl = new QHBoxLayout(headerRow);
+            hl->setContentsMargins(12, 0, 12, 0);
+            hl->setSpacing(0);
+            QString hdrStyle = QString("color: %1; font-size: 10px; font-weight: bold;").arg(Theme::textHint().name());
+            auto* hNum = new QLabel("#"); hNum->setFixedWidth(32); hNum->setStyleSheet(hdrStyle);
+            auto* hTitle = new QLabel("Title"); hTitle->setStyleSheet(hdrStyle);
+            auto* hInstr = new QLabel("Instruments"); hInstr->setFixedWidth(75); hInstr->setAlignment(Qt::AlignCenter); hInstr->setStyleSheet(hdrStyle);
+            auto* hDiff = new QLabel("Difficulty"); hDiff->setFixedWidth(70); hDiff->setAlignment(Qt::AlignCenter); hDiff->setStyleSheet(hdrStyle);
+            auto* hMyPlays = new QLabel("My Plays"); hMyPlays->setFixedWidth(60); hMyPlays->setAlignment(Qt::AlignCenter); hMyPlays->setStyleSheet(hdrStyle);
+            auto* hTotal = new QLabel("Total Plays"); hTotal->setFixedWidth(75); hTotal->setAlignment(Qt::AlignCenter); hTotal->setStyleSheet(hdrStyle);
+            auto* hAcc = new QLabel("Accuracy"); hAcc->setFixedWidth(65); hAcc->setAlignment(Qt::AlignCenter); hAcc->setStyleSheet(hdrStyle);
+            auto* hPlay = new QLabel(""); hPlay->setFixedWidth(80);
+            hl->addWidget(hNum); hl->addWidget(hTitle, 1); hl->addWidget(hInstr); hl->addWidget(hDiff); hl->addWidget(hMyPlays); hl->addWidget(hTotal); hl->addWidget(hAcc); hl->addWidget(hPlay);
+            levelsLayout->addWidget(headerRow);
+
+            // Thin separator
+            auto* sep = new QWidget();
+            sep->setFixedHeight(1);
+            sep->setStyleSheet(QString("background: %1;").arg(Theme::inputBg().name()));
+            levelsLayout->addWidget(sep);
+        }
+
         for (int li = 0; li < section.levels.size(); ++li) {
             const auto& level = section.levels[li];
             bool isCurrent = (si == m_currentSection && li == m_currentLevel);
+            ++levelNum;
 
-            auto* card = new QWidget();
-            card->setObjectName("levelCard");
-            card->setFixedHeight(56);
-            card->setMaximumWidth(520);
-            card->setCursor(Qt::PointingHandCursor);
+            auto* row = new QWidget();
+            row->setObjectName("levelRow");
+            row->setFixedHeight(32);
+            row->setCursor(Qt::PointingHandCursor);
             if (isCurrent) {
-                card->setStyleSheet(QString(
-                    "#levelCard { background: %1; border: 2px solid %2; border-radius: 8px; }"
-                ).arg(Theme::inputBg().name(), Theme::accent().name()));
+                row->setStyleSheet(QString(
+                    "#levelRow { background: %1; border-radius: 4px; }"
+                    "#levelRow QLabel { background: transparent; }"
+                ).arg(Theme::inputBg().name()));
             } else {
-                card->setStyleSheet(QString(
-                    "#levelCard { background: %1; border-radius: 8px; }"
-                    "#levelCard:hover { background: %2; }"
-                ).arg(Theme::panelBg().name(), Theme::inputBg().name()));
+                row->setStyleSheet(QString(
+                    "#levelRow { background: transparent; border-radius: 4px; }"
+                    "#levelRow:hover { background: %1; }"
+                    "#levelRow QLabel { background: transparent; }"
+                ).arg(Theme::panelBg().name()));
             }
 
-            auto* cardLayout = new QHBoxLayout(card);
-            cardLayout->setContentsMargins(16, 0, 16, 0);
+            auto* rl = new QHBoxLayout(row);
+            rl->setContentsMargins(12, 0, 12, 0);
+            rl->setSpacing(0);
 
-            auto* dot = new QLabel("\u25B6");
-            dot->setFixedWidth(16);
-            dot->setStyleSheet(QString("color: %1; font-size: 11px;")
-                .arg(isCurrent ? Theme::accent().name() : "transparent"));
-            cardLayout->addWidget(dot);
+            // # column
+            auto* numLabel = new QLabel(QString::number(levelNum));
+            numLabel->setFixedWidth(32);
+            numLabel->setStyleSheet(QString("color: %1; font-size: 12px;")
+                .arg(isCurrent ? Theme::accent().name() : Theme::textHint().name()));
+            rl->addWidget(numLabel);
 
-            auto* nameLabel = new QLabel(level.title);
-            nameLabel->setStyleSheet(QString("color: %1; font-size: 13px; font-weight: bold;")
+            // Title
+            auto* titleLabel = new QLabel(level.title);
+            titleLabel->setStyleSheet(QString("color: %1; font-size: 13px; font-weight: bold;")
                 .arg(isCurrent ? Theme::accent().name() : Theme::textPrimary().name()));
-            cardLayout->addWidget(nameLabel);
+            rl->addWidget(titleLabel, 1);
 
-            if (!level.description.isEmpty()) {
-                auto* ldesc = new QLabel(level.description);
-                ldesc->setStyleSheet(QString("color: %1; font-size: 11px;")
-                    .arg(Theme::textHint().name()));
-                cardLayout->addWidget(ldesc);
-            }
+            // Instruments count
+            int nInstr = level.voices.isEmpty() ? 1 : level.voices.size();
+            auto* instrLabel = new QLabel(QString::number(nInstr));
+            instrLabel->setFixedWidth(75);
+            instrLabel->setAlignment(Qt::AlignCenter);
+            instrLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textHint().name()));
+            rl->addWidget(instrLabel);
 
-            cardLayout->addSpacing(16);
+            // Difficulty stars (custom painted)
+            auto* starsW = new StarRatingWidget(level.difficulty,
+                Theme::accent(), Theme::inputBg());
+            starsW->setFixedWidth(70);
+            rl->addWidget(starsW);
 
+            // My plays (placeholder — will come from player database)
+            auto* myPlaysLabel = new QLabel("0");
+            myPlaysLabel->setFixedWidth(60);
+            myPlaysLabel->setAlignment(Qt::AlignCenter);
+            myPlaysLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textHint().name()));
+            rl->addWidget(myPlaysLabel);
+
+            // Total plays on platform (placeholder — will come from server)
+            auto* totalPlaysLabel = new QLabel("0");
+            totalPlaysLabel->setFixedWidth(75);
+            totalPlaysLabel->setAlignment(Qt::AlignCenter);
+            totalPlaysLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textHint().name()));
+            rl->addWidget(totalPlaysLabel);
+
+            // Accuracy (placeholder — will come from player database)
+            auto* accLabel = new QLabel("—");
+            accLabel->setFixedWidth(65);
+            accLabel->setAlignment(Qt::AlignCenter);
+            accLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textHint().name()));
+            rl->addWidget(accLabel);
+
+            // Play button
             auto* playBtn = new QPushButton(isCurrent ? "Resume" : "Play");
-            playBtn->setFixedSize(72, 32);
+            playBtn->setFixedSize(76, 28);
             playBtn->setStyleSheet(QString(
-                "QPushButton { background: %1; color: white; border-radius: 6px; font-size: 12px; font-weight: bold; }"
+                "QPushButton { background: %1; color: white; border-radius: 14px; font-size: 11px; font-weight: bold; }"
                 "QPushButton:hover { background: %2; }"
             ).arg(Theme::accent().name(), Theme::accentHover().name()));
-            cardLayout->addWidget(playBtn);
+            rl->addWidget(playBtn);
             m_playButtons.append(playBtn);
 
-            if (isCurrent) {
-                connect(playBtn, &QPushButton::clicked, this, [this]() {
+            // Both row click and button click trigger the same action
+            auto emitLevel = [this, isCurrent, si, li]() {
+                if (isCurrent)
                     emit resumeRequested();
-                });
-            } else {
-                connect(playBtn, &QPushButton::clicked, this, [this, si, li]() {
+                else
                     emit levelSelected(si, li);
-                });
-            }
+            };
+            connect(playBtn, &QPushButton::clicked, this, emitLevel);
 
-            levelsLayout->addWidget(card);
+            // Store indices on the row for click handling
+            row->setProperty("si", si);
+            row->setProperty("li", li);
+            row->setProperty("isCurrent", isCurrent);
+            row->installEventFilter(this);
+
+            levelsLayout->addWidget(row);
         }
 
         levelsLayout->addSpacing(8);
@@ -623,6 +878,32 @@ void LevelBrowser::rebuild()
     // Select first tab
     updateTabStyles(0);
     layout->addWidget(stack, 1);
+}
+
+bool LevelBrowser::eventFilter(QObject* obj, QEvent* event)
+{
+    if (event->type() == QEvent::MouseButtonRelease) {
+        auto* w = qobject_cast<QWidget*>(obj);
+        if (w && w->objectName() == "levelRow") {
+            int si = w->property("si").toInt();
+            int li = w->property("li").toInt();
+            bool cur = w->property("isCurrent").toBool();
+            if (cur)
+                emit resumeRequested();
+            else
+                emit levelSelected(si, li);
+            return true;
+        }
+    }
+    return QWidget::eventFilter(obj, event);
+}
+
+void LevelBrowser::selectInterpretation(int index)
+{
+    if (index < 0 || index >= m_world.interpretations.size()) return;
+    m_selectedInterp = index;
+    emit interpretationSelected(index);
+    rebuild(); // refresh to update selection visuals
 }
 
 // ---------------------------------------------------------------------------
@@ -681,6 +962,7 @@ QList<World> loadWorlds(const QString& worldsDir)
                 level.id = lo["id"].toString();
                 level.title = lo["title"].toString();
                 level.description = lo["description"].toString();
+                level.difficulty = lo.value("difficulty").toDouble(0);
                 level.playPart = lo["playPart"].toInt(-1);
                 level.gmProgram = lo["gmProgram"].toInt(34);
                 level.soundfont = lo["soundfont"].toString();
@@ -704,6 +986,32 @@ QList<World> loadWorlds(const QString& worldsDir)
             }
 
             world.sections.append(section);
+        }
+
+        // Load interpretations from first section's sources.json
+        for (const auto& sec : world.sections) {
+            if (sec.sourcesPath.isEmpty()) continue;
+            QFile sf(sec.sourcesPath);
+            if (!sf.open(QIODevice::ReadOnly)) continue;
+            QJsonDocument sdoc = QJsonDocument::fromJson(sf.readAll());
+            if (!sdoc.isObject()) break;
+            QJsonObject sobj = sdoc.object();
+            QJsonValue ytVal = sobj.value("youtube");
+            if (ytVal.isArray()) {
+                for (const auto& yv : ytVal.toArray()) {
+                    QJsonObject yo = yv.toObject();
+                    Interpretation interp;
+                    interp.label = yo.value("label").toString("YouTube");
+                    interp.youtubeUrl = yo.value("url").toString();
+                    // Extract video ID from URL
+                    QRegularExpression re("(?:v=|youtu\\.be/)([\\w-]{11})");
+                    auto match = re.match(interp.youtubeUrl);
+                    if (match.hasMatch())
+                        interp.videoId = match.captured(1);
+                    world.interpretations.append(interp);
+                }
+            }
+            break; // only first section with sources
         }
 
         worlds.append(world);

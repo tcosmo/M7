@@ -472,11 +472,40 @@ void App::setupUI()
         loadLevel(m_currentWorldIndex, si, li);
     });
     connect(m_levelBrowser, &LevelBrowser::resumeRequested, this, [this]() {
+        // If interpretation changed, reload the level from scratch
+        if (m_preselectedInterpretation != m_activeInterpretation
+            && m_activeWorldIndex >= 0 && m_activeSectionIndex >= 0 && m_activeLevelIndex >= 0) {
+            loadLevel(m_activeWorldIndex, m_activeSectionIndex, m_activeLevelIndex);
+            return;
+        }
         m_centralStack->setCurrentIndex(1);
         m_toolbar->show();
         if (m_videoExpandButton) m_videoExpandButton->show();
+        // Restore interpretation combo
+        if (m_sourceLabels.size() > 1) {
+            m_worldSidebar->setInterpretations(m_sourceLabels, m_activeInterpretation);
+        }
         if (!m_videoExpanded) {
             QTimer::singleShot(0, this, &App::toggleVideoExpand);
+        }
+    });
+    connect(m_levelBrowser, &LevelBrowser::interpretationSelected, this, [this](int index) {
+        m_preselectedInterpretation = index;
+        // Stop any current playback first
+        if (m_youtubePlayer && m_youtubePlayer->isPlaying()) {
+            m_youtubePlayer->pause();
+        }
+        // Load video preview in the sidebar (no seek, no play)
+        if (m_currentWorldIndex >= 0 && m_currentWorldIndex < m_worlds.size()) {
+            const auto& world = m_worlds[m_currentWorldIndex];
+            if (index >= 0 && index < world.interpretations.size()) {
+                const auto& interp = world.interpretations[index];
+                if (!interp.youtubeUrl.isEmpty()) {
+                    m_interpStart = 0;
+                    m_interpEnd = 0;
+                    loadYouTube(interp.youtubeUrl, true);
+                }
+            }
         }
     });
 
@@ -495,6 +524,9 @@ void App::setupUI()
     connect(m_worldSidebar, &WorldSidebar::worldSelected, this, [this](int index) {
         m_currentWorldIndex = index;
         if (index >= 0 && index < m_worlds.size()) {
+            // Sync interpretation selection back to level browser
+            if (index == m_activeWorldIndex)
+                m_levelBrowser->setSelectedInterpretation(m_preselectedInterpretation);
             m_levelBrowser->setWorld(m_worlds[index]);
             if (index == m_activeWorldIndex && m_activeSectionIndex >= 0) {
                 m_levelBrowser->setCurrentLevel(m_activeSectionIndex, m_activeLevelIndex);
@@ -504,13 +536,31 @@ void App::setupUI()
             m_centralStack->setCurrentIndex(0);
             m_toolbar->hide();
             if (m_videoExpandButton) m_videoExpandButton->hide();
+            m_worldSidebar->clearInterpretations();
         }
     });
     connect(m_worldSidebar, &WorldSidebar::interpretationSelected, this, [this](int index) {
+        // If sources aren't loaded yet (preview mode), load from world data
+        if (m_sourceYouTubeUrls.isEmpty()) {
+            // Stop playback before switching
+            if (m_youtubePlayer && m_youtubePlayer->isPlaying())
+                m_youtubePlayer->pause();
+            if (m_currentWorldIndex >= 0 && m_currentWorldIndex < m_worlds.size()) {
+                const auto& world = m_worlds[m_currentWorldIndex];
+                if (index >= 0 && index < world.interpretations.size()) {
+                    m_preselectedInterpretation = index;
+                    m_interpStart = 0;
+                    m_interpEnd = 0;
+                    loadYouTube(world.interpretations[index].youtubeUrl, true);
+                }
+            }
+            return;
+        }
         if (index < 0 || index >= m_sourceYouTubeUrls.size()) return;
         // Stop current playback
         playerPause();
-        // Apply start/end times before loading so loadYouTube can seek correctly
+        // Sync preselection so the level browser reflects the change
+        m_preselectedInterpretation = index;
         m_activeInterpretation = index;
         m_interpStart = (index < m_sourceStartTimes.size()) ? m_sourceStartTimes[index] : 0;
         m_interpEnd = (index < m_sourceEndTimes.size()) ? m_sourceEndTimes[index] : 0;
@@ -1366,19 +1416,14 @@ void App::changeEvent(QEvent* event)
 
 void App::playerPlay()
 {
-    // Ensure we're at or past the interpretation start
-    if (m_interpStart > 0) {
-        double rawTime;
+    // On first play after entering a level, always seek to interpretation start
+    if (m_needsSeekOnPlay || (m_interpStart > 0 && playerCurrentTime() < m_interpStart)) {
+        m_needsSeekOnPlay = false;
+        double seekTo = m_interpStart;
         if (m_useYouTube && m_youtubePlayer)
-            rawTime = m_youtubePlayer->currentTime();
+            m_youtubePlayer->seekTo(seekTo);
         else
-            rawTime = m_audioPlayer->currentTime();
-        if (rawTime < m_interpStart) {
-            if (m_useYouTube && m_youtubePlayer)
-                m_youtubePlayer->seekTo(m_interpStart);
-            else
-                m_audioPlayer->seekTo(m_interpStart);
-        }
+            m_audioPlayer->seekTo(seekTo);
     }
     if (m_useYouTube && m_youtubePlayer)
         m_youtubePlayer->play();
@@ -1511,9 +1556,13 @@ void App::loadSources(const QString& jsonPath)
         }
     }
 
-    // Show interpretation list in the world sidebar
+    // Use preselected interpretation from the level browser, clamped to valid range
+    int sel = m_preselectedInterpretation;
+    if (sel < 0 || sel >= m_sourceLabels.size()) sel = 0;
+
+    // Show interpretation list in the sidebar (only visible during level play)
     if (m_sourceLabels.size() > 1) {
-        m_worldSidebar->setInterpretations(m_sourceLabels, 0);
+        m_worldSidebar->setInterpretations(m_sourceLabels, sel);
     } else {
         m_worldSidebar->clearInterpretations();
     }
@@ -1521,9 +1570,9 @@ void App::loadSources(const QString& jsonPath)
     // Show volume slider when sources are available
     m_worldSidebar->showVolumeSlider(!m_sourceYouTubeUrls.isEmpty() || !m_sourceAudioFile.isEmpty());
 
-    // Apply initial tuning and balance
-    if (!m_sourceTunings.isEmpty()) {
-        double tuning = m_sourceTunings.first();
+    // Apply initial tuning and balance for selected interpretation
+    if (sel < m_sourceTunings.size()) {
+        double tuning = m_sourceTunings[sel];
         m_playAlongSynth->setPitchOffset(tuning);
         if (m_transposeSpin) {
             m_transposeSpin->blockSignals(true);
@@ -1531,32 +1580,31 @@ void App::loadSources(const QString& jsonPath)
             m_transposeSpin->blockSignals(false);
         }
     }
-    if (!m_sourceInstrumentVols.isEmpty() && m_sourceInstrumentVols.first() >= 0 && m_instrumentVolSlider) {
-        m_instrumentVolSlider->setValue(m_sourceInstrumentVols.first());
+    if (sel < m_sourceInstrumentVols.size() && m_sourceInstrumentVols[sel] >= 0 && m_instrumentVolSlider) {
+        m_instrumentVolSlider->setValue(m_sourceInstrumentVols[sel]);
     }
-    if (!m_sourceVolumes.isEmpty() && m_sourceVolumes.first() >= 0 && m_worldSidebar) {
-        m_worldSidebar->setVolume(m_sourceVolumes.first());
+    if (sel < m_sourceVolumes.size() && m_sourceVolumes[sel] >= 0 && m_worldSidebar) {
+        m_worldSidebar->setVolume(m_sourceVolumes[sel]);
     }
 
     // Apply initial start/end times
-    m_activeInterpretation = 0;
-    m_interpStart = m_sourceStartTimes.isEmpty() ? 0 : m_sourceStartTimes.first();
-    m_interpEnd = m_sourceEndTimes.isEmpty() ? 0 : m_sourceEndTimes.first();
+    m_activeInterpretation = sel;
+    m_interpStart = (sel < m_sourceStartTimes.size()) ? m_sourceStartTimes[sel] : 0;
+    m_interpEnd = (sel < m_sourceEndTimes.size()) ? m_sourceEndTimes[sel] : 0;
 
     // Load per-interpretation beats (overrides section-level beats)
-    if (!m_sourceBeatsFiles.isEmpty() && !m_sourceBeatsFiles.first().isEmpty()) {
-        loadBeatData(m_sourceBeatsFiles.first());
+    if (sel < m_sourceBeatsFiles.size() && !m_sourceBeatsFiles[sel].isEmpty()) {
+        loadBeatData(m_sourceBeatsFiles[sel]);
         m_trackingButton->setEnabled(true);
-    } else if (!m_sourceBeatsFiles.isEmpty()) {
-        // First interpretation has no beats — check if section already loaded beats
+    } else if (sel < m_sourceBeatsFiles.size()) {
         if (m_beatDataPath.isEmpty()) {
             m_trackingAction->setChecked(false);
         }
     }
 
-    // Apply tuning for first interpretation
-    if (!m_sourceTunings.isEmpty()) {
-        double tuning = m_sourceTunings.first();
+    // Apply tuning for selected interpretation
+    if (sel < m_sourceTunings.size()) {
+        double tuning = m_sourceTunings[sel];
         m_playAlongSynth->setPitchOffset(tuning);
         if (m_transposeSpin) {
             m_transposeSpin->blockSignals(true);
@@ -1565,49 +1613,50 @@ void App::loadSources(const QString& jsonPath)
         }
     }
 
-    // Apply instrument volume for first interpretation
-    if (!m_sourceInstrumentVols.isEmpty() && m_sourceInstrumentVols.first() >= 0
+    // Apply instrument volume for selected interpretation
+    if (sel < m_sourceInstrumentVols.size() && m_sourceInstrumentVols[sel] >= 0
         && m_instrumentVolSlider) {
-        m_instrumentVolSlider->setValue(m_sourceInstrumentVols.first());
+        m_instrumentVolSlider->setValue(m_sourceInstrumentVols[sel]);
     }
 
-    // Apply master volume for first interpretation
-    if (!m_sourceVolumes.isEmpty() && m_sourceVolumes.first() >= 0) {
+    // Apply master volume for selected interpretation
+    if (sel < m_sourceVolumes.size() && m_sourceVolumes[sel] >= 0) {
         // volume is 0-100, map to 0.0-1.0 for the audio player
     }
 
-    // Auto-load: first YouTube if present, otherwise file
-    if (!m_sourceYouTubeUrls.isEmpty()) {
-        loadYouTube(m_sourceYouTubeUrls.first());
+    // Auto-load: selected YouTube if present, otherwise file
+    // Load as preview (no seek) — seek to interpStart happens on first play
+    if (sel < m_sourceYouTubeUrls.size() && !m_sourceYouTubeUrls[sel].isEmpty()) {
+        loadYouTube(m_sourceYouTubeUrls[sel], true);
     } else if (!m_sourceAudioFile.isEmpty()) {
         loadAudio(m_sourceAudioFile);
     }
 }
 
-void App::loadYouTube(const QString& url)
+void App::loadYouTube(const QString& url, bool preview)
 {
     m_useYouTube = true;
 
     // If player already exists
     if (m_youtubePlayer) {
         if (m_currentYoutubeUrl == url) {
-            // Same video — just seek to start, no reload needed
-            m_youtubePlayer->seekTo(m_interpStart);
-            m_youtubePlayer->pause();
+            // Same video — just ensure it's paused
+            if (m_youtubePlayer->isPlaying())
+                m_youtubePlayer->pause();
             return;
         }
         // Different video — reload
         m_currentYoutubeUrl = url;
         m_youtubePlayer->load(url);
         auto conn = std::make_shared<QMetaObject::Connection>();
-        double startTime = m_interpStart;
-        *conn = connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this, conn, startTime]() {
+        *conn = connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this, conn]() {
             disconnect(*conn);
-            m_youtubePlayer->seekTo(startTime);
             m_youtubePlayer->pause();
             if (m_videoExpanded && m_expandedVideoContainer) {
                 QSize sz = m_expandedVideoContainer->size();
                 m_youtubePlayer->resizePlayer(sz.width(), sz.height());
+            } else {
+                m_youtubePlayer->resizePlayer(220, 200);
             }
         });
         return;
@@ -1622,8 +1671,17 @@ void App::loadYouTube(const QString& url)
 
     // Connect playback state to toolbar
     connect(m_youtubePlayer, &YouTubePlayer::playbackStarted, [this]() {
+        // If we haven't pressed Play yet (level just loaded), suppress auto-play
+        if (m_needsSeekOnPlay) {
+            m_youtubePlayer->pause();
+            return;
+        }
         m_playPauseAction->setText("Pause");
         m_scoreWidget->setPlaying(true);
+        // Seek to interpretation start if needed (covers clicks on YouTube UI)
+        if (m_interpStart > 0 && m_youtubePlayer->currentTime() < m_interpStart) {
+            m_youtubePlayer->seekTo(m_interpStart);
+        }
     });
     connect(m_youtubePlayer, &YouTubePlayer::playbackPaused, [this]() {
         m_playPauseAction->setText("Play");
@@ -1642,6 +1700,8 @@ void App::loadYouTube(const QString& url)
 
     // Place video in the world sidebar (bottom)
     auto* videoWidget = m_youtubePlayer->videoWidget();
+    videoWidget->setMinimumSize(0, 0);
+    videoWidget->setMaximumWidth(220);
 
     QPalette videoPal = videoWidget->palette();
     videoPal.setColor(QPalette::Window, Qt::black);
@@ -1651,17 +1711,18 @@ void App::loadYouTube(const QString& url)
     m_worldSidebar->setVideoWidget(videoWidget);
 
     // Expand button — placed above the video, not overlaid
-    m_videoExpandButton = new QPushButton("Expand");
-    m_videoExpandButton->setFixedHeight(20);
+    m_videoExpandButton = new QPushButton("Expand Video");
+    m_videoExpandButton->setFixedHeight(24);
+    m_videoExpandButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     m_videoExpandButton->hide(); // only visible when in a level
     m_videoExpandButton->setCursor(Qt::PointingHandCursor);
     m_videoExpandButton->setFocusPolicy(Qt::NoFocus);
     m_videoExpandButton->setStyleSheet(
-        QString("QPushButton { background: %1; color: %2; border: none;"
-                " font-size: 12px; padding: 0; }"
-                "QPushButton:hover { background: %3; }")
+        QString("QPushButton { background: %1; color: %2; border: 1px solid %3;"
+                " border-radius: 4px; font-size: 11px; padding: 2px 10px; margin-left: 8px; }"
+                "QPushButton:hover { background: %3; color: %4; }")
         .arg(Theme::surfaceBg().name(), Theme::textSecondary().name(),
-             Theme::inputBg().name()));
+             Theme::inputBg().name(), Theme::textPrimary().name()));
     m_worldSidebar->setExpandButton(m_videoExpandButton);
     connect(m_videoExpandButton, &QPushButton::clicked, this, &App::toggleVideoExpand);
 
@@ -1669,9 +1730,11 @@ void App::loadYouTube(const QString& url)
     m_expandedVideoContainer = new QWidget();
     m_expandedVideoContainer->hide();
 
-    // Enable speed button and wire it to the YouTube player
+    // Enable speed button and resize iframe to sidebar size when ready
     connect(m_youtubePlayer, &YouTubePlayer::videoReady, this, [this]() {
         m_speedButton->setEnabled(m_useYouTube);
+        if (!m_videoExpanded)
+            m_youtubePlayer->resizePlayer(220, 200);
     });
     connect(m_speedButton->menu(), &QMenu::triggered, this, [this](QAction* action) {
         m_youtubePlayer->setPlaybackRate(action->data().toDouble());
@@ -1746,7 +1809,7 @@ void App::toggleVideoExpand()
 
         // Hide sidebar video container and update button text
         m_worldSidebar->videoContainer()->setFixedHeight(0);
-        m_videoExpandButton->setText("Collapse");
+        m_videoExpandButton->setText("Collapse Video");
         m_videoExpanded = true;
     } else {
         // Collapse: move video back to sidebar
@@ -1760,12 +1823,19 @@ void App::toggleVideoExpand()
         videoWidget->setParent(sidebarContainer);
         videoWidget->setMinimumSize(0, 0);
         videoWidget->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
-        videoWidget->setFixedSize(240, 200);
+        videoWidget->setFixedSize(220, 200);
+        videoWidget->setMinimumSize(0, 0);
+        videoWidget->setMaximumSize(220, 200);
         sidebarContainer->layout()->addWidget(videoWidget);
         sidebarContainer->setFixedHeight(200);
-        m_youtubePlayer->resizePlayer(240, 200);
+        m_youtubePlayer->resizePlayer(220, 200);
+        // Ensure the iframe catches up after layout settles
+        QTimer::singleShot(100, this, [this]() {
+            if (m_youtubePlayer && !m_videoExpanded)
+                m_youtubePlayer->resizePlayer(220, 200);
+        });
 
-        m_videoExpandButton->setText("Expand");
+        m_videoExpandButton->setText("Expand Video");
         m_videoExpanded = false;
     }
 }
@@ -2467,12 +2537,31 @@ void App::loadWorlds(const QString& worldsDir)
 {
     m_worlds = scoretracker::loadWorlds(worldsDir);
     m_worldSidebar->setWorlds(m_worlds);
+
+    // Auto-load the first world's interpretations
+    if (!m_worlds.isEmpty() && !m_worlds.first().interpretations.isEmpty()) {
+        const auto& world = m_worlds.first();
+
+        m_worldSidebar->showVolumeSlider(true);
+
+        // Load first video as preview (no seek, no play)
+        const auto& interp = world.interpretations.first();
+        if (!interp.youtubeUrl.isEmpty()) {
+            m_interpStart = 0;
+            m_interpEnd = 0;
+            loadYouTube(interp.youtubeUrl, true);
+        }
+    }
 }
 
 void App::showWorldBrowser()
 {
     if (m_playModeActive) {
         m_playModeButton->setChecked(false);
+    }
+    // Ensure YouTube is paused when returning to navigation
+    if (m_youtubePlayer && m_youtubePlayer->isPlaying()) {
+        m_youtubePlayer->pause();
     }
     // Collapse video back to sidebar when navigating
     if (m_videoExpanded) {
@@ -2481,12 +2570,14 @@ void App::showWorldBrowser()
     // Show the active world with Resume on the active level
     if (m_activeWorldIndex >= 0 && m_activeWorldIndex < m_worlds.size()) {
         m_currentWorldIndex = m_activeWorldIndex;
+        m_levelBrowser->setSelectedInterpretation(m_preselectedInterpretation);
         m_levelBrowser->setWorld(m_worlds[m_activeWorldIndex]);
         m_levelBrowser->setCurrentLevel(m_activeSectionIndex, m_activeLevelIndex);
     }
     m_centralStack->setCurrentIndex(0);
     m_toolbar->hide();
     if (m_videoExpandButton) m_videoExpandButton->hide();
+    m_worldSidebar->clearInterpretations();
 }
 
 void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
@@ -2497,11 +2588,22 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
     const auto& section = world.sections[sectionIndex];
     if (levelIndex < 0 || levelIndex >= section.levels.size()) return;
 
-    // Pause playback and reset cursor
-    playerPause();
+    // Stop playback and reset everything
+    if (m_youtubePlayer) {
+        if (m_youtubePlayer->isPlaying())
+            m_youtubePlayer->pause();
+        m_youtubePlayer->seekTo(0);
+    } else {
+        playerPause();
+    }
     if (m_useVerovio)
         m_scoreWidget->runWebJavaScript("hideCursor()");
     m_syncTimer->setTime(0);
+    m_needsSeekOnPlay = true;
+
+    // Reset toolbar seek slider and time label
+    m_seekSlider->setValue(0);
+    m_timeLabel->setText("0:00");
 
     // Exit current play mode if active
     if (m_playModeActive) {
@@ -2542,6 +2644,21 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         // Load audio sources
         if (!lvlSection.sourcesPath.isEmpty()) {
             loadSources(lvlSection.sourcesPath);
+        }
+
+        // Disable tracking and hide cursor if no beat data available
+        if (m_syncTimer->beatTimes().empty()) {
+            m_trackingAction->setChecked(false);
+            m_trackingAction->setEnabled(false);
+            m_trackingButton->setEnabled(false);
+            m_scoreWidget->setCursorVisible(false);
+            if (m_useVerovio)
+                m_scoreWidget->runWebJavaScript("hideCursor()");
+        } else {
+            m_trackingAction->setEnabled(true);
+            m_trackingButton->setEnabled(true);
+            m_trackingAction->setChecked(true);
+            m_scoreWidget->setCursorVisible(true);
         }
 
         // Hide the right sidebar by default for levels
@@ -2945,7 +3062,23 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
 
 void App::keyPressEvent(QKeyEvent* event)
 {
+    // Spacebar in navigation view: toggle YouTube play/pause
+    if (event->key() == Qt::Key_Space && m_centralStack->currentIndex() == 0
+        && m_youtubePlayer) {
+        if (m_youtubePlayer->isPlaying())
+            m_youtubePlayer->pause();
+        else
+            m_youtubePlayer->play();
+        event->accept();
+        return;
+    }
+
     // Escape returns to world browser from score view
+    if (event->key() == Qt::Key_Escape && m_centralStack->currentIndex() == 0) {
+        // Already in navigation — ignore
+        event->accept();
+        return;
+    }
     if (event->key() == Qt::Key_Escape && m_centralStack->currentIndex() == 1
 #ifdef USE_MUSESCORE
         && (!m_syncMode || !m_syncMode->isActive())

@@ -17,6 +17,7 @@
         {
           "id": "timpani",
           "title": "Timpani",
+          "difficulty": 0.5,
           "parts": [4],
           "playPart": 4,
           "gmProgram": 47,
@@ -24,7 +25,8 @@
         },
         {
           "id": "continuo",
-          "title": "Organo e Continuo",
+          "title": "Continuo",
+          "difficulty": 1.5,
           "parts": [17],
           "playPart": 17,
           "gmProgram": 34,
@@ -33,6 +35,7 @@
         {
           "id": "oboe1",
           "title": "Oboe I",
+          "difficulty": 2.0,
           "parts": [7],
           "playPart": 7,
           "gmProgram": 68,
@@ -40,7 +43,8 @@
         },
         {
           "id": "continuo-timpani",
-          "title": "Organo e Continuo + Timpani",
+          "title": "Continuo + Timpani",
+          "difficulty": 2.5,
           "parts": [17, 4],
           "voices": [
             {

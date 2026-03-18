@@ -64,11 +64,20 @@ YouTubePlayer::YouTubePlayer(QObject* parent)
 {
     m_view = new QWebEngineView();
     m_view->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    m_view->setFocusPolicy(Qt::NoFocus);
     connect(m_view, &QObject::destroyed, this, [this]() { m_view = nullptr; });
 
     // Allow programmatic playback without user gesture (Space key from toolbar)
     m_view->page()->settings()->setAttribute(
         QWebEngineSettings::PlaybackRequiresUserGesture, false);
+
+    // Prevent the Chromium render widget from stealing keyboard focus
+    // (otherwise keypresses meant for play-along get captured by YouTube)
+    connect(m_view, &QWebEngineView::loadFinished, this, [this]() {
+        for (auto* child : m_view->findChildren<QWidget*>()) {
+            child->setFocusPolicy(Qt::NoFocus);
+        }
+    });
 
     m_channel = new QWebChannel(this);
     m_bridge = new YTBridge(this);

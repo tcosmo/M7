@@ -2598,88 +2598,48 @@ void App::switchInterpretation(int index)
 
 void App::testLevelCycling()
 {
-    int t = 0;
-    auto after = [&t](int ms) { t += ms; return t; };
+    // 100 random level cycles with 10s hang detection per cycle.
+    // Levels: 0=Timpani, 1=Continuo, 2=Oboe, 3=Continuo+Timpani (2 voices)
+    static int s_cycle = 0;
+    static int s_total = 100;
+    static QElapsedTimer s_timer;
 
-    // --- Phase 1: 10 level cycles, mixing same and different levels ---
-    struct Step { int world; int section; int level; };
-    QList<Step> steps = {
-        {0, 0, 0},  // Timpani
-        {0, 0, 1},  // Continuo
-        {0, 0, 0},  // Timpani again
-        {0, 0, 2},  // Oboe
-        {0, 0, 1},  // Continuo again
-        {0, 0, 0},  // Timpani again
-        {0, 0, 3},  // Continuo+Timpani (2 voices)
-        {0, 0, 0},  // Timpani
-        {0, 0, 2},  // Oboe
-        {0, 0, 1},  // Continuo
-    };
-
-    for (int i = 0; i < steps.size(); ++i) {
-        const auto& s = steps[i];
-        QTimer::singleShot(after(500), this, [=]() {
-            qDebug() << "TEST: entering level w=" << s.world << "s=" << s.section << "l=" << s.level;
-            loadLevel(s.world, s.section, s.level);
-        });
-        QTimer::singleShot(after(1500), this, [=]() {
-            qDebug() << "TEST: exiting level (showWorldBrowser)";
-            showWorldBrowser();
-        });
+    if (s_cycle == 0) {
+        s_timer.start();
+        qDebug() << "TEST: ===== STARTING 100 RANDOM LEVEL CYCLES =====";
+        srand(static_cast<unsigned>(QDateTime::currentMSecsSinceEpoch()));
     }
 
-    // --- Phase 2: Overlay highlight reset on interpretation switch ---
-    // Enter Continuo+Timpani level (index 3 = 2-instrument level), simulate highlights,
-    // switch interpretation, verify highlights cleared.
-    QTimer::singleShot(after(500), this, [this]() {
-        qDebug() << "TEST: === Phase 2: overlay highlight reset ===";
-        qDebug() << "TEST: entering Continuo+Timpani level (0,0,3)";
-        loadLevel(0, 0, 3);
-    });
-
-    QTimer::singleShot(after(2000), this, [this]() {
-        // Simulate highlights being set (as if user played a few notes)
-        if (!m_vrvVoices.empty() && !m_vrvVoices[0].elementIds.empty()) {
-            int midIdx = m_vrvVoices[0].elementIds.size() / 2;
-            QString hlId = m_vrvVoices[0].elementIds[midIdx];
-            m_scoreWidget->overlayHighlight(0, hlId);
-            qDebug() << "TEST: set overlay highlight v0 at mid-score:" << hlId;
-        }
-        if (m_vrvVoices.size() > 1 && !m_vrvVoices[1].elementIds.empty()) {
-            int midIdx = m_vrvVoices[1].elementIds.size() / 2;
-            QString hlId = m_vrvVoices[1].elementIds[midIdx];
-            m_scoreWidget->overlayHighlight(1, hlId);
-            qDebug() << "TEST: set overlay highlight v1 at mid-score:" << hlId;
-        }
-    });
-
-    QTimer::singleShot(after(500), this, [this]() {
-        // Switch interpretation (Savall → Koopman)
-        int newInterp = (m_activeInterpretation == 0) ? 1 : 0;
-        qDebug() << "TEST: switching interpretation from" << m_activeInterpretation << "to" << newInterp;
-        switchInterpretation(newInterp);
-
-        // Verify overlay highlights are cleared
-        // The overlay paints based on m_hlId — after clear, both should be empty
-        // We can't directly access the overlay's private state, but we can check
-        // that the synth position is reset (which means highlights will be at first note)
-        bool pass = true;
-        if (m_playAlongSynth->voiceCount() > 0) {
-            // After interpretation switch, synth position should be at 0
-            qDebug() << "TEST: synth voice count:" << m_playAlongSynth->voiceCount();
-        }
-        // The real check: scroll position should be at top (we called scrollToTop)
-        qDebug() << "TEST: overlay highlight reset" << (pass ? "PASSED" : "FAILED");
-    });
-
-    QTimer::singleShot(after(1000), this, [this]() {
-        showWorldBrowser();
-    });
-
-    // --- Final ---
-    QTimer::singleShot(after(500), this, [=]() {
-        qDebug() << "TEST: ===== ALL TESTS COMPLETED =====";
+    if (s_cycle >= s_total) {
+        qDebug() << "TEST: ===== ALL" << s_total << "CYCLES COMPLETED in"
+                 << s_timer.elapsed() / 1000 << "seconds =====";
         QApplication::quit();
+        return;
+    }
+
+    int level = rand() % 4; // 0-3
+    s_cycle++;
+    qDebug() << "TEST:" << s_cycle << "/" << s_total << "entering level" << level;
+
+    loadLevel(0, 0, level);
+
+    // Hang detector: if we're still on loading page after 10s, FAIL
+    int cycle = s_cycle;
+    QTimer::singleShot(10000, this, [this, cycle]() {
+        if (m_centralStack->currentIndex() == 2) {
+            qCritical() << "TEST: HANG DETECTED at cycle" << cycle
+                        << "— stuck on loading page for 10s!";
+            QApplication::exit(1);
+        }
+    });
+
+    // Exit after 3s (enough for load + brief display), then start next cycle
+    QTimer::singleShot(3000, this, [this]() {
+        showWorldBrowser();
+        // Next cycle after 200ms
+        QTimer::singleShot(200, this, [this]() {
+            testLevelCycling();
+        });
     });
 }
 
@@ -2757,8 +2717,6 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
     m_voiceKeysHeld.clear();
     m_voiceKeyZones.clear();
 
-    // Save window geometry before the heavy load
-    QRect savedGeometry = geometry();
 
     // Switch to loading page immediately so the user sees feedback
     m_centralStack->setCurrentIndex(2);
@@ -3286,10 +3244,6 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             });
         }
 
-        // Restore window geometry after all deferred layout work settles
-        QTimer::singleShot(0, this, [this, savedGeometry]() {
-            move(savedGeometry.topLeft());
-        });
 
         // Video resize is handled by the videoReady handler in loadYouTube
         // and the eventFilter on the expanded container.

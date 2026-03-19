@@ -2650,6 +2650,11 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
     const auto& section = world.sections[sectionIndex];
     if (levelIndex < 0 || levelIndex >= section.levels.size()) return;
 
+    // Pause preview player immediately so audio doesn't play behind the loading screen
+    auto* preview = m_levelBrowser->previewPlayer();
+    if (preview)
+        preview->pause();
+
     // Kill any existing YouTube player — stop audio first, then destroy
     if (m_youtubePlayer) {
         m_youtubePlayer->stop();

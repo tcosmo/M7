@@ -292,6 +292,8 @@ add_executable(test_playalong
     src/engine/VerovioEngine.cpp
     src/playalongsynth.h
     src/playalongsynth.cpp
+    src/synctimer.h
+    src/synctimer.cpp
     src/miniaudio_impl.c
 )
 # vorbis_bridge is already compiled into fluidsynth_lib

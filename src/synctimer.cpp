@@ -66,10 +66,14 @@ void SyncTimer::setTime(double seconds)
 #ifdef USE_MUSESCORE
         !m_score &&
 #endif
-        !m_engine) || m_beatTimes.empty() || m_beatTicks.empty()) return;
+        !m_engine) || m_beatTimes.empty() || m_beatTicks.empty()) {
+        m_lastTick = 0;
+        return;
+    }
 
     // If time is before the first beat, snap cursor to the first beat
     if (seconds < m_beatTimes.front()) {
+        m_lastTick = m_beatTicks.front();
 #ifdef USE_MUSESCORE
         Fraction tick = Fraction::fromTicks(m_beatTicks.front());
         int pageIndex = 0;

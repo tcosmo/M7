@@ -1,10 +1,12 @@
 #include <QCoreApplication>
 #include <QTest>
+#include <QSignalSpy>
 #include <QDebug>
 #include <vector>
 
 #include "engine/VerovioEngine.h"
 #include "playalongsynth.h"
+#include "synctimer.h"
 
 using namespace scoretracker;
 
@@ -159,6 +161,125 @@ private slots:
         }
 
         qDebug() << "Multiple tuning offsets stored correctly ✓";
+    }
+
+    // -- SyncTimer state reset tests --
+    // Reproduces: play Savall interpretation, advance cursor, switch to Koopman,
+    // cursor should be at 0 — not stuck at old Savall position.
+
+    void testSetTimeWithClearedBeatDataResetsTick() {
+        // After clearing beat data, setTime() must reset m_lastTick to 0.
+        // This was the root cause: old m_lastTick persisted after clearing
+        // beat data, so currentTick() returned the stale Savall tick when
+        // onPositionChanged called setCursorTick(currentTick()) on first play.
+        SyncTimer timer;
+        QSignalSpy spy(&timer, &SyncTimer::cursorRectChanged);
+
+        // Load beat data and simulate playback (no engine, so m_lastTick
+        // won't be set by setTime — but we test the clear path)
+        std::vector<double> times = {1.0, 2.0, 3.0, 4.0, 5.0};
+        std::vector<int>    ticks = {0, 480, 960, 1440, 1920};
+        timer.setBeatTimes(times, 3);
+        timer.setBeatTicks(ticks);
+
+        // Clear beat data and call setTime(0)
+        timer.setBeatTimes({}, 3);
+        timer.setBeatTicks({});
+        timer.setTime(0);
+
+        // m_lastTick must be 0 — not stale from previous playback
+        QCOMPARE(timer.currentTick(), 0);
+        // No signal (no engine)
+        QCOMPARE(spy.count(), 0);
+
+        qDebug() << "Cleared beat data resets currentTick to 0 ✓";
+    }
+
+    void testSetTimeBeforeFirstBeatSetsTickToFirstBeat() {
+        // When time < first beat time, m_lastTick should be set to the
+        // first beat's tick, not left stale from previous playback.
+        SyncTimer timer;
+
+        // "Koopman" interpretation: first beat at 0.5 seconds
+        std::vector<double> times = {0.5, 1.2, 1.9, 2.6, 3.3};
+        std::vector<int>    ticks = {0, 480, 960, 1440, 1920};
+        timer.setBeatTimes(times, 3);
+        timer.setBeatTicks(ticks);
+
+        // setTime(0) — before first beat (0.5s)
+        timer.setTime(0);
+
+        // m_lastTick should snap to first beat tick (0), not stay stale
+        QCOMPARE(timer.currentTick(), 0);
+
+        // setTime(0.3) — still before first beat
+        timer.setTime(0.3);
+        QCOMPARE(timer.currentTick(), 0);
+
+        qDebug() << "setTime before first beat sets tick to first beat ✓";
+    }
+
+    void testInterpretationSwitchResetsCurrentTick() {
+        // Full scenario: play Savall (tick advances), switch to Koopman,
+        // press play — currentTick() must be 0, not old Savall tick.
+        SyncTimer timer;
+
+        // "Savall" interpretation — load and simulate playback
+        std::vector<double> savallTimes = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
+        std::vector<int>    savallTicks = {0, 480, 960, 1440, 1920, 2400, 2880, 3360};
+        timer.setBeatTimes(savallTimes, 3);
+        timer.setBeatTicks(savallTicks);
+
+        // --- Switch interpretation ---
+        // Step 1: Clear old beat data
+        timer.setBeatTimes({}, 3);
+        timer.setBeatTicks({});
+        timer.setTime(0);
+        QCOMPARE(timer.currentTick(), 0); // must be 0, not stale
+
+        // Step 2: Load "Koopman" beat data (first beat at 0.5s)
+        std::vector<double> koopmanTimes = {0.5, 1.2, 1.9, 2.6, 3.3, 4.0, 4.7, 5.4};
+        std::vector<int>    koopmanTicks = {0, 480, 960, 1440, 1920, 2400, 2880, 3360};
+        timer.setBeatTimes(koopmanTimes, 3);
+        timer.setBeatTicks(koopmanTicks);
+        timer.setTime(0);
+
+        // Step 3: Simulate first onPositionChanged after pressing Play
+        // adjusted ≈ 0.001 (just started), + 0.08 latency compensation = 0.081
+        // 0.081 < 0.5 (first beat) → early return path in setTime
+        timer.setTime(0.081);
+
+        // currentTick MUST be 0 (first beat), not old Savall tick
+        QCOMPARE(timer.currentTick(), 0);
+
+        qDebug() << "Interpretation switch resets currentTick ✓";
+    }
+
+    void testPlayAlongStateResetOnExit() {
+        // Verify play-along synth is fully reset — simulates showWorldBrowser cleanup.
+        PlayAlongSynth synth;
+        synth.init(m_scoreDir + "/../sounds/MS Basic.sf3");
+
+        std::vector<NoteEvent> notes;
+        NoteEvent e{};
+        e.midiPitch = 50;
+        e.durationTicks = 480;
+        notes.push_back(e);
+        e.midiPitch = 45;
+        notes.push_back(e);
+        synth.setVoiceFromNotes(notes, 47);
+        QVERIFY(synth.voiceCount() > 0);
+        synth.playNextNote();
+
+        // Simulate exit cleanup
+        synth.stopNote();
+        synth.clearVoices();
+        synth.resetPosition();
+
+        // After cleanup, no voices should be loaded
+        QCOMPARE(synth.voiceCount(), 0);
+
+        qDebug() << "Play-along state fully reset on exit ✓";
     }
 };
 

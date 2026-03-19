@@ -2417,13 +2417,35 @@ void App::showWorldBrowser()
     }
     m_videoExpanded = false;
 
-    // Reset score cursor immediately so it doesn't flash at old position on next level
+    // Reset all level state so nothing leaks into the next level
     m_scoreWidget->setCursorRect(QRectF(), -1);
     m_scoreWidget->setCursorVisible(false);
+    m_scoreWidget->setPlaying(false);
     m_scoreWidget->scrollToTop();
+    m_scoreWidget->setHighlightElement(nullptr);
+    m_scoreWidget->setHighlightElement2(nullptr);
     if (m_useVerovio)
         m_scoreWidget->runWebJavaScript("hideCursor()");
+
+    // Reset sync timer fully — clear beat data so stale data can't move the cursor
+    m_syncTimer->setBeatTimes({}, 3);
+    m_syncTimer->setBeatTicks({});
     m_syncTimer->setTime(0);
+    m_needsSeekOnPlay = false;
+
+    // Reset toolbar state
+    m_seekSlider->setValue(0);
+    m_timeLabel->setText("0:00");
+    m_playPauseAction->setText("Play");
+
+    // Reset play-along state
+    m_vrvVoices.clear();
+    m_playAlongSynth->clearVoices();
+    m_playAlongSynth->resetPosition();
+    m_keysHeld = 0;
+    m_multiVoice = false;
+    m_voiceKeysHeld.clear();
+    m_voiceKeyZones.clear();
 
     // Show the active world in the level browser
     if (m_activeWorldIndex >= 0 && m_activeWorldIndex < m_worlds.size()) {
@@ -2445,6 +2467,17 @@ void App::switchInterpretation(int index)
     m_activeInterpretation = index;
     m_levelBrowser->setSelectedInterpretation(index);
 
+    // Kill old YouTube player FIRST — its 60fps timer would otherwise keep firing
+    // positionChanged with the old position, racing against the state reset below.
+    if (m_youtubePlayer) {
+        m_youtubePlayer->stop();
+        auto* view = m_youtubePlayer->videoWidget();
+        if (view) { view->setParent(nullptr); delete view; }
+        delete m_youtubePlayer;
+        m_youtubePlayer = nullptr;
+    }
+    m_currentYoutubeUrl.clear();
+
     // Stop play-along and reset UI
     m_playAlongSynth->stopNote();
     m_playAlongSynth->resetPosition();
@@ -2456,6 +2489,9 @@ void App::switchInterpretation(int index)
     m_scoreWidget->scrollToTop();
     if (m_useVerovio)
         m_scoreWidget->runWebJavaScript("hideCursor()");
+    // Clear old beat data BEFORE setTime so it doesn't resolve against stale data
+    m_syncTimer->setBeatTimes({}, 3);
+    m_syncTimer->setBeatTicks({});
     m_syncTimer->setTime(0);
     m_seekSlider->setValue(0);
     m_timeLabel->setText("0:00");
@@ -2475,30 +2511,21 @@ void App::switchInterpretation(int index)
     // Load per-interpretation beat data
     if (index < m_sourceBeatsFiles.size() && !m_sourceBeatsFiles[index].isEmpty()) {
         loadBeatData(m_sourceBeatsFiles[index]);
+        // setTime(0) now properly resets m_lastTick to first beat tick
+        m_syncTimer->setTime(0);
         m_trackingAction->setEnabled(true);
         m_trackingButton->setEnabled(true);
         m_trackingAction->setChecked(true);
         m_scoreWidget->setCursorVisible(true);
     } else {
-        m_syncTimer->setBeatTimes({}, 3);
-        m_syncTimer->setBeatTicks({});
         m_trackingAction->setChecked(false);
         m_trackingAction->setEnabled(false);
         m_trackingButton->setEnabled(false);
         m_scoreWidget->setCursorVisible(false);
     }
 
-    // Load new YouTube video (destroys old player, creates fresh)
+    // Create fresh YouTube player for new interpretation
     if (index < m_sourceYouTubeUrls.size() && !m_sourceYouTubeUrls[index].isEmpty()) {
-        // Destroy old player
-        if (m_youtubePlayer) {
-            m_youtubePlayer->stop();
-            auto* view = m_youtubePlayer->videoWidget();
-            if (view) { view->setParent(nullptr); delete view; }
-            delete m_youtubePlayer;
-            m_youtubePlayer = nullptr;
-        }
-        m_currentYoutubeUrl.clear();
         loadYouTube(m_sourceYouTubeUrls[index]);
     }
 

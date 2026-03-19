@@ -666,17 +666,17 @@ void LevelBrowser::rebuild()
     segInner->setContentsMargins(6, 2, 6, 2);
     segInner->setSpacing(2);
 
-    QList<QPushButton*> segBtns;
+    auto segBtns = std::make_shared<QList<QPushButton*>>();
 
-    auto updateSeg = [](QList<QPushButton*>& btns, int sel) {
-        for (int i = 0; i < btns.size(); ++i) {
+    auto updateSeg = [segBtns](int sel) {
+        for (int i = 0; i < segBtns->size(); ++i) {
             if (i == sel) {
-                btns[i]->setStyleSheet(QString(
+                (*segBtns)[i]->setStyleSheet(QString(
                     "background: %1; color: white; border-radius: 4px;"
                     " font-size: 11px; font-weight: bold; padding: 2px 14px; border: none;"
                 ).arg(Theme::accent().name()));
             } else {
-                btns[i]->setStyleSheet(QString(
+                (*segBtns)[i]->setStyleSheet(QString(
                     "background: transparent; color: %1; border-radius: 4px;"
                     " font-size: 11px; font-weight: bold; padding: 2px 14px; border: none;"
                 ).arg(Theme::textHint().name()));
@@ -688,13 +688,13 @@ void LevelBrowser::rebuild()
         auto* btn = new QPushButton(segDefs[t].title);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setFocusPolicy(Qt::NoFocus);
-        segBtns.append(btn);
+        segBtns->append(btn);
         segInner->addWidget(btn);
-        connect(btn, &QPushButton::clicked, this, [segBtns, updateSeg, t]() mutable {
-            updateSeg(segBtns, t);
+        connect(btn, &QPushButton::clicked, this, [updateSeg, t]() {
+            updateSeg(t);
         });
     }
-    updateSeg(segBtns, 0);
+    updateSeg(0);
 
     segLayout->addWidget(segContainer);
     segLayout->addStretch();
@@ -708,7 +708,7 @@ void LevelBrowser::rebuild()
 
     // Update subtitle when switching segments
     for (int t = 0; t < 3; ++t) {
-        connect(segBtns[t], &QPushButton::clicked, this, [segSubtitle, segDefs, t]() {
+        connect((*segBtns)[t], &QPushButton::clicked, this, [segSubtitle, segDefs, t]() {
             segSubtitle->setText(segDefs[t].subtitle);
         });
     }
@@ -732,7 +732,7 @@ void LevelBrowser::rebuild()
 
     // Wire segment switching to show/hide content
     for (int t = 0; t < 3; ++t) {
-        connect(segBtns[t], &QPushButton::clicked, this, [movementsContainer, comingSoonPlaceholder, t]() {
+        connect((*segBtns)[t], &QPushButton::clicked, this, [movementsContainer, comingSoonPlaceholder, t]() {
             movementsContainer->setVisible(t == 0);
             comingSoonPlaceholder->setVisible(t != 0);
         });
@@ -748,13 +748,13 @@ void LevelBrowser::rebuild()
         sf.setBold(true);
         sectionLabel->setFont(sf);
         sectionLabel->setStyleSheet(QString("color: %1; padding-top: 8px;").arg(Theme::textPrimary().name()));
-        layout->addWidget(sectionLabel);
+        movLayout->addWidget(sectionLabel);
 
         if (section.levels.isEmpty()) {
             auto* comingSoon = new QLabel("Coming soon...");
             comingSoon->setStyleSheet(QString("color: %1; font-size: 11px; font-style: italic; padding-left: 8px;")
                 .arg(Theme::textDisabled().name()));
-            layout->addWidget(comingSoon);
+            movLayout->addWidget(comingSoon);
         }
 
         // Column header row
@@ -774,13 +774,13 @@ void LevelBrowser::rebuild()
             auto* hAcc = new QLabel("Accuracy"); hAcc->setFixedWidth(65); hAcc->setAlignment(Qt::AlignCenter); hAcc->setStyleSheet(hdrStyle);
             auto* hPlay = new QLabel(""); hPlay->setFixedWidth(80);
             hl->addWidget(hNum); hl->addWidget(hTitle, 1); hl->addWidget(hInstr); hl->addWidget(hDiff); hl->addWidget(hMyPlays); hl->addWidget(hTotal); hl->addWidget(hAcc); hl->addWidget(hPlay);
-            layout->addWidget(headerRow);
+            movLayout->addWidget(headerRow);
 
             // Thin separator
             auto* sep = new QWidget();
             sep->setFixedHeight(1);
             sep->setStyleSheet(QString("background: %1;").arg(Theme::inputBg().name()));
-            layout->addWidget(sep);
+            movLayout->addWidget(sep);
         }
 
         for (int li = 0; li < section.levels.size(); ++li) {
@@ -877,10 +877,10 @@ void LevelBrowser::rebuild()
             row->setProperty("li", li);
             row->installEventFilter(this);
 
-            layout->addWidget(row);
+            movLayout->addWidget(row);
         }
 
-        layout->addSpacing(8);
+        movLayout->addSpacing(8);
     }
     // Movements content is already added to the main layout above.
     // Full Work and Sandbox are not yet implemented.

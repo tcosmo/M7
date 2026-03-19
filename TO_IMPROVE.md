@@ -1,0 +1,1 @@
+- interpretation list put left right button to push scroll manually

@@ -18,6 +18,8 @@ public:
     ~VerovioEngine() override;
 
     bool loadMusicXML(const QString& path) override;
+    // Load XML file but defer heavy Verovio processing — call selectParts() after
+    bool loadMusicXMLDeferred(const QString& path);
     void setPageSizeInches(double width, double height) override;
     void setMarginsInches(double top, double bottom, double left, double right) override;
     void setSpatiumInches(double sp) override;

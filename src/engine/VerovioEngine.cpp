@@ -82,6 +82,32 @@ bool VerovioEngine::loadMusicXML(const QString& path)
     return true;
 }
 
+bool VerovioEngine::loadMusicXMLDeferred(const QString& path)
+{
+    // Read file and parse part list only — skip Verovio LoadData.
+    // Call selectParts() afterward to do the filtered heavy load.
+    QFileInfo fi(path);
+    if (!fi.exists()) {
+        qWarning() << "MusicXML file not found:" << path;
+        return false;
+    }
+
+    m_musicXmlPath = path;
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qWarning() << "Failed to open MusicXML:" << path;
+        return false;
+    }
+    m_musicXmlData = QString::fromUtf8(file.readAll());
+    file.close();
+
+    parseParts(m_musicXmlData);
+
+    qDebug() << "Verovio deferred load:" << path << "parts:" << m_parts.size();
+    return true;
+}
+
 void VerovioEngine::setPageSizeInches(double width, double height)
 {
     m_pageWidthIn = width;

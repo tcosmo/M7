@@ -856,7 +856,7 @@ void App::setupToolbar()
     });
 }
 
-bool App::loadScore(const QString& musicXmlPath)
+bool App::loadScore(const QString& musicXmlPath, const QList<int>& parts)
 {
     QFileInfo fi(musicXmlPath);
     if (!fi.exists()) {
@@ -887,9 +887,19 @@ bool App::loadScore(const QString& musicXmlPath)
         engine->setMarginsInches(0.20, 0.20, 0.6, 0.6);
         engine->setSpatiumInches(0.046);
 
-        if (!engine->loadMusicXML(musicXmlPath)) {
-            qWarning() << "Verovio failed to load:" << musicXmlPath;
-            return false;
+        if (!parts.isEmpty()) {
+            // Fast path: read file, filter to needed parts, do a single Verovio load
+            if (!engine->loadMusicXMLDeferred(musicXmlPath)) {
+                qWarning() << "Verovio failed to load:" << musicXmlPath;
+                return false;
+            }
+            engine->selectParts(parts);
+        } else {
+            // Full load (CLI mode, no part filtering)
+            if (!engine->loadMusicXML(musicXmlPath)) {
+                qWarning() << "Verovio failed to load:" << musicXmlPath;
+                return false;
+            }
         }
 
         engine->layout();
@@ -2728,25 +2738,31 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             return;
         }
         qDebug() << "loadLevel: DEFERRED lambda running v" << loadVersion;
+        QElapsedTimer prof; prof.start();
+        auto lap = [&prof](const char* label) {
+            qDebug() << "  PROFILE" << label << prof.elapsed() << "ms";
+            prof.restart();
+        };
 
         const auto& lvlSection = m_worlds[worldIndex].sections[sectionIndex];
         const auto& level = lvlSection.levels[levelIndex];
 
-        // Load the score
+        // Load the score — pass level parts for filtered loading (skips full 17-part render)
         if (!lvlSection.scorePath.isEmpty()) {
-            qDebug() << "loadLevel: loading score" << lvlSection.scorePath;
-            loadScore(lvlSection.scorePath);
-            qDebug() << "loadLevel: score loaded";
+            loadScore(lvlSection.scorePath, level.parts);
+            lap("loadScore (filtered)");
         }
 
         // Load beat data
         if (!lvlSection.beatsPath.isEmpty()) {
             loadBeatData(lvlSection.beatsPath);
+            lap("loadBeatData");
         }
 
         // Load audio sources
         if (!lvlSection.sourcesPath.isEmpty()) {
             loadSources(lvlSection.sourcesPath);
+            lap("loadSources");
         }
 
         // Disable tracking and hide cursor if no beat data available
@@ -2813,6 +2829,8 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         m_activeLevelIndex = levelIndex;
         m_levelBrowser->setCurrentLevel(sectionIndex, levelIndex);
 
+        lap("interpretationMenu+layout");
+
         // Switch to score view
         qDebug() << "loadLevel: switching to score view (index 1)";
         m_centralStack->setCurrentIndex(1);
@@ -2872,9 +2890,15 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         }
 #endif
 
-        // Show only the relevant parts
-        if (!level.parts.isEmpty()) {
+        // Show only the relevant parts (skip if already filtered during loadScore)
+        if (!level.parts.isEmpty() && !m_useVerovio) {
             setVisibleParts(level.parts);
+            lap("setVisibleParts");
+        } else if (m_useVerovio && m_engine) {
+            // For Verovio, parts were filtered during loadScore — just set the engine
+            // on the ScoreWidget to trigger web view rendering
+            m_scoreWidget->setEngine(m_engine.get());
+            lap("setEngine (web view)");
         }
 
         // Verovio play-along: build note tables (matching electron branch logic)
@@ -3177,6 +3201,8 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             }
         }
 #endif // USE_MUSESCORE
+
+        lap("voiceSetup+instruments");
 
         // Populate interpretation menu
         m_interpMenu->clear();

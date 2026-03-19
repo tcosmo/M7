@@ -61,7 +61,7 @@ public:
 #ifdef USE_MUSESCORE
     void setUseMuseScore(bool use) { m_useVerovio = !use; }
 #endif
-    bool loadScore(const QString& musicXmlPath);
+    bool loadScore(const QString& musicXmlPath, const QList<int>& parts = {});
     bool loadAudio(const QString& audioPath);
     bool loadBeatData(const QString& jsonPath);
     void loadYouTube(const QString& url, bool preview = false);

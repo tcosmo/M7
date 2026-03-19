@@ -120,6 +120,7 @@ private:
     void* m_synth = nullptr;
     void* m_device = nullptr;
     int m_sfontId = -1;
+    QString m_currentSfontPath;
 
     double m_gain = 0.6;
     double m_pitchOffset = 0;

@@ -1,1 +1,2 @@
 - interpretation list put left right button to push scroll manually
+- voice setup from svg is fucked up

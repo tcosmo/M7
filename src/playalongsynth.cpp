@@ -2,6 +2,8 @@
 
 #include <fluidsynth.h>
 #include <miniaudio/miniaudio.h>
+#include <atomic>
+#include <cstring>
 
 #ifdef USE_MUSESCORE
 #include "engraving/dom/score.h"
@@ -77,8 +79,16 @@ static fluid_synth_t* fs(void* p) { return static_cast<fluid_synth_t*>(p); }
 static fluid_settings_t* fsettings(void* p) { return static_cast<fluid_settings_t*>(p); }
 static ma_device* madev(void* p) { return static_cast<ma_device*>(p); }
 
+// Atomic flag: when true, audio callback produces silence (soundfont swap in progress)
+static std::atomic<bool> g_synthMuted{false};
+
 static void audioCallback(ma_device* dev, void* output, const void* /*input*/, ma_uint32 frameCount)
 {
+    if (g_synthMuted.load(std::memory_order_acquire)) {
+        // Soundfont swap in progress — output silence
+        memset(output, 0, frameCount * 2 * sizeof(float));
+        return;
+    }
     auto* s = static_cast<fluid_synth_t*>(dev->pUserData);
     fluid_synth_write_float(s, static_cast<int>(frameCount),
                             output, 0, 2,
@@ -153,16 +163,29 @@ bool PlayAlongSynth::init(const QString& sf3Path)
 bool PlayAlongSynth::loadSoundfont(const QString& path)
 {
     if (!m_synth) return false;
+
+    // Skip reload if the same soundfont is already loaded
+    if (m_sfontId >= 0 && m_currentSfontPath == path) {
+        return true;
+    }
+
     stopNote();
+
+    // Mute audio callback so it doesn't call fluid_synth_write_float
+    // while we swap soundfonts — fluidsynth is not thread-safe for
+    // concurrent sfload + write_float (internal mutex deadlock).
+    g_synthMuted.store(true, std::memory_order_release);
 
     // Unload previous soundfont
     if (m_sfontId >= 0) {
         fluid_synth_sfunload(fs(m_synth), m_sfontId, 1);
         m_sfontId = -1;
+        m_currentSfontPath.clear();
     }
 
     m_sfontId = fluid_synth_sfload(fs(m_synth), path.toUtf8().constData(), 1);
     if (m_sfontId < 0) {
+        g_synthMuted.store(false, std::memory_order_release);
         qWarning() << "PlayAlongSynth: failed to load soundfont:" << path;
         return false;
     }
@@ -173,6 +196,11 @@ bool PlayAlongSynth::loadSoundfont(const QString& path)
     }
     // Re-apply pitch bend
     setPitchOffset(m_pitchOffset);
+
+    m_currentSfontPath = path;
+
+    // Resume audio callback
+    g_synthMuted.store(false, std::memory_order_release);
 
     qDebug() << "PlayAlongSynth: loaded soundfont:" << path;
     return true;
@@ -204,6 +232,7 @@ int PlayAlongSynth::ensureSoundfont(const QString& path)
         return -1;
     }
     m_loadedSfonts[path] = id;
+
     qDebug() << "PlayAlongSynth: ensureSoundfont loaded:" << path << "id:" << id;
     return id;
 }

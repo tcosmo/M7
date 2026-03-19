@@ -475,6 +475,8 @@ void App::setupUI()
     // Level browser (shown when picking levels)
     m_levelBrowser = new LevelBrowser();
     connect(m_levelBrowser, &LevelBrowser::levelSelected, this, [this](int si, int li) {
+        qDebug() << ">>> levelSelected signal: s=" << si << "l=" << li
+                 << "stackIdx=" << m_centralStack->currentIndex();
         loadLevel(m_currentWorldIndex, si, li);
     });
     connect(m_levelBrowser, &LevelBrowser::resumeRequested, this, [this]() {
@@ -1225,6 +1227,21 @@ void App::togglePlayPause()
     if (playerIsPlaying()) {
         playerPause();
     } else {
+        // First play in level: reset highlights to beginning instantly
+        if (!m_hasPlayedInLevel) {
+            m_hasPlayedInLevel = true;
+            m_playAlongSynth->resetPosition();
+            m_keysHeld = 0;
+            for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi)
+                m_voiceKeysHeld[vi] = 0;
+            if (m_useVerovio) {
+                for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
+                    auto& vv = m_vrvVoices[vi];
+                    if (!vv.elementIds.empty())
+                        m_scoreWidget->overlayHighlight(vi, vv.elementIds[0]);
+                }
+            }
+        }
         playerPlay();
     }
 }
@@ -1591,6 +1608,9 @@ void App::loadSources(const QString& jsonPath)
 
 void App::loadYouTube(const QString& url, bool /*preview*/)
 {
+    qDebug() << ">>> loadYouTube: url=" << url
+             << "existing=" << (m_youtubePlayer != nullptr)
+             << "stackIdx=" << m_centralStack->currentIndex();
     m_useYouTube = true;
 
     // Always destroy existing player and create fresh
@@ -1615,27 +1635,14 @@ void App::loadYouTube(const QString& url, bool /*preview*/)
 
     // Connect playback state to toolbar
     connect(m_youtubePlayer, &YouTubePlayer::playbackStarted, [this]() {
+        qDebug() << ">>> playbackStarted handler: player=" << m_youtubePlayer
+                 << "stackIdx=" << m_centralStack->currentIndex();
         m_playPauseAction->setText("Pause");
         m_scoreWidget->setPlaying(true);
         // Seek to interpretation start if needed (covers clicks on YouTube UI)
         if (m_needsSeekOnPlay || (m_interpStart > 0 && m_youtubePlayer->currentTime() < m_interpStart)) {
             m_needsSeekOnPlay = false;
             m_youtubePlayer->seekTo(m_interpStart);
-        }
-        // First time video plays in this level: reset highlights to beginning
-        if (!m_hasPlayedInLevel) {
-            m_hasPlayedInLevel = true;
-            m_playAlongSynth->resetPosition();
-            m_keysHeld = 0;
-            for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi)
-                m_voiceKeysHeld[vi] = 0;
-            if (m_useVerovio) {
-                for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
-                    auto& vv = m_vrvVoices[vi];
-                    if (!vv.elementIds.empty())
-                        m_scoreWidget->overlayHighlight(vi, vv.elementIds[0]);
-                }
-            }
         }
     });
     connect(m_youtubePlayer, &YouTubePlayer::playbackPaused, [this]() {
@@ -2462,7 +2469,9 @@ void App::resetScoreState()
 
 void App::showWorldBrowser()
 {
-    qDebug() << "showWorldBrowser: stackIdx=" << m_centralStack->currentIndex();
+    qDebug() << ">>> showWorldBrowser: stackIdx=" << m_centralStack->currentIndex()
+             << "playModeActive=" << m_playModeActive
+             << "youtubePlayer=" << (m_youtubePlayer != nullptr);
     if (m_playModeActive) {
         m_playModeButton->setChecked(false);
     }
@@ -2521,6 +2530,7 @@ void App::showWorldBrowser()
     m_centralStack->setCurrentIndex(0);
     m_toolbar->hide();
     m_worldSidebar->clearInterpretations();
+    qDebug() << ">>> showWorldBrowser: DONE, stackIdx=" << m_centralStack->currentIndex();
 }
 
 void App::switchInterpretation(int index)
@@ -2591,7 +2601,7 @@ void App::testLevelCycling()
     int t = 0;
     auto after = [&t](int ms) { t += ms; return t; };
 
-    // --- Phase 1: Basic level cycling ---
+    // --- Phase 1: 10 level cycles, mixing same and different levels ---
     struct Step { int world; int section; int level; };
     QList<Step> steps = {
         {0, 0, 0},  // Timpani
@@ -2600,6 +2610,10 @@ void App::testLevelCycling()
         {0, 0, 2},  // Oboe
         {0, 0, 1},  // Continuo again
         {0, 0, 0},  // Timpani again
+        {0, 0, 3},  // Continuo+Timpani (2 voices)
+        {0, 0, 0},  // Timpani
+        {0, 0, 2},  // Oboe
+        {0, 0, 1},  // Continuo
     };
 
     for (int i = 0; i < steps.size(); ++i) {
@@ -2671,8 +2685,11 @@ void App::testLevelCycling()
 
 void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
 {
-    qDebug() << "loadLevel: START w=" << worldIndex << "s=" << sectionIndex
-             << "l=" << levelIndex << "stackIdx=" << m_centralStack->currentIndex();
+    qDebug() << ">>> loadLevel: START w=" << worldIndex << "s=" << sectionIndex
+             << "l=" << levelIndex << "stackIdx=" << m_centralStack->currentIndex()
+             << "youtubePlayer=" << (m_youtubePlayer != nullptr)
+             << "videoExpanded=" << m_videoExpanded
+             << "loadVersion=" << m_loadLevelVersion;
     if (worldIndex < 0 || worldIndex >= m_worlds.size()) return;
     const auto& world = m_worlds[worldIndex];
     if (sectionIndex < 0 || sectionIndex >= world.sections.size()) return;
@@ -2749,18 +2766,22 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
 
     // Bump version so any previously queued lambda becomes stale and bails out
     int loadVersion = ++m_loadLevelVersion;
+    qDebug() << "loadLevel: queuing deferred lambda v" << loadVersion
+             << "singleShot(50)";
 
     // Defer the heavy work so the loading page paints first.
-    // singleShot(0) fires immediately on next event loop — before the loading page
-    // gets a chance to render. A small delay lets the widget paint.
     QTimer::singleShot(50, this, [=]() {
         // If a newer loadLevel was called while we were queued, bail out
+        qDebug() << ">>> loadLevel LAMBDA: v" << loadVersion
+                 << "current=" << m_loadLevelVersion
+                 << "stackIdx=" << m_centralStack->currentIndex();
         if (loadVersion != m_loadLevelVersion) {
-            qDebug() << "loadLevel: STALE lambda v" << loadVersion
-                     << "vs" << m_loadLevelVersion << "— skipping";
+            qDebug() << ">>> loadLevel LAMBDA: STALE — skipping";
+            if (m_centralStack->currentIndex() == 2)
+                m_centralStack->setCurrentIndex(0);
             return;
         }
-        qDebug() << "loadLevel: DEFERRED lambda running v" << loadVersion;
+        qDebug() << ">>> loadLevel LAMBDA: EXECUTING v" << loadVersion;
         QElapsedTimer prof; prof.start();
         auto lap = [&prof](const char* label) {
             qDebug() << "  PROFILE" << label << prof.elapsed() << "ms";
@@ -2858,16 +2879,18 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             m_gameBar->reset();
         }
 
-        // Mark this level as active
+        // Mark this level as active (don't call setCurrentLevel here — it triggers
+        // rebuild() which creates a preview YouTube player that interferes with the
+        // main player. The browser will be updated when showWorldBrowser is called.)
         m_activeWorldIndex = worldIndex;
         m_activeSectionIndex = sectionIndex;
         m_activeLevelIndex = levelIndex;
-        m_levelBrowser->setCurrentLevel(sectionIndex, levelIndex);
 
         lap("interpretationMenu+layout");
 
         // Switch to score view
-        qDebug() << "loadLevel: switching to score view (index 1)";
+        qDebug() << ">>> loadLevel LAMBDA: switching to score view (index 1)"
+                 << "v=" << loadVersion << "current=" << m_loadLevelVersion;
         m_centralStack->setCurrentIndex(1);
         m_toolbar->show();
 
@@ -2937,10 +2960,15 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         }
 
         // Verovio play-along: build note tables (matching electron branch logic)
+        qDebug() << ">>> voiceSetup: START useVerovio=" << m_useVerovio
+                 << "engine=" << (m_engine != nullptr);
         if (m_useVerovio && m_engine) {
             m_vrvVoices.clear();
             m_playAlongSynth->clearVoices();
             auto* vrvEngine = dynamic_cast<scoretracker::VerovioEngine*>(m_engine.get());
+            qDebug() << ">>> voiceSetup: vrvEngine=" << (vrvEngine != nullptr)
+                     << "voices=" << level.voices.size()
+                     << "playPart=" << level.playPart;
             if (vrvEngine) {
                 QList<int> filteredParts = level.parts;
 
@@ -2992,7 +3020,9 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                     int filteredIdx = filteredParts.indexOf(level.playPart);
                     int partIdx = filteredIdx >= 0 ? filteredIdx : 0;
 
+                    qDebug() << ">>> voiceSetup: single-voice getNotesForPart partIdx=" << partIdx;
                     auto noteInfos = vrvEngine->getNotesForPart(partIdx, vrvEngine->lastRenderedSvgs());
+                    qDebug() << ">>> voiceSetup: got" << noteInfos.size() << "notes";
                     std::vector<scoretracker::NoteEvent> events;
                     VrvVoice vv;
                     vv.keyZone = "all";
@@ -3008,14 +3038,15 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                     m_vrvVoices.push_back(std::move(vv));
 
                     // Load soundfont
+                    qDebug() << ">>> voiceSetup: loading soundfont=" << level.soundfont;
                     if (!level.soundfont.isEmpty()) {
                         QString sfPath = m_soundfontsDir + "/" + level.soundfont;
                         m_playAlongSynth->loadSoundfont(sfPath);
                     }
+                    qDebug() << ">>> voiceSetup: setVoiceFromNotes gm=" << level.gmProgram;
                     m_playAlongSynth->setVoiceFromNotes(events, level.gmProgram);
-
-                    qDebug() << "Verovio single voice:" << noteInfos.size()
-                             << "notes, part" << level.playPart << "gm" << level.gmProgram;
+                    qDebug() << ">>> voiceSetup: DONE single voice:" << noteInfos.size()
+                             << "notes, part" << level.playPart;
                 }
 
                 // Re-apply tuning from active interpretation (loadSources may have set it
@@ -3026,6 +3057,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
 
                 // Set up instrument panel for Verovio voices
                 int nVoices = static_cast<int>(m_vrvVoices.size());
+                qDebug() << ">>> voiceSetup: setupInstrumentPanel nVoices=" << nVoices;
                 setupInstrumentPanelForVoices(nVoices);
 
                 // Populate instrument combos from soundfonts
@@ -3239,6 +3271,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         }
 #endif // USE_MUSESCORE
 
+        qDebug() << ">>> voiceSetup: ALL DONE";
         lap("voiceSetup+instruments");
 
         // Populate interpretation menu
@@ -3287,12 +3320,12 @@ void App::keyPressEvent(QKeyEvent* event)
 
     // Escape returns to world browser from score view or loading page
     if (event->key() == Qt::Key_Escape && m_centralStack->currentIndex() == 0) {
-        // Already in navigation — ignore
+        qDebug() << ">>> Escape: already in navigation, ignoring";
         event->accept();
         return;
     }
     if (event->key() == Qt::Key_Escape && m_centralStack->currentIndex() == 2) {
-        // Cancel loading — bump version so deferred lambda is stale, return to browser
+        qDebug() << ">>> Escape: on loading page, cancelling load v" << m_loadLevelVersion;
         ++m_loadLevelVersion;
         showWorldBrowser();
         event->accept();

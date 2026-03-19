@@ -645,22 +645,22 @@ void App::setupToolbar()
 
     m_toolbar->addSeparator();
 
-    // Interpretation button with popup menu
-    m_interpButton = new QPushButton("Interpretation", this);
-    m_interpButton->setFlat(true);
-    m_interpButton->setCursor(Qt::PointingHandCursor);
-    m_interpButton->setFocusPolicy(Qt::NoFocus);
-    m_interpButton->setStyleSheet(
+    // Speed button (enabled later when YouTube player is ready)
+    m_speedButton = new QPushButton("Speed: 1x", this);
+    m_speedButton->setFlat(true);
+    m_speedButton->setCursor(Qt::PointingHandCursor);
+    m_speedButton->setFocusPolicy(Qt::NoFocus);
+    m_speedButton->setStyleSheet(
         "QPushButton { padding: 2px 4px; }"
-        "QPushButton:pressed { background: transparent; }");
-    m_interpMenu = new QMenu(m_interpButton);
-    m_interpMenu->setStyleSheet(QString(
-        "QMenu { background: %1; color: %2; border: 1px solid %3; }"
-        "QMenu::item { padding: 6px 20px; }"
-        "QMenu::item:selected { background: %3; }"
-    ).arg(Theme::panelBg().name(), Theme::textPrimary().name(), Theme::inputBg().name()));
-    m_interpButton->setMenu(m_interpMenu);
-    m_toolbar->addWidget(m_interpButton);
+        "QPushButton:pressed { background: transparent; padding: 2px 4px; }");
+    m_speedButton->setEnabled(false);
+    auto* speedMenu = new QMenu(m_speedButton);
+    for (double r : {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0}) {
+        auto* action = speedMenu->addAction(QString("%1x").arg(r));
+        action->setData(r);
+    }
+    m_speedButton->setMenu(speedMenu);
+    m_toolbar->addWidget(m_speedButton);
 
     m_toolbar->addSeparator();
 
@@ -709,22 +709,22 @@ void App::setupToolbar()
 
     m_toolbar->addSeparator();
 
-    // Speed button (enabled later when YouTube player is ready)
-    m_speedButton = new QPushButton("Speed: 1x", this);
-    m_speedButton->setFlat(true);
-    m_speedButton->setCursor(Qt::PointingHandCursor);
-    m_speedButton->setFocusPolicy(Qt::NoFocus);
-    m_speedButton->setStyleSheet(
+    // Interpretation button with popup menu
+    m_interpButton = new QPushButton("Interpretation", this);
+    m_interpButton->setFlat(true);
+    m_interpButton->setCursor(Qt::PointingHandCursor);
+    m_interpButton->setFocusPolicy(Qt::NoFocus);
+    m_interpButton->setStyleSheet(
         "QPushButton { padding: 2px 4px; }"
-        "QPushButton:pressed { background: transparent; padding: 2px 4px; }");
-    m_speedButton->setEnabled(false);
-    auto* speedMenu = new QMenu(m_speedButton);
-    for (double r : {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0}) {
-        auto* action = speedMenu->addAction(QString("%1x").arg(r));
-        action->setData(r);
-    }
-    m_speedButton->setMenu(speedMenu);
-    m_toolbar->addWidget(m_speedButton);
+        "QPushButton:pressed { background: transparent; }");
+    m_interpMenu = new QMenu(m_interpButton);
+    m_interpMenu->setStyleSheet(QString(
+        "QMenu { background: %1; color: %2; border: 1px solid %3; }"
+        "QMenu::item { padding: 6px 20px; }"
+        "QMenu::item:selected { background: %3; }"
+    ).arg(Theme::panelBg().name(), Theme::textPrimary().name(), Theme::inputBg().name()));
+    m_interpButton->setMenu(m_interpMenu);
+    m_toolbar->addWidget(m_interpButton);
 
     m_toolbar->addSeparator();
 

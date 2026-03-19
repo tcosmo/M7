@@ -438,7 +438,7 @@ void LevelBrowser::rebuild()
     m_playButtons.clear();
     setWidget(m_content);
 
-    m_content->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    m_content->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     auto* layout = new QVBoxLayout(m_content);
     layout->setContentsMargins(16, 24, 32, 24);
     layout->setSpacing(6);
@@ -882,9 +882,8 @@ void LevelBrowser::rebuild()
 
         movLayout->addSpacing(8);
     }
-    // Movements content is already added to the main layout above.
-    // Full Work and Sandbox are not yet implemented.
-    // The segmented control switches are wired but only Movements has content.
+    // Absorb any extra vertical space at the bottom so the header doesn't stretch
+    layout->addStretch();
 }
 
 bool LevelBrowser::eventFilter(QObject* obj, QEvent* event)

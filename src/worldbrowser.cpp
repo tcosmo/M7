@@ -523,12 +523,12 @@ void LevelBrowser::rebuild()
 
         auto* interpRow = new QWidget();
         auto* interpRowLayout = new QHBoxLayout(interpRow);
-        interpRowLayout->setContentsMargins(0, 0, 0, 0);
+        interpRowLayout->setContentsMargins(6, 0, 6, 0);
         interpRowLayout->setSpacing(12);
 
         auto* nam = new QNetworkAccessManager(this);
         int thumbW = 180, thumbH = 101; // 16:9
-        // Selected: exact 16:9 so YouTube fills it completely. ToS min 200x200 OK.
+        // Selected: first 16:9 size above 200x200 → 356x200
         int selW = 356, selH = 200;
 
         for (int idx = 0; idx < m_world.interpretations.size(); ++idx) {
@@ -540,7 +540,7 @@ void LevelBrowser::rebuild()
             auto* card = new QWidget();
             card->setObjectName("interpCard");
             card->setCursor(Qt::PointingHandCursor);
-            card->setFixedSize(sel ? tw + 6 : tw, (sel ? th + 6 : th) + 20);
+            card->setFixedSize(tw, th + 20);
 
             auto* cardLayout = new QVBoxLayout(card);
             cardLayout->setContentsMargins(0, 0, 0, 0);
@@ -556,17 +556,18 @@ void LevelBrowser::rebuild()
                     webView->page()->setBackgroundColor(Theme::contentBg());
 
                 // Wrap in a border container (QWebEngineView ignores CSS border)
-                // Border container — video fills it exactly
-                auto* borderWrap = new QWidget();
-                borderWrap->setFixedSize(tw + 6, th + 6);
-                borderWrap->setStyleSheet(QString(
-                    "border: 3px solid %1; border-radius: 8px; background: transparent;"
-                ).arg(Theme::accent().name()));
-                auto* wrapLay = new QVBoxLayout(borderWrap);
-                wrapLay->setContentsMargins(0, 0, 0, 0);
-                videoWidget->setFixedSize(tw, th);
-                wrapLay->addWidget(videoWidget);
-                cardLayout->addWidget(borderWrap);
+                // Accent-colored container with video inset by 3px on each side.
+                // Can't overlay a border on QWebEngineView — Chromium paints over Qt.
+                auto* borderBg = new QWidget();
+                borderBg->setFixedSize(tw, th);
+                borderBg->setStyleSheet(QString("background: %1;").arg(Theme::accent().name()));
+                auto* bgLay = new QVBoxLayout(borderBg);
+                bgLay->setContentsMargins(3, 3, 3, 3);
+                videoWidget->setMinimumSize(0, 0);
+                videoWidget->setMaximumSize(tw - 6, th - 6);
+                videoWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+                bgLay->addWidget(videoWidget);
+                cardLayout->addWidget(borderBg);
 
                 m_previewPlayer->load(interp.youtubeUrl, Theme::contentBg().name());
             } else {

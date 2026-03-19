@@ -85,6 +85,7 @@ public:
 
     int selectedInterpretation() const { return m_selectedInterp; }
     void setSelectedInterpretation(int index) { m_selectedInterp = index; }
+    class YouTubePlayer* previewPlayer() const { return m_previewPlayer; }
 
 signals:
     void levelSelected(int sectionIndex, int levelIndex);

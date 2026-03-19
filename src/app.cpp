@@ -2989,6 +2989,14 @@ void App::keyPressEvent(QKeyEvent* event)
 {
     // Spacebar in navigation view: no video exists, just consume the event
     if (event->key() == Qt::Key_Space && m_centralStack->currentIndex() == 0) {
+        // Toggle play/pause on the level browser's preview player
+        auto* preview = m_levelBrowser->previewPlayer();
+        if (preview) {
+            if (preview->isPlaying())
+                preview->pause();
+            else
+                preview->play();
+        }
         event->accept();
         return;
     }

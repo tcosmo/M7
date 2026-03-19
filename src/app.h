@@ -97,6 +97,7 @@ private:
     void enterPlayMode();
     void exitPlayMode();
     void loadLevel(int worldIndex, int sectionIndex, int levelIndex);
+    void switchInterpretation(int index);
     void setupInstrumentPanelForVoices(int voiceCount);
     void startRecordTracking();
     void stopRecordTracking();

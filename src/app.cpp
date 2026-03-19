@@ -2437,6 +2437,79 @@ void App::showWorldBrowser()
     m_worldSidebar->clearInterpretations();
 }
 
+void App::switchInterpretation(int index)
+{
+    // Lightweight interpretation switch — same level, same score, just different
+    // YouTube video + beat data + tuning. No score reload, no re-entrancy issues.
+    m_preselectedInterpretation = index;
+    m_activeInterpretation = index;
+    m_levelBrowser->setSelectedInterpretation(index);
+
+    // Stop play-along and reset UI
+    m_playAlongSynth->stopNote();
+    m_playAlongSynth->resetPosition();
+    m_keysHeld = 0;
+    m_scoreWidget->setCursorRect(QRectF(), -1);
+    m_scoreWidget->setCursorVisible(false);
+    m_scoreWidget->setHighlightElement(nullptr);
+    m_scoreWidget->setHighlightElement2(nullptr);
+    m_scoreWidget->scrollToTop();
+    if (m_useVerovio)
+        m_scoreWidget->runWebJavaScript("hideCursor()");
+    m_syncTimer->setTime(0);
+    m_seekSlider->setValue(0);
+    m_timeLabel->setText("0:00");
+    m_playPauseAction->setText("Play");
+    m_scoreWidget->setPlaying(false);
+    m_needsSeekOnPlay = true;
+
+    // Apply new interpretation's settings
+    m_interpStart = (index < m_sourceStartTimes.size()) ? m_sourceStartTimes[index] : 0;
+    m_interpEnd = (index < m_sourceEndTimes.size()) ? m_sourceEndTimes[index] : 0;
+
+    if (index < m_sourceTunings.size())
+        m_playAlongSynth->setPitchOffset(m_sourceTunings[index]);
+    if (index < m_sourceInstrumentVols.size() && m_sourceInstrumentVols[index] >= 0 && m_instrumentVolSlider)
+        m_instrumentVolSlider->setValue(m_sourceInstrumentVols[index]);
+
+    // Load per-interpretation beat data
+    if (index < m_sourceBeatsFiles.size() && !m_sourceBeatsFiles[index].isEmpty()) {
+        loadBeatData(m_sourceBeatsFiles[index]);
+        m_trackingAction->setEnabled(true);
+        m_trackingButton->setEnabled(true);
+        m_trackingAction->setChecked(true);
+        m_scoreWidget->setCursorVisible(true);
+    } else {
+        m_syncTimer->setBeatTimes({}, 3);
+        m_syncTimer->setBeatTicks({});
+        m_trackingAction->setChecked(false);
+        m_trackingAction->setEnabled(false);
+        m_trackingButton->setEnabled(false);
+        m_scoreWidget->setCursorVisible(false);
+    }
+
+    // Load new YouTube video (destroys old player, creates fresh)
+    if (index < m_sourceYouTubeUrls.size() && !m_sourceYouTubeUrls[index].isEmpty()) {
+        // Destroy old player
+        if (m_youtubePlayer) {
+            m_youtubePlayer->stop();
+            auto* view = m_youtubePlayer->videoWidget();
+            if (view) { view->setParent(nullptr); delete view; }
+            delete m_youtubePlayer;
+            m_youtubePlayer = nullptr;
+        }
+        m_currentYoutubeUrl.clear();
+        loadYouTube(m_sourceYouTubeUrls[index]);
+    }
+
+    // Update interpretation menu checkmarks
+    if (m_interpMenu) {
+        auto actions = m_interpMenu->actions();
+        for (int j = 0; j < actions.size(); ++j)
+            actions[j]->setChecked(j == index);
+    }
+}
+
 void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
 {
     if (worldIndex < 0 || worldIndex >= m_worlds.size()) return;
@@ -2474,7 +2547,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
     }
     m_videoExpanded = false;
     // Process pending deletions so Chromium releases resources before new player
-    QApplication::processEvents();
+    // NOTE: Do NOT call QApplication::processEvents() here — it causes re-entrancy.
 
     if (m_audioPlayer)
         m_audioPlayer->pause();
@@ -2515,7 +2588,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
 
     // Show loading overlay on the level browser
     m_levelBrowser->showLoading(true);
-    QApplication::processEvents();
+    // NOTE: Do NOT call QApplication::processEvents() here — it causes re-entrancy.
 
     // Defer the heavy work so the loading overlay paints first
     QTimer::singleShot(0, this, [=]() {
@@ -2966,10 +3039,8 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             action->setCheckable(true);
             action->setChecked(i == m_activeInterpretation);
             connect(action, &QAction::triggered, this, [this, i]() {
-                m_preselectedInterpretation = i;
-                m_levelBrowser->setSelectedInterpretation(i);
-                // Reload the level with the new interpretation
-                loadLevel(m_activeWorldIndex, m_activeSectionIndex, m_activeLevelIndex);
+                if (i == m_activeInterpretation) return;
+                switchInterpretation(i);
             });
         }
 

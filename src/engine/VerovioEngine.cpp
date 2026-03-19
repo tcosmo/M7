@@ -756,6 +756,55 @@ std::vector<VerovioEngine::NoteInfo> VerovioEngine::getNotesForPart(
         }
     }
 
+    // Apply chromatic transposition from MusicXML <transpose> element.
+    // Verovio's GetMIDIValuesForElement may return written pitch, not concert pitch.
+    {
+        QDomDocument xmlDoc;
+        xmlDoc.setContent(m_musicXmlData);
+        QDomElement xmlRoot = xmlDoc.documentElement();
+
+        // Find the original part ID for this filtered partIndex
+        QList<QString> allPartIds;
+        QDomElement sp = xmlRoot.firstChildElement("part-list").firstChildElement("score-part");
+        while (!sp.isNull()) {
+            allPartIds.append(sp.attribute("id"));
+            sp = sp.nextSiblingElement("score-part");
+        }
+
+        // Map filtered index to original part ID using m_selectedParts (1-based)
+        int origIdx = partIndex;
+        if (!m_selectedParts.isEmpty() && partIndex < m_selectedParts.size())
+            origIdx = m_selectedParts[partIndex] - 1; // 1-based to 0-based
+        QString origPartId = (origIdx < allPartIds.size()) ? allPartIds[origIdx] : "";
+
+        // Find <transpose><chromatic> in the part's first measure
+        int chromaticTranspose = 0;
+        if (!origPartId.isEmpty()) {
+            QDomElement part = xmlRoot.firstChildElement("part");
+            while (!part.isNull()) {
+                if (part.attribute("id") == origPartId) {
+                    QDomElement measure = part.firstChildElement("measure");
+                    if (!measure.isNull()) {
+                        QDomElement attrs = measure.firstChildElement("attributes");
+                        if (!attrs.isNull()) {
+                            QDomElement transpose = attrs.firstChildElement("transpose");
+                            if (!transpose.isNull()) {
+                                chromaticTranspose = transpose.firstChildElement("chromatic").text().toInt();
+                            }
+                        }
+                    }
+                    break;
+                }
+                part = part.nextSiblingElement("part");
+            }
+        }
+
+        if (chromaticTranspose != 0) {
+            for (auto& n : notes)
+                n.pitch += chromaticTranspose;
+        }
+    }
+
     // Detect tied-back notes: build a set of MIDI times that have <tie type="stop"/>
     // from the original MusicXML. Match to SVG notes by midiTime + pitch.
     {

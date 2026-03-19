@@ -281,3 +281,51 @@ if(USE_MUSESCORE)
 endif()
 
 target_link_libraries(playbach PRIVATE ${PLAYBACH_LIBS})
+
+# --- Tests ---
+find_package(Qt6 REQUIRED COMPONENTS Test)
+
+add_executable(test_playalong
+    tests/test_playalong.cpp
+    src/engine/ScoreEngine.h
+    src/engine/VerovioEngine.h
+    src/engine/VerovioEngine.cpp
+    src/playalongsynth.h
+    src/playalongsynth.cpp
+    src/miniaudio_impl.c
+)
+# vorbis_bridge is already compiled into fluidsynth_lib
+
+target_include_directories(test_playalong PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}/thirdparty
+    ${FLUIDSYNTH_INC}
+    ${VEROVIO_SOURCE_DIR}/include/vrv
+    ${VEROVIO_SOURCE_DIR}/include/json
+    ${VEROVIO_SOURCE_DIR}/include/pugi
+    ${VEROVIO_SOURCE_DIR}/include/hum
+    ${VEROVIO_SOURCE_DIR}/include/crc
+    ${VEROVIO_SOURCE_DIR}/include/midi
+    ${VEROVIO_SOURCE_DIR}/include/zip
+    ${VEROVIO_SOURCE_DIR}/include/tuning-library
+    ${VEROVIO_SOURCE_DIR}/libmei/dist
+    ${VEROVIO_SOURCE_DIR}/libmei/addons
+)
+
+target_link_libraries(test_playalong PRIVATE
+    verovio
+    fluidsynth_lib
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Xml
+    Qt6::Test
+    Qt6::WebEngineWidgets
+    "-framework CoreAudio"
+    "-framework AudioToolbox"
+    "-framework CoreFoundation"
+    "-framework AppKit"
+    "-framework AVFoundation"
+    "-framework Accelerate"
+)
+
+set_target_properties(test_playalong PROPERTIES COMPILE_FLAGS "-fPIC")

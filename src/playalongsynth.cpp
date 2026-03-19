@@ -253,9 +253,8 @@ void PlayAlongSynth::addVoice(Part* part, int gmProg, int sfontId, Score* score)
             fluid_synth_bank_select(fs(m_synth), channel, bank);
             fluid_synth_program_change(fs(m_synth), channel, prog);
         }
-        // Apply pitch bend
-        double frac = m_pitchOffset - static_cast<int>(m_pitchOffset);
-        int bend = 8192 + static_cast<int>(frac * 8192.0 / 2.0);
+        // Apply pitch bend (entire offset, not just fractional part)
+        int bend = 8192 + static_cast<int>(m_pitchOffset * 8192.0 / 2.0);
         bend = std::clamp(bend, 0, 16383);
         fluid_synth_pitch_bend(fs(m_synth), channel, bend);
     }
@@ -274,7 +273,8 @@ void PlayAlongSynth::playNextNoteForVoice(int voiceIdx)
 
     if (v.nextIndex >= static_cast<int>(v.notes.size())) return;
 
-    int pitch = v.notes[v.nextIndex].midiPitch + static_cast<int>(m_pitchOffset);
+    // Pitch offset is applied via pitch bend, not note number shift
+    int pitch = v.notes[v.nextIndex].midiPitch;
     pitch = std::clamp(pitch, 0, 127);
 
     if (v.lastPlayedNote >= 0) {
@@ -544,11 +544,10 @@ double PlayAlongSynth::gain() const
 void PlayAlongSynth::setPitchOffset(double semitones)
 {
     m_pitchOffset = semitones;
-    // Apply fractional part as pitch bend (default range ±2 semitones)
+    // Apply entire offset as pitch bend — do NOT shift note numbers.
+    // Default pitch bend range is ±2 semitones. 8192 = center.
     if (m_synth) {
-        double frac = semitones - static_cast<int>(semitones);
-        // Pitch bend: 8192 = center, range is ±2 semitones = ±8192
-        int bend = 8192 + static_cast<int>(frac * 8192.0 / 2.0);
+        int bend = 8192 + static_cast<int>(semitones * 8192.0 / 2.0);
         bend = std::clamp(bend, 0, 16383);
         for (const auto& v : m_voices) {
             fluid_synth_pitch_bend(fs(m_synth), v.channel, bend);
@@ -632,7 +631,8 @@ void PlayAlongSynth::playNextNote()
     for (auto& v : m_voices) {
         if (v.nextIndex >= static_cast<int>(v.notes.size())) continue;
 
-        int pitch = v.notes[v.nextIndex].midiPitch + static_cast<int>(m_pitchOffset);
+        // Pitch offset is applied via pitch bend, not note number shift
+        int pitch = v.notes[v.nextIndex].midiPitch;
         pitch = std::clamp(pitch, 0, 127);
 
         // Turn off previous note on this channel
@@ -755,9 +755,9 @@ void PlayAlongSynth::trillToggle()
         const auto& ne = v.notes[idx];
         if (!ne.hasTrill) continue;
 
-        int intOffset = static_cast<int>(m_pitchOffset);
-        int oldPitch = std::clamp((m_trillOnUpper ? ne.trillPitch : ne.midiPitch) + intOffset, 0, 127);
-        int newPitch = std::clamp((m_trillOnUpper ? ne.midiPitch : ne.trillPitch) + intOffset, 0, 127);
+        // Pitch offset handled via pitch bend, not note shift
+        int oldPitch = std::clamp(m_trillOnUpper ? ne.trillPitch : ne.midiPitch, 0, 127);
+        int newPitch = std::clamp(m_trillOnUpper ? ne.midiPitch : ne.trillPitch, 0, 127);
 
         fluid_synth_noteoff(s, v.channel, oldPitch);
         fluid_synth_noteon(s, v.channel, newPitch, 100);

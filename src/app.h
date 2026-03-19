@@ -74,6 +74,8 @@ public:
     void selectFileSource();
     void loadWorlds(const QString& worldsDir);
     void showWorldBrowser();
+    void resetScoreState(); // reset cursor, highlights, synth, toolbar to beginning
+    void testLevelCycling(); // automated test: cycle through levels
 
 private slots:
     void togglePlayPause();

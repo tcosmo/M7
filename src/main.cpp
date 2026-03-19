@@ -250,6 +250,18 @@ int main(int argc, char* argv[])
     QString worldsDir = QCoreApplication::applicationDirPath() + "/../../resources/worlds";
     app.loadWorlds(worldsDir);
 
+    // --test-levels: automated level cycling test
+    if (args.contains("--test-levels")) {
+        app.show();
+        app.testLevelCycling();
+        int ret = qapp.exec();
+#ifdef USE_MUSESCORE
+        engravingModule.onDeinit();
+        engravingModule.onDestroy();
+#endif
+        return ret;
+    }
+
     if (musicXmlPath.isEmpty()) {
         // No CLI args — show world browser
         app.show();

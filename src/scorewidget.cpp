@@ -86,6 +86,26 @@ void WebScoreOverlay::setScrollY(double sy)
     update();
 }
 
+QPointF WebScoreOverlay::highlightCenter(int voice) const
+{
+    if (voice < 0 || voice >= 2 || m_hlId[voice].isEmpty()) return {-1, -1};
+    auto it = m_notePositions.find(m_hlId[voice]);
+    if (it == m_notePositions.end()) return {-1, -1};
+    return it.value().center();
+}
+
+double WebScoreOverlay::highlightCenterX(int voice) const
+{
+    return highlightCenter(voice).x();
+}
+
+double WebScoreOverlay::noteCenterX(const QString& elementId) const
+{
+    auto it = m_notePositions.find(elementId);
+    if (it == m_notePositions.end()) return -1;
+    return it.value().center().x();
+}
+
 void WebScoreOverlay::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
@@ -1273,14 +1293,18 @@ void ScoreWidget::ensureHighlightVisible()
 
 void ScoreWidget::setCursorTick(int tick)
 {
+    m_lastCursorTick = tick;
     if (!m_webView || !m_webView->isVisible()) return;
-    static int dbgCount = 0;
-    if (dbgCount < 10) {
-        qDebug() << "setCursorTick:" << tick << "webView visible:" << m_webView->isVisible();
-        dbgCount++;
-    }
+    // Position the cursor and then read back its X,Y for game scoring
     m_webView->page()->runJavaScript(
-        QStringLiteral("setCursorTick(%1)").arg(tick));
+        QStringLiteral("setCursorTick(%1); [getCursorX(), getCursorY()]").arg(tick),
+        [this](const QVariant& result) {
+            QVariantList list = result.toList();
+            if (list.size() >= 2) {
+                m_lastCursorX = list[0].toDouble();
+                m_lastCursorY = list[1].toDouble();
+            }
+        });
 }
 
 void ScoreWidget::overlayHighlight(int voice, const QString& elementId)
@@ -1306,6 +1330,23 @@ void ScoreWidget::overlayHighlight(int voice, const QString& elementId)
 void ScoreWidget::overlayClearHighlight(int voice)
 {
     if (m_overlay) m_overlay->clearHighlight(voice);
+}
+
+double ScoreWidget::highlightCursorDistance(int voice) const
+{
+    if (!m_overlay) return -1;
+
+    QPointF noteCenter = m_overlay->highlightCenter(voice);
+    if (noteCenter.x() < 0) return -1;
+    if (m_lastCursorX <= 0) return -1;
+
+    // If note and cursor are on different systems (Y differs significantly),
+    // this is a system break — cursor is at the end of one line, note is at
+    // the start of the next. The player tapped on time, so treat as close.
+    double dy = std::abs(noteCenter.y() - m_lastCursorY);
+    if (dy > 50.0) return 0.0; // different system → automatic hit
+
+    return std::abs(noteCenter.x() - m_lastCursorX);
 }
 
 void ScoreWidget::fetchNotePositions()

@@ -49,6 +49,7 @@ class TrackingSettings;
 class PlayAlongSynth;
 class WorldSidebar;
 class LevelBrowser;
+class GameBar;
 
 class App : public QMainWindow
 {
@@ -252,6 +253,9 @@ private:
     // Video expand
     bool m_videoExpanded = false;
     QWidget* m_expandedVideoContainer = nullptr;
+
+    // Game bar between video and score
+    GameBar* m_gameBar = nullptr;
 
     // Loading page shown between level browser and score view
     QWidget* m_loadingPage = nullptr;

@@ -191,6 +191,8 @@ set(PLAYBACH_SOURCES
     src/worldmodel.h
     src/worldbrowser.h
     src/worldbrowser.cpp
+    src/gamebar.h
+    src/gamebar.cpp
     src/miniaudio_impl.c
 )
 

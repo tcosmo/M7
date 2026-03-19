@@ -38,6 +38,12 @@ public:
     void setHighlight(int voice, const QString& elementId);
     void clearHighlight(int voice);
     void setScrollY(double sy);
+    // Returns the center of the highlight rect in document coords, or (-1,-1)
+    QPointF highlightCenter(int voice) const;
+    // Returns the center X of the highlight rect in document coords, or -1
+    double highlightCenterX(int voice) const;
+    // Returns the center X of any element by ID in document coords, or -1
+    double noteCenterX(const QString& elementId) const;
 protected:
     void paintEvent(QPaintEvent* event) override;
 private:
@@ -65,6 +71,7 @@ public:
     void setRenderer(mu::engraving::rendering::IScoreRenderer* renderer);
 #endif
     void setEngine(scoretracker::ScoreEngine* engine);
+    scoretracker::ScoreEngine* engine() const { return m_engine; }
     void setCursorRect(const QRectF& rect, int pageIndex);
     void setZoom(double zoom);
     double zoom() const { return m_zoom; }
@@ -192,6 +199,8 @@ public:
     void overlayHighlight(int voice, const QString& elementId);
     void overlayClearHighlight(int voice);
     void fetchNotePositions();
+    // Returns horizontal pixel distance between note highlight center and cursor, or -1 if unavailable
+    double highlightCursorDistance(int voice) const;
 
 signals:
     void zoomChanged(double zoom);
@@ -214,6 +223,9 @@ private:
     QWebEngineView* m_webView = nullptr;
     WebScoreOverlay* m_overlay = nullptr;
     int m_timemapVersion = 0;
+    int m_lastCursorTick = 0;
+    double m_lastCursorX = 0; // cursor X in document coords from JS
+    double m_lastCursorY = 0; // cursor Y (system top) from JS
     TriggerLineOverlay* m_triggerOverlay = nullptr;
     int m_overlayWidth = 0;
     bool m_autoScroll = true;

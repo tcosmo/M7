@@ -14,6 +14,7 @@
 #include "playalongsynth.h"
 #include "collapsiblesection.h"
 #include "worldbrowser.h"
+#include "gamebar.h"
 #include "theme.h"
 #include "engine/ScoreEngine.h"
 #ifdef USE_MUSESCORE
@@ -248,6 +249,10 @@ void App::setupUI()
 
     m_scoreWidget = new ScoreWidget(m_centralSplitter);
     m_centralSplitter->addWidget(m_scoreWidget);
+
+    // Game bar — inserted between video and score in loadLevel
+    m_gameBar = new GameBar(this);
+    m_gameBar->hide();
 
 #ifdef USE_MUSESCORE
     // Beat click on score → seek audio + scroll waveform + update waveform display
@@ -2429,6 +2434,10 @@ void App::resetScoreState()
     } else {
         m_scoreWidget->setHighlightElement(m_playAlongSynth->nextNoteElement());
     }
+
+    // Reset game bar stats
+    if (m_gameBar)
+        m_gameBar->reset();
 }
 
 void App::showWorldBrowser()
@@ -2462,6 +2471,10 @@ void App::showWorldBrowser()
     if (m_expandedVideoContainer) {
         m_expandedVideoContainer->hide();
         m_expandedVideoContainer->setParent(nullptr);
+    }
+    if (m_gameBar) {
+        m_gameBar->hide();
+        m_gameBar->setParent(nullptr);
     }
     m_videoExpanded = false;
 
@@ -2678,6 +2691,10 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         m_expandedVideoContainer->hide();
         m_expandedVideoContainer->setParent(nullptr);
     }
+    if (m_gameBar) {
+        m_gameBar->hide();
+        m_gameBar->setParent(nullptr);
+    }
     m_videoExpanded = false;
     // Process pending deletions so Chromium releases resources before new player
     // NOTE: Do NOT call QApplication::processEvents() here — it causes re-entrancy.
@@ -2805,6 +2822,21 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
         }
         m_videoExpanded = true;
 
+        // Insert game bar between video and score
+        {
+            int scoreIdx = m_centralSplitter->indexOf(m_scoreWidget);
+            m_centralSplitter->insertWidget(scoreIdx, m_gameBar);
+            m_gameBar->setFixedHeight(32);
+            m_gameBar->show();
+            // Disable handle above game bar
+            int gbIdx = m_centralSplitter->indexOf(m_gameBar);
+            if (auto* handle = m_centralSplitter->handle(gbIdx))
+                handle->setEnabled(false);
+            // Game mode only available when tracking data exists
+            m_gameBar->setGameModeAvailable(!m_syncTimer->beatTimes().empty());
+            m_gameBar->reset();
+        }
+
         // Mark this level as active
         m_activeWorldIndex = worldIndex;
         m_activeSectionIndex = sectionIndex;
@@ -2909,6 +2941,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                         for (auto& ni : noteInfos) {
                             scoretracker::NoteEvent ev{};
                             ev.midiPitch = ni.pitch;
+                            ev.tick = ni.midiTime; // Verovio MIDI ticks for game scoring
                             ev.durationTicks = 480;
                             ev.tiedBack = ni.tiedBack;
                             events.push_back(ev);
@@ -2945,6 +2978,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                     for (auto& ni : noteInfos) {
                         scoretracker::NoteEvent ev{};
                         ev.midiPitch = ni.pitch;
+                        ev.tick = ni.midiTime;
                         ev.durationTicks = 480;
                         ev.tiedBack = ni.tiedBack;
                         events.push_back(ev);
@@ -3345,6 +3379,11 @@ void App::keyPressEvent(QKeyEvent* event)
                               || (zone == "right" && isRight);
                     if (match) {
                         m_voiceKeysHeld[vi]++;
+                        // Game mode: measure distance BEFORE advancing (highlight is at current note)
+                        if (m_gameBar->isGameMode()) {
+                            double dist = m_scoreWidget->highlightCursorDistance(vi);
+                            if (dist >= 0) m_gameBar->recordHit(dist);
+                        }
                         m_playAlongSynth->playNextNoteForVoice(vi);
                     }
                 }
@@ -3362,6 +3401,11 @@ void App::keyPressEvent(QKeyEvent* event)
             } else {
                 // Single-voice Verovio
                 m_keysHeld++;
+                // Game mode: measure distance BEFORE advancing
+                if (m_gameBar->isGameMode()) {
+                    double dist = m_scoreWidget->highlightCursorDistance(0);
+                    if (dist >= 0) m_gameBar->recordHit(dist);
+                }
                 m_playAlongSynth->playNextNote();
                 auto& vv = m_vrvVoices[0];
                 int idx = m_playAlongSynth->nextNoteIndex();

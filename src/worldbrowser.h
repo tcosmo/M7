@@ -74,7 +74,7 @@ private:
 };
 
 // Central pane showing sections and levels for a world
-class LevelBrowser : public QWidget
+class LevelBrowser : public QScrollArea
 {
     Q_OBJECT
 public:

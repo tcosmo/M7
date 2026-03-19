@@ -305,18 +305,21 @@ void WorldSidebar::setWorlds(const QList<World>& worlds)
 // ---------------------------------------------------------------------------
 
 LevelBrowser::LevelBrowser(QWidget* parent)
-    : QWidget(parent)
+    : QScrollArea(parent)
 {
+    setWidgetResizable(true);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setFrameShape(QFrame::NoFrame);
+
     QPalette pal = palette();
     pal.setColor(QPalette::Window, Theme::contentBg());
     setPalette(pal);
     setAutoFillBackground(true);
 
-    auto* rootLayout = new QVBoxLayout(this);
-    rootLayout->setContentsMargins(0, 0, 0, 0);
-    rootLayout->setSpacing(0);
+    setStyleSheet(Theme::scrollBarStyleStr());
+
     m_content = new QWidget();
-    rootLayout->addWidget(m_content);
+    setWidget(m_content);
 }
 
 void LevelBrowser::setWorld(const World& world)
@@ -433,7 +436,7 @@ void LevelBrowser::rebuild()
     delete m_content;
     m_content = new QWidget();
     m_playButtons.clear();
-    layout()->addWidget(m_content);
+    setWidget(m_content);
 
     m_content->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     auto* layout = new QVBoxLayout(m_content);
@@ -639,95 +642,101 @@ void LevelBrowser::rebuild()
         }
     }
 
-    // --- Custom tab bar ---
-    struct TabDef { QString title; QString subtitle; };
-    TabDef tabDefs[] = {
-        { "Levels",   "One movement, one mission" },
-        { "Campaigns", "Play the entire work, no interruption" },
-        { "Sandbox",  "Pick any part, build your own level" },
+    // --- iOS-style segmented control ---
+    struct SegDef { QString title; QString subtitle; };
+    SegDef segDefs[] = {
+        { "Movements",    "One movement, one mission" },
+        { "Full Work",    "Play the entire piece, no interruption" },
+        { "Sandbox",      "Pick any part, build your own level" },
     };
 
-    auto* tabBarRow = new QHBoxLayout();
-    tabBarRow->setContentsMargins(0, 0, 0, 0);
-    tabBarRow->setSpacing(0);
+    auto* segRow = new QWidget();
+    segRow->setFixedHeight(32);
+    auto* segLayout = new QHBoxLayout(segRow);
+    segLayout->setContentsMargins(0, 0, 0, 0);
+    segLayout->setSpacing(0);
+    segLayout->addStretch();
 
-    auto* stack = new QStackedWidget();
-    QList<QWidget*> tabButtons;
+    auto* segContainer = new QWidget();
+    segContainer->setFixedHeight(28);
+    segContainer->setStyleSheet(QString(
+        "background: %1; border-radius: 6px;"
+    ).arg(Theme::panelBg().name()));
+    auto* segInner = new QHBoxLayout(segContainer);
+    segInner->setContentsMargins(6, 2, 6, 2);
+    segInner->setSpacing(2);
 
-    for (int t = 0; t < 3; ++t) {
-        auto* btn = new QWidget();
-        btn->setCursor(Qt::PointingHandCursor);
-        btn->setFixedHeight(52);
-        auto* btnLayout = new QVBoxLayout(btn);
-        btnLayout->setContentsMargins(0, 8, 0, 6);
-        btnLayout->setSpacing(2);
+    QList<QPushButton*> segBtns;
 
-        auto* titleLbl = new QLabel(tabDefs[t].title);
-        titleLbl->setAlignment(Qt::AlignCenter);
-        QFont tf = titleLbl->font();
-        tf.setPointSize(15);
-        tf.setBold(true);
-        titleLbl->setFont(tf);
-        titleLbl->setStyleSheet(QString("color: %1;").arg(
-            t == 0 ? Theme::accent().name() : Theme::textHint().name()));
-        titleLbl->setObjectName("tabTitle");
-        btnLayout->addWidget(titleLbl);
-
-        auto* subLbl = new QLabel(tabDefs[t].subtitle);
-        subLbl->setAlignment(Qt::AlignCenter);
-        subLbl->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textHint().name()));
-        subLbl->setObjectName("tabSub");
-        btnLayout->addWidget(subLbl);
-
-        tabButtons.append(btn);
-        tabBarRow->addWidget(btn, 1);
-    }
-
-    // Bottom accent line (only under selected tab)
-    auto updateTabStyles = [tabButtons, stack](int sel) {
-        for (int i = 0; i < tabButtons.size(); ++i) {
-            auto* w = tabButtons[i];
-            auto* title = w->findChild<QLabel*>("tabTitle");
-            auto* sub = w->findChild<QLabel*>("tabSub");
+    auto updateSeg = [](QList<QPushButton*>& btns, int sel) {
+        for (int i = 0; i < btns.size(); ++i) {
             if (i == sel) {
-                w->setStyleSheet(QString("border-bottom: 2px solid %1;").arg(Theme::accent().name()));
-                if (title) title->setStyleSheet(QString("color: %1;").arg(Theme::accent().name()));
-                if (sub) sub->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name()));
+                btns[i]->setStyleSheet(QString(
+                    "background: %1; color: white; border-radius: 4px;"
+                    " font-size: 11px; font-weight: bold; padding: 2px 14px; border: none;"
+                ).arg(Theme::accent().name()));
             } else {
-                w->setStyleSheet("border-bottom: 2px solid transparent;");
-                if (title) title->setStyleSheet(QString("color: %1;").arg(Theme::textHint().name()));
-                if (sub) sub->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textHint().name()));
+                btns[i]->setStyleSheet(QString(
+                    "background: transparent; color: %1; border-radius: 4px;"
+                    " font-size: 11px; font-weight: bold; padding: 2px 14px; border: none;"
+                ).arg(Theme::textHint().name()));
             }
         }
-        stack->setCurrentIndex(sel);
     };
 
-    // Click handling via transparent overlay buttons
     for (int t = 0; t < 3; ++t) {
-        auto* clickBtn = new QPushButton(tabButtons[t]);
-        clickBtn->setFixedSize(9999, 52);
-        clickBtn->setStyleSheet("background: transparent; border: none;");
-        clickBtn->setCursor(Qt::PointingHandCursor);
-        clickBtn->setFocusPolicy(Qt::NoFocus);
-        connect(clickBtn, &QPushButton::clicked, this, [updateTabStyles, t]() {
-            updateTabStyles(t);
+        auto* btn = new QPushButton(segDefs[t].title);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setFocusPolicy(Qt::NoFocus);
+        segBtns.append(btn);
+        segInner->addWidget(btn);
+        connect(btn, &QPushButton::clicked, this, [segBtns, updateSeg, t]() mutable {
+            updateSeg(segBtns, t);
+        });
+    }
+    updateSeg(segBtns, 0);
+
+    segLayout->addWidget(segContainer);
+    segLayout->addStretch();
+    layout->addWidget(segRow);
+
+    // Subtitle for current mode
+    auto* segSubtitle = new QLabel(segDefs[0].subtitle);
+    segSubtitle->setAlignment(Qt::AlignCenter);
+    segSubtitle->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textHint().name()));
+    layout->addWidget(segSubtitle);
+
+    // Update subtitle when switching segments
+    for (int t = 0; t < 3; ++t) {
+        connect(segBtns[t], &QPushButton::clicked, this, [segSubtitle, segDefs, t]() {
+            segSubtitle->setText(segDefs[t].subtitle);
         });
     }
 
-    layout->addLayout(tabBarRow);
+    layout->addSpacing(8);
 
-    // --- Tab 1: Levels ---
-    auto* levelsScroll = new QScrollArea();
-    levelsScroll->setWidgetResizable(true);
-    levelsScroll->setFrameShape(QFrame::NoFrame);
-    levelsScroll->setStyleSheet(
-        QString("QScrollArea { background: %1; } %2")
-        .arg(Theme::contentBg().name(), Theme::scrollBarStyleStr()));
-    auto* levelsWidget = new QWidget();
-    levelsWidget->setStyleSheet(QString("background: %1;").arg(Theme::contentBg().name()));
-    auto* levelsLayout = new QVBoxLayout(levelsWidget);
-    levelsLayout->setContentsMargins(0, 4, 0, 12);
-    levelsLayout->setSpacing(0);
+    // --- Movements content container ---
+    auto* movementsContainer = new QWidget();
+    auto* movLayout = new QVBoxLayout(movementsContainer);
+    movLayout->setContentsMargins(0, 0, 0, 0);
+    movLayout->setSpacing(0);
+    layout->addWidget(movementsContainer);
+
+    // --- Coming soon placeholder (hidden by default) ---
+    auto* comingSoonPlaceholder = new QLabel("Coming soon...");
+    comingSoonPlaceholder->setAlignment(Qt::AlignCenter);
+    comingSoonPlaceholder->setStyleSheet(QString("color: %1; font-size: 14px; font-style: italic; padding: 40px;")
+        .arg(Theme::textDisabled().name()));
+    comingSoonPlaceholder->hide();
+    layout->addWidget(comingSoonPlaceholder);
+
+    // Wire segment switching to show/hide content
+    for (int t = 0; t < 3; ++t) {
+        connect(segBtns[t], &QPushButton::clicked, this, [movementsContainer, comingSoonPlaceholder, t]() {
+            movementsContainer->setVisible(t == 0);
+            comingSoonPlaceholder->setVisible(t != 0);
+        });
+    }
 
     int levelNum = 0;
     for (int si = 0; si < m_world.sections.size(); ++si) {
@@ -739,13 +748,13 @@ void LevelBrowser::rebuild()
         sf.setBold(true);
         sectionLabel->setFont(sf);
         sectionLabel->setStyleSheet(QString("color: %1; padding-top: 8px;").arg(Theme::textPrimary().name()));
-        levelsLayout->addWidget(sectionLabel);
+        layout->addWidget(sectionLabel);
 
         if (section.levels.isEmpty()) {
             auto* comingSoon = new QLabel("Coming soon...");
             comingSoon->setStyleSheet(QString("color: %1; font-size: 11px; font-style: italic; padding-left: 8px;")
                 .arg(Theme::textDisabled().name()));
-            levelsLayout->addWidget(comingSoon);
+            layout->addWidget(comingSoon);
         }
 
         // Column header row
@@ -765,13 +774,13 @@ void LevelBrowser::rebuild()
             auto* hAcc = new QLabel("Accuracy"); hAcc->setFixedWidth(65); hAcc->setAlignment(Qt::AlignCenter); hAcc->setStyleSheet(hdrStyle);
             auto* hPlay = new QLabel(""); hPlay->setFixedWidth(80);
             hl->addWidget(hNum); hl->addWidget(hTitle, 1); hl->addWidget(hInstr); hl->addWidget(hDiff); hl->addWidget(hMyPlays); hl->addWidget(hTotal); hl->addWidget(hAcc); hl->addWidget(hPlay);
-            levelsLayout->addWidget(headerRow);
+            layout->addWidget(headerRow);
 
             // Thin separator
             auto* sep = new QWidget();
             sep->setFixedHeight(1);
             sep->setStyleSheet(QString("background: %1;").arg(Theme::inputBg().name()));
-            levelsLayout->addWidget(sep);
+            layout->addWidget(sep);
         }
 
         for (int li = 0; li < section.levels.size(); ++li) {
@@ -868,44 +877,14 @@ void LevelBrowser::rebuild()
             row->setProperty("li", li);
             row->installEventFilter(this);
 
-            levelsLayout->addWidget(row);
+            layout->addWidget(row);
         }
 
-        levelsLayout->addSpacing(8);
+        layout->addSpacing(8);
     }
-    levelsLayout->addStretch();
-    levelsScroll->setWidget(levelsWidget);
-    stack->addWidget(levelsScroll);
-
-    // --- Tab 2: Campaign ---
-    auto* campaignWidget = new QWidget();
-    auto* campaignLayout = new QVBoxLayout(campaignWidget);
-    campaignLayout->setContentsMargins(0, 24, 0, 12);
-    campaignLayout->setSpacing(12);
-    auto* campaignSoon = new QLabel("Coming soon...");
-    campaignSoon->setStyleSheet(QString("color: %1; font-size: 13px; font-style: italic;")
-        .arg(Theme::textDisabled().name()));
-    campaignSoon->setAlignment(Qt::AlignCenter);
-    campaignLayout->addWidget(campaignSoon);
-    campaignLayout->addStretch();
-    stack->addWidget(campaignWidget);
-
-    // --- Tab 3: Sandbox ---
-    auto* sandboxWidget = new QWidget();
-    auto* sandboxLayout = new QVBoxLayout(sandboxWidget);
-    sandboxLayout->setContentsMargins(0, 24, 0, 12);
-    sandboxLayout->setSpacing(12);
-    auto* sandboxSoon = new QLabel("Coming soon...");
-    sandboxSoon->setStyleSheet(QString("color: %1; font-size: 13px; font-style: italic;")
-        .arg(Theme::textDisabled().name()));
-    sandboxSoon->setAlignment(Qt::AlignCenter);
-    sandboxLayout->addWidget(sandboxSoon);
-    sandboxLayout->addStretch();
-    stack->addWidget(sandboxWidget);
-
-    // Select first tab
-    updateTabStyles(0);
-    layout->addWidget(stack, 1);
+    // Movements content is already added to the main layout above.
+    // Full Work and Sandbox are not yet implemented.
+    // The segmented control switches are wired but only Movements has content.
 }
 
 bool LevelBrowser::eventFilter(QObject* obj, QEvent* event)

@@ -43,12 +43,21 @@ No sidebar video, no expand/collapse toggle, no video preview in navigation.
 ### Spacebar in Navigation View
 - No video exists, spacebar is consumed silently (event accepted, no action)
 
+### Switching Interpretation (Within a Level)
+1. `switchInterpretation()` destroys old YouTube player **first** (stops 60fps position timer)
+2. Hides Verovio cursor (`hideCursor()`)
+3. Clears beat data **before** `setTime(0)` so stale data can't move cursor
+4. Resets toolbar (slider, time label, play button), play-along state, seek flag
+5. Loads new beat data → `setTime(0)` resets `m_lastTick` to first beat tick
+6. Creates fresh YouTube player for new interpretation
+
 ### Exiting a Level (Escape / World Card Click)
 1. `showWorldBrowser()` or world card click destroys the YouTube player entirely
 2. `delete m_youtubePlayer; m_youtubePlayer = nullptr`
 3. `m_expandedVideoContainer` is hidden
 4. `m_videoExpanded = false`
 5. Speed button disabled, URL cleared, `m_useYouTube = false`
+6. Full cursor/state reset: cursor rect cleared, beat data cleared, toolbar reset, play-along reset
 
 ### No Resume
 - Every level click goes through `levelSelected` -> `loadLevel`
@@ -65,6 +74,7 @@ No sidebar video, no expand/collapse toggle, no video preview in navigation.
 | `m_preselectedInterpretation` | Index chosen in level browser thumbnails, used when entering a level. |
 | `m_activeInterpretation` | Index of currently loaded interpretation (set by `loadSources()`). |
 | `m_currentYoutubeUrl` | URL of loaded video (cleared on level exit, set in `loadYouTube()`). |
+| `m_lastTick` (SyncTimer) | Last resolved tick position. Reset by `setTime()` on empty beat data or time-before-first-beat. |
 
 ## Keyboard Isolation in Navigation View
 

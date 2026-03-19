@@ -182,7 +182,7 @@ YouTubePlayer::~YouTubePlayer()
     }
 }
 
-void YouTubePlayer::load(const QString& url)
+void YouTubePlayer::load(const QString& url, const QString& bgColor)
 {
     QString videoId = extractVideoId(url);
     if (videoId.isEmpty()) {
@@ -191,8 +191,7 @@ void YouTubePlayer::load(const QString& url)
     }
 
     qDebug() << "Loading YouTube video:" << videoId;
-    QString bg = QStringLiteral("#000000");
-    QString html = buildHtml(videoId, bg);
+    QString html = buildHtml(videoId, bgColor);
     m_view->setHtml(html, QUrl(QStringLiteral("https://localhost")));
 }
 
@@ -290,9 +289,10 @@ QString YouTubePlayer::buildHtml(const QString& videoId, const QString& bgColor)
 <html><head>
 <meta charset="utf-8">
 <style>
-  * { margin: 0; padding: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%%; height: 100%%; overflow: hidden; background: %2; }
-  #player, #player iframe { width: 100%% !important; height: 100%% !important; }
+  #player { position: absolute; top: 0; left: 0; width: 100%%; height: 100%%; }
+  #player iframe { width: 100%% !important; height: 100%% !important; }
 </style>
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 </head><body>

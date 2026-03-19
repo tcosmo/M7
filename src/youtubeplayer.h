@@ -58,7 +58,7 @@ public:
     explicit YouTubePlayer(QObject* parent = nullptr);
     ~YouTubePlayer();
 
-    void load(const QString& url);
+    void load(const QString& url, const QString& bgColor = "#000000");
     void play();
     void pause();
     void stop();

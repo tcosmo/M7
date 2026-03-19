@@ -528,8 +528,8 @@ void LevelBrowser::rebuild()
 
         auto* nam = new QNetworkAccessManager(this);
         int thumbW = 180, thumbH = 101; // 16:9
-        // Selected: YouTube ToS min 200x200. Use 320x200 (close to 16:10)
-        int selW = 320, selH = 200;
+        // Selected: exact 16:9 so YouTube fills it completely. ToS min 200x200 OK.
+        int selW = 356, selH = 200;
 
         for (int idx = 0; idx < m_world.interpretations.size(); ++idx) {
             const auto& interp = m_world.interpretations[idx];
@@ -540,7 +540,7 @@ void LevelBrowser::rebuild()
             auto* card = new QWidget();
             card->setObjectName("interpCard");
             card->setCursor(Qt::PointingHandCursor);
-            card->setFixedSize(tw, th + 20);
+            card->setFixedSize(sel ? tw + 6 : tw, (sel ? th + 6 : th) + 20);
 
             auto* cardLayout = new QVBoxLayout(card);
             cardLayout->setContentsMargins(0, 0, 0, 0);
@@ -556,19 +556,19 @@ void LevelBrowser::rebuild()
                     webView->page()->setBackgroundColor(Theme::contentBg());
 
                 // Wrap in a border container (QWebEngineView ignores CSS border)
+                // Border container — video fills it exactly
                 auto* borderWrap = new QWidget();
-                borderWrap->setFixedSize(tw, th);
+                borderWrap->setFixedSize(tw + 6, th + 6);
                 borderWrap->setStyleSheet(QString(
-                    "background: %1; border: 3px solid %2; border-radius: 8px;"
-                ).arg(Theme::contentBg().name(), Theme::accent().name()));
+                    "border: 3px solid %1; border-radius: 8px; background: transparent;"
+                ).arg(Theme::accent().name()));
                 auto* wrapLay = new QVBoxLayout(borderWrap);
-                wrapLay->setContentsMargins(3, 3, 3, 3);
-                videoWidget->setMinimumSize(0, 0);
-                videoWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+                wrapLay->setContentsMargins(0, 0, 0, 0);
+                videoWidget->setFixedSize(tw, th);
                 wrapLay->addWidget(videoWidget);
                 cardLayout->addWidget(borderWrap);
 
-                m_previewPlayer->load(interp.youtubeUrl);
+                m_previewPlayer->load(interp.youtubeUrl, Theme::contentBg().name());
             } else {
                 // Non-selected: thumbnail image
                 auto* thumbLabel = new QLabel();
@@ -615,7 +615,7 @@ void LevelBrowser::rebuild()
             // Click to select (only for non-selected — clicking selected does nothing)
             if (!sel) {
                 auto* clickBtn = new QPushButton(card);
-                clickBtn->setGeometry(0, 0, tw, th + 20);
+                clickBtn->setGeometry(0, 0, tw, th + 22);
                 clickBtn->setStyleSheet("background: transparent; border: none;");
                 clickBtn->setCursor(Qt::PointingHandCursor);
                 clickBtn->setFocusPolicy(Qt::NoFocus);

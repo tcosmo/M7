@@ -1,12 +1,18 @@
-#include <QCoreApplication>
+#include <QApplication>
 #include <QTest>
 #include <QSignalSpy>
 #include <QDebug>
+#include <QStackedWidget>
+#include <QLabel>
+#include <QVBoxLayout>
+#include <QPixmap>
+#include <QPainter>
 #include <vector>
 
 #include "engine/VerovioEngine.h"
 #include "playalongsynth.h"
 #include "synctimer.h"
+#include "theme.h"
 
 using namespace scoretracker;
 
@@ -280,6 +286,79 @@ private slots:
         QCOMPARE(synth.voiceCount(), 0);
 
         qDebug() << "Play-along state fully reset on exit ✓";
+    }
+
+    // -- Loading page visual test --
+
+    void testLoadingPageRendersCorrectly() {
+        // Reproduce the exact loading page from App constructor and verify
+        // it renders visible "Loading..." text on the correct background.
+        using namespace scoretracker;
+
+        QStackedWidget stack;
+        stack.resize(800, 600);
+
+        // Page 0: placeholder for level browser
+        auto* browserPage = new QWidget();
+        stack.addWidget(browserPage);
+
+        // Page 1: placeholder for score view
+        auto* scorePage = new QWidget();
+        stack.addWidget(scorePage);
+
+        // Page 2: loading page — exact copy of App constructor code
+        auto* loadingPage = new QWidget();
+        loadingPage->setAutoFillBackground(true);
+        QPalette lpPal = loadingPage->palette();
+        lpPal.setColor(QPalette::Window, Theme::scoreBg());
+        loadingPage->setPalette(lpPal);
+        auto* loadingLayout = new QVBoxLayout(loadingPage);
+        loadingLayout->setAlignment(Qt::AlignCenter);
+        auto* loadingLabel = new QLabel("Loading...");
+        loadingLabel->setAlignment(Qt::AlignCenter);
+        QFont loadingFont = loadingLabel->font();
+        loadingFont.setPointSize(18);
+        loadingLabel->setFont(loadingFont);
+        loadingLabel->setStyleSheet(QString("color: %1;").arg(Theme::textPrimary().name()));
+        loadingLayout->addWidget(loadingLabel);
+        stack.addWidget(loadingPage);
+
+        // Switch to loading page (simulates what loadLevel does)
+        stack.setCurrentIndex(2);
+        stack.show();
+        QTest::qWaitForWindowExposed(&stack);
+
+        // Grab a screenshot
+        QPixmap screenshot = stack.grab();
+        QVERIFY(!screenshot.isNull());
+
+        // Save to disk for visual inspection
+        QString path = QCoreApplication::applicationDirPath() + "/test_loading_page.png";
+        QVERIFY(screenshot.save(path));
+        qDebug() << "Loading page screenshot saved to:" << path;
+
+        // Verify the loading page is actually showing (not blank):
+        // The background should be Theme::scoreBg() (0x36393f), not pure black/white
+        QImage img = screenshot.toImage();
+        QColor centerPixel = img.pixelColor(img.width() / 2, img.height() / 4);
+        // Background should be dark grey (scoreBg), not black or white
+        QVERIFY2(centerPixel.lightness() > 15 && centerPixel.lightness() < 80,
+            qPrintable(QString("Expected dark grey background, got %1").arg(centerPixel.name())));
+
+        // Scan the entire image for text pixels (any pixel brighter than background)
+        // The "Loading..." text is rendered in textPrimary (~0xdcddde, lightness ~86)
+        // vs scoreBg (~0x36393f, lightness ~23). Scan a wide horizontal band.
+        bool hasText = false;
+        int bgLightness = centerPixel.lightness();
+        for (int y = img.height() / 3; y < 2 * img.height() / 3 && !hasText; ++y) {
+            for (int x = img.width() / 4; x < 3 * img.width() / 4; ++x) {
+                QColor px = img.pixelColor(x, y);
+                if (px.lightness() > bgLightness + 20) { hasText = true; break; }
+            }
+        }
+        QVERIFY2(hasText, "Loading page has no visible text — expected 'Loading...'");
+
+        qDebug() << "Loading page renders correctly ✓";
     }
 };
 

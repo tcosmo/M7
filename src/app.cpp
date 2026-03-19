@@ -488,8 +488,26 @@ void App::setupUI()
     QPalette csPal = m_centralStack->palette();
     csPal.setColor(QPalette::Window, Theme::contentBg());
     m_centralStack->setPalette(csPal);
-    m_centralStack->addWidget(m_levelBrowser);
-    m_centralStack->addWidget(m_mainSplitter);
+    m_centralStack->addWidget(m_levelBrowser);       // index 0: level browser
+    m_centralStack->addWidget(m_mainSplitter);       // index 1: score view
+
+    // Loading page — shown while level is loading
+    m_loadingPage = new QWidget();
+    m_loadingPage->setAutoFillBackground(true);
+    QPalette lpPal = m_loadingPage->palette();
+    lpPal.setColor(QPalette::Window, Theme::scoreBg());
+    m_loadingPage->setPalette(lpPal);
+    auto* loadingLayout = new QVBoxLayout(m_loadingPage);
+    loadingLayout->setAlignment(Qt::AlignCenter);
+    auto* loadingLabel = new QLabel("Loading...");
+    loadingLabel->setAlignment(Qt::AlignCenter);
+    QFont loadingFont = loadingLabel->font();
+    loadingFont.setPointSize(18);
+    loadingLabel->setFont(loadingFont);
+    loadingLabel->setStyleSheet(QString("color: %1;").arg(Theme::textPrimary().name()));
+    loadingLayout->addWidget(loadingLabel);
+    m_centralStack->addWidget(m_loadingPage);        // index 2: loading
+
     m_centralStack->setCurrentIndex(0);
 
     // World sidebar on the left
@@ -2613,12 +2631,24 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
     // Save window geometry before the heavy load
     QRect savedGeometry = geometry();
 
-    // Show loading overlay on the level browser
-    m_levelBrowser->showLoading(true);
+    // Switch to loading page immediately so the user sees feedback
+    m_centralStack->setCurrentIndex(2);
     // NOTE: Do NOT call QApplication::processEvents() here — it causes re-entrancy.
 
-    // Defer the heavy work so the loading overlay paints first
-    QTimer::singleShot(0, this, [=]() {
+    // Bump version so any previously queued lambda becomes stale and bails out
+    int loadVersion = ++m_loadLevelVersion;
+
+    // Defer the heavy work so the loading page paints first.
+    // singleShot(0) fires immediately on next event loop — before the loading page
+    // gets a chance to render. A small delay lets the widget paint.
+    QTimer::singleShot(50, this, [=]() {
+        // If a newer loadLevel was called while we were queued, bail out
+        if (loadVersion != m_loadLevelVersion) {
+            qDebug() << "loadLevel: stale deferred lambda (v" << loadVersion
+                     << "vs" << m_loadLevelVersion << "), skipping";
+            return;
+        }
+
         const auto& lvlSection = m_worlds[worldIndex].sections[sectionIndex];
         const auto& level = lvlSection.levels[levelIndex];
 
@@ -2657,26 +2687,32 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
 
         // Video starts expanded in the level — insert container into splitter
         if (m_expandedVideoContainer) {
-            // Insert at index 1 (after waveform, before score)
-            m_centralSplitter->insertWidget(1, m_expandedVideoContainer);
+            // Insert video above the score. With MuseScore, waveform is at index 0
+            // so video goes at index 1. Without MuseScore (Verovio-only), score is
+            // at index 0 so video goes at index 0.
+            int videoIdx = m_centralSplitter->indexOf(m_scoreWidget);
+            if (videoIdx < 0) videoIdx = 0;
+            m_centralSplitter->insertWidget(videoIdx, m_expandedVideoContainer);
             m_expandedVideoContainer->show();
             m_expandedVideoContainer->installEventFilter(this);
 
             int videoH = 394;
             // YouTube ToS: minimum 200x200. Prevent user from shrinking below initial height.
             m_expandedVideoContainer->setMinimumHeight(videoH);
+            int scoreIdx = m_centralSplitter->indexOf(m_scoreWidget);
+            int vidIdx = m_centralSplitter->indexOf(m_expandedVideoContainer);
             QList<int> sizes;
             for (int i = 0; i < m_centralSplitter->count(); ++i) {
-                if (m_centralSplitter->widget(i) == m_expandedVideoContainer)
+                if (i == vidIdx)
                     sizes.append(videoH);
-                else if (m_centralSplitter->widget(i) == m_scoreWidget)
+                else if (i == scoreIdx)
                     sizes.append(m_centralSplitter->height() - videoH);
                 else
                     sizes.append(m_centralSplitter->widget(i)->height());
             }
             m_centralSplitter->setSizes(sizes);
-            m_centralSplitter->setStretchFactor(1, 0);
-            m_centralSplitter->setStretchFactor(2, 1);
+            m_centralSplitter->setStretchFactor(vidIdx, 0);
+            m_centralSplitter->setStretchFactor(scoreIdx, 1);
 
             // Resize iframe after layout settles
             QTimer::singleShot(50, this, [this]() {
@@ -3071,8 +3107,6 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             });
         }
 
-        m_levelBrowser->showLoading(false);
-
         // Restore window geometry after all deferred layout work settles
         QTimer::singleShot(0, this, [this, savedGeometry]() {
             move(savedGeometry.topLeft());
@@ -3085,6 +3119,12 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
 
 void App::keyPressEvent(QKeyEvent* event)
 {
+    // Spacebar on loading page: consume silently
+    if (event->key() == Qt::Key_Space && m_centralStack->currentIndex() == 2) {
+        event->accept();
+        return;
+    }
+
     // Spacebar in navigation view: no video exists, just consume the event
     if (event->key() == Qt::Key_Space && m_centralStack->currentIndex() == 0) {
         // Toggle play/pause on the level browser's preview player
@@ -3099,9 +3139,16 @@ void App::keyPressEvent(QKeyEvent* event)
         return;
     }
 
-    // Escape returns to world browser from score view
+    // Escape returns to world browser from score view or loading page
     if (event->key() == Qt::Key_Escape && m_centralStack->currentIndex() == 0) {
         // Already in navigation — ignore
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_Escape && m_centralStack->currentIndex() == 2) {
+        // Cancel loading — bump version so deferred lambda is stale, return to browser
+        ++m_loadLevelVersion;
+        showWorldBrowser();
         event->accept();
         return;
     }

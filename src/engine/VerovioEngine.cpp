@@ -241,10 +241,22 @@ QString VerovioEngine::renderAllPagesHtml() const
 
     // Build HTML by concatenation — NOT QString::arg() —
     // because Verovio SVG contains '%' characters that arg() would corrupt.
+    // Read the music font CSS (base64-embedded woff2) so the web view can render glyphs
+    QString fontCss;
+    QString resourcePath = QString::fromStdString(m_toolkit->GetResourcePath());
+    QFile fontFile(resourcePath + "/Leipzig.css");
+    if (fontFile.open(QIODevice::ReadOnly)) {
+        fontCss = QString::fromUtf8(fontFile.readAll());
+    } else {
+        qWarning() << "Verovio: could not load Leipzig.css from" << resourcePath;
+    }
+
     QString html;
     html += QStringLiteral(
         "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n"
-        "<style>\n"
+        "<style>\n");
+    html += fontCss;
+    html += QStringLiteral("\n"
         "body { margin: 0; padding: 0; background: #3a3a3a; }\n"
         ".page { background: white; }\n"
         ".page svg { width: 100%; height: auto; display: block; }\n"

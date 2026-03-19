@@ -250,6 +250,12 @@ private:
     // Video expand
     bool m_videoExpanded = false;
     QWidget* m_expandedVideoContainer = nullptr;
+
+    // Loading page shown between level browser and score view
+    QWidget* m_loadingPage = nullptr;
+
+    // Re-entrancy guard for loadLevel — deferred lambda checks this
+    int m_loadLevelVersion = 0;
 };
 
 } // namespace scoretracker

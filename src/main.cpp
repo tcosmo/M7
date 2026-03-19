@@ -6,6 +6,7 @@
 #include <QPalette>
 #include <QStackedWidget>
 #include <QStyleFactory>
+#include <clocale>
 
 #include "theme.h"
 
@@ -119,6 +120,12 @@ int main(int argc, char* argv[])
     QApplication qapp(argc, argv);
     qapp.setApplicationName("PlayBach");
     qapp.setOrganizationName("MMMM");
+
+    // Force C locale for numeric formatting so SVG output uses '.' not ','
+    // (French/German locales use comma, which breaks SVG scale transforms)
+    // Must be AFTER QApplication — its constructor calls setlocale(LC_ALL, "")
+    // which would override this.
+    setlocale(LC_NUMERIC, "C");
 
     // Force dark Discord-style palette — no light mode
     qapp.setStyle(QStyleFactory::create("Fusion"));

@@ -596,14 +596,6 @@ void App::resizeEvent(QResizeEvent* event)
 
 bool App::eventFilter(QObject* obj, QEvent* event)
 {
-    if (obj == m_expandedVideoContainer && event->type() == QEvent::Resize && m_videoExpanded) {
-        auto* re = static_cast<QResizeEvent*>(event);
-        int h = re->size().height();
-        int w = re->size().width();
-        if (h > 0 && w > 0 && m_youtubePlayer) {
-            m_youtubePlayer->resizePlayer(w, h);
-        }
-    }
     return QMainWindow::eventFilter(obj, event);
 }
 
@@ -1636,12 +1628,6 @@ void App::loadYouTube(const QString& url, bool /*preview*/)
         m_seekSlider->setRange(0, static_cast<int>(duration * 10));
         m_timeLabel->setText(QString("0:00 / %1").arg(formatTime(duration)));
         m_speedButton->setEnabled(m_useYouTube);
-        // Resize to fill the expanded container
-        if (m_expandedVideoContainer && m_expandedVideoContainer->isVisible()) {
-            QSize sz = m_expandedVideoContainer->size();
-            if (sz.width() > 0 && sz.height() > 0)
-                m_youtubePlayer->resizePlayer(sz.width(), sz.height());
-        }
     });
 
     // Video widget goes directly into the expanded video container
@@ -2795,8 +2781,8 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             m_expandedVideoContainer->installEventFilter(this);
 
             int videoH = 394;
-            // YouTube ToS: minimum 200x200. Prevent user from shrinking below initial height.
-            m_expandedVideoContainer->setMinimumHeight(videoH);
+            // Lock video at fixed height — no user resizing via splitter
+            m_expandedVideoContainer->setFixedHeight(videoH);
             int scoreIdx = m_centralSplitter->indexOf(m_scoreWidget);
             int vidIdx = m_centralSplitter->indexOf(m_expandedVideoContainer);
             QList<int> sizes;
@@ -2812,14 +2798,10 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             m_centralSplitter->setStretchFactor(vidIdx, 0);
             m_centralSplitter->setStretchFactor(scoreIdx, 1);
 
-            // Resize iframe after layout settles
-            QTimer::singleShot(50, this, [this]() {
-                if (m_expandedVideoContainer && m_youtubePlayer) {
-                    QSize sz = m_expandedVideoContainer->size();
-                    if (sz.width() > 0 && sz.height() > 0)
-                        m_youtubePlayer->resizePlayer(sz.width(), sz.height());
-                }
-            });
+            // Hide the splitter handle between video and score so no resize cursor appears
+            int handleIdx = vidIdx + 1; // handle is after the video widget
+            if (auto* handle = m_centralSplitter->handle(handleIdx))
+                handle->setEnabled(false);
         }
         m_videoExpanded = true;
 

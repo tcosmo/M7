@@ -231,6 +231,7 @@ private:
     QString m_sourcesPath;
     bool m_sliderDragging = false;
     bool m_needsSeekOnPlay = false;
+    bool m_hasPlayedInLevel = false; // true after first keypress in a level
     int m_sidebarWidth = 300;
 
     // Record tracking

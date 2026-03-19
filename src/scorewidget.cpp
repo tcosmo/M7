@@ -1295,14 +1295,18 @@ void ScoreWidget::setCursorTick(int tick)
 {
     m_lastCursorTick = tick;
     if (!m_webView || !m_webView->isVisible()) return;
-    // Position the cursor and then read back its X,Y for game scoring
+    // Position the cursor and read back X + system bounds for game scoring
     m_webView->page()->runJavaScript(
-        QStringLiteral("setCursorTick(%1); [getCursorX(), getCursorY()]").arg(tick),
+        QStringLiteral("setCursorTick(%1); [getCursorX(), getCursorSysBounds()]").arg(tick),
         [this](const QVariant& result) {
             QVariantList list = result.toList();
             if (list.size() >= 2) {
                 m_lastCursorX = list[0].toDouble();
-                m_lastCursorY = list[1].toDouble();
+                QVariantList bounds = list[1].toList();
+                if (bounds.size() >= 2) {
+                    m_cursorSysTop = bounds[0].toDouble();
+                    m_cursorSysBottom = bounds[1].toDouble();
+                }
             }
         });
 }
@@ -1340,11 +1344,16 @@ double ScoreWidget::highlightCursorDistance(int voice) const
     if (noteCenter.x() < 0) return -1;
     if (m_lastCursorX <= 0) return -1;
 
-    // If note and cursor are on different systems (Y differs significantly),
-    // this is a system break — cursor is at the end of one line, note is at
-    // the start of the next. The player tapped on time, so treat as close.
-    double dy = std::abs(noteCenter.y() - m_lastCursorY);
-    if (dy > 50.0) return 0.0; // different system → automatic hit
+    // Check if the note is on the same system as the cursor.
+    // The cursor's system bounds (top/bottom Y) come from JS _getSysBounds.
+    // If the note's Y falls outside those bounds, it's on a different system
+    // (system break) — treat as a hit since the player tapped on time.
+    if (m_cursorSysBottom > m_cursorSysTop) { // bounds are valid
+        double noteY = noteCenter.y();
+        if (noteY < m_cursorSysTop || noteY > m_cursorSysBottom) {
+            return 0.0; // different system → automatic hit
+        }
+    }
 
     return std::abs(noteCenter.x() - m_lastCursorX);
 }

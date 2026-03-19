@@ -74,22 +74,36 @@ GameBar::GameBar(QWidget* parent)
     m_gameLabel = new QLabel("Game", this);
     layout->addWidget(m_gameLabel);
 
-    layout->addStretch();
+    layout->addStretch(1);
 
-    // Center: hit/miss feedback + accuracy
+    // Center: instruction label — overlaid on the full bar, always truly centered
+    // It's a child of `this` but NOT in the layout — positioned manually in resizeEvent
+    m_instructionLabel = new QLabel(this);
+    m_instructionLabel->setAlignment(Qt::AlignCenter);
+    m_instructionLabel->setStyleSheet(QString(
+        "color: %1; font-size: 13px; background: transparent;"
+    ).arg(Theme::textPrimary().name()));
+    m_instructionLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+
+    // Right: feedback + accuracy (in a container so they collapse together)
+    m_rightContainer = new QWidget(this);
+    auto* rightLayout = new QHBoxLayout(m_rightContainer);
+    rightLayout->setContentsMargins(0, 0, 0, 0);
+    rightLayout->setSpacing(8);
+
     m_feedbackLabel = new QLabel(this);
-    m_feedbackLabel->setAlignment(Qt::AlignCenter);
-    m_feedbackLabel->setFixedWidth(130);
+    m_feedbackLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_feedbackLabel->setFixedWidth(100);
     m_feedbackLabel->setStyleSheet("font-size: 13px; font-weight: bold;");
-    layout->addWidget(m_feedbackLabel);
+    rightLayout->addWidget(m_feedbackLabel);
 
     m_accuracyLabel = new QLabel(this);
-    m_accuracyLabel->setAlignment(Qt::AlignCenter);
+    m_accuracyLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_accuracyLabel->setFixedWidth(130);
     m_accuracyLabel->setStyleSheet(QString("color: %1; font-size: 13px; font-weight: bold;").arg(Theme::textPrimary().name()));
-    layout->addWidget(m_accuracyLabel);
+    rightLayout->addWidget(m_accuracyLabel);
 
-    layout->addStretch();
+    layout->addWidget(m_rightContainer);
 
     // Fade timer: clears feedback after a short delay so it doesn't go stale
     m_fadeTimer = new QTimer(this);
@@ -102,6 +116,15 @@ GameBar::GameBar(QWidget* parent)
     updateDisplay();
 }
 
+void GameBar::resizeEvent(QResizeEvent*)
+{
+    // Keep instruction label centered over the full bar width
+    if (m_instructionLabel) {
+        m_instructionLabel->setGeometry(0, 0, width(), height());
+        m_instructionLabel->raise(); // above background but below mouse events (WA_TransparentForMouseEvents)
+    }
+}
+
 void GameBar::setGameModeAvailable(bool available)
 {
     m_available = available;
@@ -112,6 +135,12 @@ void GameBar::setGameModeAvailable(bool available)
         updateDisplay();
         emit gameModeChanged(false);
     }
+}
+
+void GameBar::setVoiceCount(int count)
+{
+    m_voiceCount = count;
+    updateDisplay();
 }
 
 void GameBar::reset()
@@ -166,11 +195,17 @@ double GameBar::accuracy() const
 
 void GameBar::updateDisplay()
 {
+    // Instructions (always visible, adapts to voice count)
+    if (m_voiceCount >= 2) {
+        m_instructionLabel->setText("Left side of keyboard = upper part  |  Right side = lower part");
+    } else {
+        m_instructionLabel->setText("Press any letter key to play along with the performance");
+    }
+
     if (m_gameMode) {
         m_gameLabel->setStyleSheet(QString("color: %1; font-size: 11px; font-weight: bold;").arg(Theme::textPrimary().name()));
         m_performLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name()));
-        m_feedbackLabel->show();
-        m_accuracyLabel->show();
+        m_rightContainer->show();
         if (m_totalTaps > 0)
             m_accuracyLabel->setText(QString("Accuracy: %1%").arg(accuracy(), 0, 'f', 0));
         else
@@ -178,8 +213,7 @@ void GameBar::updateDisplay()
     } else {
         m_performLabel->setStyleSheet(QString("color: %1; font-size: 11px; font-weight: bold;").arg(Theme::textPrimary().name()));
         m_gameLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(Theme::textSecondary().name()));
-        m_feedbackLabel->hide();
-        m_accuracyLabel->hide();
+        m_rightContainer->hide();
     }
 }
 

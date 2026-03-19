@@ -36,6 +36,7 @@ public:
 
     bool isGameMode() const { return m_gameMode; }
     void setGameModeAvailable(bool available);
+    void setVoiceCount(int count);
     void reset();
 
     void recordHit(double pixelDistance);
@@ -43,6 +44,9 @@ public:
 
 signals:
     void gameModeChanged(bool gameMode);
+
+protected:
+    void resizeEvent(QResizeEvent*) override;
 
 private:
     void updateDisplay();
@@ -52,10 +56,13 @@ private:
     ToggleSwitch* m_toggle = nullptr;
     QLabel* m_performLabel = nullptr;
     QLabel* m_gameLabel = nullptr;
+    QLabel* m_instructionLabel = nullptr;
+    QWidget* m_rightContainer = nullptr;
     QLabel* m_feedbackLabel = nullptr;
     QLabel* m_accuracyLabel = nullptr;
     QTimer* m_fadeTimer = nullptr;
 
+    int m_voiceCount = 1;
     int m_hits = 0;
     int m_totalTaps = 0;
     int m_hitStreak = 0;

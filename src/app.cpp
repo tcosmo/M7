@@ -624,6 +624,10 @@ void App::setupToolbar()
     m_stopAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
     connect(m_stopAction, &QAction::triggered, this, [this]() {
         resetScoreState();
+        // Re-enable cursor (resetScoreState hides it)
+        if (m_trackingAction->isChecked()) {
+            m_scoreWidget->setCursorVisible(true);
+        }
         playerSeekTo(0);
         playerPlay();
         m_playPauseAction->setText("Pause");
@@ -1618,6 +1622,21 @@ void App::loadYouTube(const QString& url, bool /*preview*/)
             m_needsSeekOnPlay = false;
             m_youtubePlayer->seekTo(m_interpStart);
         }
+        // First time video plays in this level: reset highlights to beginning
+        if (!m_hasPlayedInLevel) {
+            m_hasPlayedInLevel = true;
+            m_playAlongSynth->resetPosition();
+            m_keysHeld = 0;
+            for (int vi = 0; vi < m_voiceKeysHeld.size(); ++vi)
+                m_voiceKeysHeld[vi] = 0;
+            if (m_useVerovio) {
+                for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
+                    auto& vv = m_vrvVoices[vi];
+                    if (!vv.elementIds.empty())
+                        m_scoreWidget->overlayHighlight(vi, vv.elementIds[0]);
+                }
+            }
+        }
     });
     connect(m_youtubePlayer, &YouTubePlayer::playbackPaused, [this]() {
         m_playPauseAction->setText("Play");
@@ -2408,6 +2427,7 @@ void App::resetScoreState()
     m_timeLabel->setText("0:00");
     m_playPauseAction->setText("Play");
     m_needsSeekOnPlay = true;
+    m_hasPlayedInLevel = false;
 
     // Play-along — reset to first note
     m_playAlongSynth->stopNote();
@@ -2834,6 +2854,7 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                 handle->setEnabled(false);
             // Game mode only available when tracking data exists
             m_gameBar->setGameModeAvailable(!m_syncTimer->beatTimes().empty());
+            m_gameBar->setVoiceCount(static_cast<int>(m_vrvVoices.size()));
             m_gameBar->reset();
         }
 
@@ -3359,8 +3380,9 @@ void App::keyPressEvent(QKeyEvent* event)
 
     // Tap-to-play: laptop keyboard as MIDI controller (letter keys only)
     // Overlap keys for legato, release all for noteoff
-    // Skip when Cmd/Ctrl is held (reserved for shortcuts like Cmd+T)
-    if (m_playModeActive && playerIsPlaying() && !(event->modifiers() & Qt::ControlModifier)) {
+    // Tap-to-play: laptop keyboard as MIDI controller (letter keys only)
+    // Works even when video isn't playing — skip when Cmd/Ctrl is held
+    if (m_playModeActive && !(event->modifiers() & Qt::ControlModifier)) {
         int key = event->key();
         bool isLetter = (key >= Qt::Key_A && key <= Qt::Key_Z);
         if (isLetter && !event->isAutoRepeat() && m_useVerovio && !m_vrvVoices.empty()) {
@@ -3475,7 +3497,7 @@ void App::keyReleaseEvent(QKeyEvent* event)
 {
     int key = event->key();
     bool isLetter = (key >= Qt::Key_A && key <= Qt::Key_Z);
-    if (isLetter && !event->isAutoRepeat() && m_playModeActive && playerIsPlaying()) {
+    if (isLetter && !event->isAutoRepeat() && m_playModeActive) {
         if (m_multiVoice) {
             static const QString leftKeys = "ABCDEFGQRSTVWXZ";
             static const QString rightKeys = "HIJKLMNOPUY";

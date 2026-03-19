@@ -224,8 +224,9 @@ private:
     WebScoreOverlay* m_overlay = nullptr;
     int m_timemapVersion = 0;
     int m_lastCursorTick = 0;
-    double m_lastCursorX = 0; // cursor X in document coords from JS
-    double m_lastCursorY = 0; // cursor Y (system top) from JS
+    double m_lastCursorX = 0;    // cursor X in document coords from JS
+    double m_cursorSysTop = 0;   // top Y of cursor's system
+    double m_cursorSysBottom = 0; // bottom Y of cursor's system
     TriggerLineOverlay* m_triggerOverlay = nullptr;
     int m_overlayWidth = 0;
     bool m_autoScroll = true;

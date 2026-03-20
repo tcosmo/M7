@@ -185,3 +185,21 @@ Clicking a note in the score moves the voice highlighter:
 2. `ScoreWidget::eventFilter` detects mouse release, queries `getClickedNote()` from JS
 3. `noteClicked` signal fires → App searches `m_vrvVoices` to find voice + index
 4. Calls `setNextNoteIndex(voice, index)` + `overlayHighlight(voice, elementId)`
+
+### Focus-click suppression
+
+When the app window is not focused and the user clicks on the score to bring it back, that click should not move a voice highlighter. This is handled by `ScoreWidget::eventFilter`:
+
+1. Event filter installed on **both** the web view's focus proxy (for mouse events) and the top-level window (for activation events)
+2. `WindowActivate` event on the window → sets `m_ignoreNextClick = true`
+3. Next `MouseButtonPress` on the web view focus proxy → eaten, flag cleared
+4. Matching `MouseButtonRelease` → also eaten (flag still active for the release)
+
+No timers — purely event-driven. The flag is set on activation and consumed by the very next mouse press.
+
+## Arrow Key Navigation
+
+Left/right arrow keys move voice 0's highlighter one note at a time:
+- Clamped to `[0, lastNoteIndex]`
+- Updates both `PlayAlongSynth::setNextNoteIndex(0, idx)` and `overlayHighlight(0, elementId)`
+- Only active when `m_playModeActive` is true

@@ -10,19 +10,30 @@
             "url": "https://www.youtube.com/watch?v=fUt88ImPV-E"
         },
         {
+            "beats": "./beatdata_ton_koopman_amsterdam_baroque_orchestra_choir.json",
+            "end": 186,
+            "instrumentVolume": 145,
+            "label": "Ton Koopman, Amsterdam Baroque Orchestra & Choir",
+            "start": 15,
+            "tuning": -1,
+            "url": "https://www.youtube.com/watch?v=s9UYuBxxqS8",
+            "volume": 79
+        },
+        {
+            "beats": "./beatdata_ch_ur_du_concert_d_astr_e_emmanuelle_ha_m.json",
+            "end": 177,
+            "instrumentVolume": 114,
+            "label": "Chœur du Concert D'Astrée ∙ Emmanuelle Haïm",
+            "start": 5,
+            "tuning": 0.2,
+            "url": "https://www.youtube.com/watch?v=3EPk6zOaLH0"
+        },
+        {
             "beats": "./beatdata.json",
             "instrumentVolume": 74,
             "label": "Oxford Scholar Cantorum",
             "tuning": 0.1,
             "url": "https://www.youtube.com/watch?v=kYmaAS4NsPU"
-        },
-        {
-            "end": 175,
-            "instrumentVolume": 127,
-            "label": "Netherlands Bach Society",
-            "start": 7,
-            "tuning": -1,
-            "url": "https://www.youtube.com/watch?v=EsUWG2axB3w"
         },
         {
             "end": 203,
@@ -33,23 +44,12 @@
             "url": "https://www.youtube.com/watch?v=41blIyHQ0hs"
         },
         {
-            "beats": "./beatdata_ch_ur_du_concert_d_astr_e_emmanuelle_ha_m.json",
-            "end": 177,
-            "instrumentVolume": 114,
-            "label": "Chœur du Concert D’Astrée ∙ Emmanuelle Haïm",
-            "start": 5,
-            "tuning": 0.2,
-            "url": "https://www.youtube.com/watch?v=3EPk6zOaLH0"
-        },
-        {
-            "beats": "./beatdata_ton_koopman_amsterdam_baroque_orchestra_choir.json",
-            "end": 186,
-            "instrumentVolume": 145,
-            "label": "Ton Koopman, Amsterdam Baroque Orchestra & Choir",
-            "start": 15,
+            "end": 175,
+            "instrumentVolume": 127,
+            "label": "Netherlands Bach Society",
+            "start": 7,
             "tuning": -1,
-            "url": "https://www.youtube.com/watch?v=s9UYuBxxqS8",
-            "volume": 79
+            "url": "https://www.youtube.com/watch?v=EsUWG2axB3w"
         }
     ]
 }

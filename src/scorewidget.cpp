@@ -1006,8 +1006,11 @@ void ScoreWidget::setEngine(scoretracker::ScoreEngine* engine)
         m_canvas->hide();
 
         // Install event filter on the web view's focus proxy to detect note clicks
+        // and on the top-level window to detect WindowActivate for focus-click suppression
         if (m_webView->focusProxy())
             m_webView->focusProxy()->installEventFilter(this);
+        if (window())
+            window()->installEventFilter(this);
 
         // Create overlay for QPainter-based highlights
         if (!m_overlay) {
@@ -1113,6 +1116,19 @@ bool ScoreWidget::event(QEvent* event)
 
 bool ScoreWidget::eventFilter(QObject* obj, QEvent* event)
 {
+    // Track window activation: the click that brings the window to focus
+    // should not move the voice highlighter.
+    if (event->type() == QEvent::WindowActivate) {
+        m_ignoreNextClick = true;
+    }
+    if (m_ignoreNextClick && event->type() == QEvent::MouseButtonPress) {
+        m_ignoreNextClick = false;
+        return true; // eat the focus click
+    }
+    if (m_ignoreNextClick && event->type() == QEvent::MouseButtonRelease) {
+        return true; // eat the matching release
+    }
+
     // Detect mouse clicks on the web view to find clicked notes
     if (event->type() == QEvent::MouseButtonRelease && m_webView && m_webView->isVisible()) {
         // Short delay so the JS click handler runs first

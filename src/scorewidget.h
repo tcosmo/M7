@@ -225,6 +225,7 @@ private:
     QWebEngineView* m_webView = nullptr;
     WebScoreOverlay* m_overlay = nullptr;
     int m_timemapVersion = 0;
+    bool m_ignoreNextClick = false;
     int m_lastCursorTick = 0;
     double m_lastCursorX = 0;    // cursor X in document coords from JS
     double m_cursorSysTop = 0;   // top Y of cursor's system

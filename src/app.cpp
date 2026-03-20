@@ -167,9 +167,9 @@ App::App(QWidget* parent)
     connect(m_trackingAction, &QAction::toggled, [this](bool on) {
         m_trackingSettings->setTrackingEnabled(on);
         m_scoreWidget->setCursorVisible(on);
-        // Show/hide Verovio cursor
+        // Show/hide Verovio cursor (position still updates for game scoring)
         if (m_useVerovio) {
-            m_scoreWidget->runWebJavaScript(on ? "" : "hideCursor()");
+            m_scoreWidget->runWebJavaScript(on ? "showCursor()" : "hideCursor()");
         }
         // When tracking is off but auto-scroll is on, feed current position
         // so auto-scroll still works with an invisible cursor
@@ -1318,8 +1318,8 @@ void App::onPositionChanged(double seconds)
     bool shouldTrack = m_trackingAction->isChecked() || m_trackingSettings->autoScrollEnabled() || m_playModeActive;
     if (shouldTrack) {
         m_syncTimer->setTime(adjusted);
-        // Verovio: send tick to web view for cursor overlay
-        if (m_useVerovio && m_trackingAction->isChecked()) {
+        // Verovio: always update cursor position (needed for game scoring even with cursor hidden)
+        if (m_useVerovio) {
             m_syncTimer->setTime(adjusted + 0.08); // forward compensation for IPC latency
             m_scoreWidget->setCursorTick(m_syncTimer->currentTick());
             m_syncTimer->setTime(adjusted);

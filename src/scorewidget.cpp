@@ -1370,13 +1370,15 @@ double ScoreWidget::highlightCursorDistance(int voice) const
 
     double dx = std::abs(noteCenter.x() - m_lastCursorX);
 
-    // System break grace: cursor is near the right edge of the page and note
-    // is near the left edge — this is the first note of a new system line.
-    // The raw dx would be huge but the player tapped on time.
-    if (m_canvas && m_canvas->engine()) {
-        double pageW = m_canvas->engine()->pageSize(0).width();
-        if (pageW > 0 && m_lastCursorX > pageW * 0.7 && noteCenter.x() < pageW * 0.3) {
-            return 0.0; // system break transition — forgive
+    // System break grace: note is on a different system than the cursor.
+    // This happens at system transitions — the highlight moved to the new
+    // system but the cursor is still on the old one (or vice versa).
+    // Only forgive if accuracy scoring is active (video playing), which
+    // prevents cheating by tapping ahead while paused.
+    if (m_cursorSysBottom > m_cursorSysTop) {
+        double noteY = noteCenter.y();
+        if (noteY < m_cursorSysTop || noteY > m_cursorSysBottom) {
+            return 0.0;
         }
     }
 

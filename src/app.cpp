@@ -647,9 +647,11 @@ void App::setupToolbar()
         resetScoreState();
         // Restart means we already played — don't trigger first-play reset again
         m_hasPlayedInLevel = true;
-        // Re-enable cursor (resetScoreState hides it)
+        // Re-enable cursor (resetScoreState hides it via hideCursor JS)
         if (m_trackingAction->isChecked()) {
             m_scoreWidget->setCursorVisible(true);
+            if (m_useVerovio)
+                m_scoreWidget->runWebJavaScript("showCursor()");
         }
         playerSeekTo(0);
         playerPlay();
@@ -2598,6 +2600,8 @@ void App::switchInterpretation(int index)
         m_trackingButton->setEnabled(true);
         m_trackingAction->setChecked(true);
         m_scoreWidget->setCursorVisible(true);
+        if (m_useVerovio)
+            m_scoreWidget->runWebJavaScript("showCursor()");
     } else {
         m_trackingAction->setChecked(false);
         m_trackingAction->setEnabled(false);
@@ -2802,6 +2806,8 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             m_trackingButton->setEnabled(true);
             m_trackingAction->setChecked(true);
             m_scoreWidget->setCursorVisible(true);
+            if (m_useVerovio)
+                m_scoreWidget->runWebJavaScript("showCursor()");
         }
 
         // Hide the right sidebar by default for levels
@@ -3388,6 +3394,23 @@ void App::keyPressEvent(QKeyEvent* event)
 
     // Tap-to-play: laptop keyboard as MIDI controller (letter keys only)
     // Overlap keys for legato, release all for noteoff
+    // Arrow keys: move voice 0 highlighter left/right
+    if (m_playModeActive && !m_vrvVoices.empty() && !event->isAutoRepeat()) {
+        if (event->key() == Qt::Key_Left || event->key() == Qt::Key_Right) {
+            int idx = m_playAlongSynth->nextNoteIndex(0);
+            int maxIdx = static_cast<int>(m_vrvVoices[0].elementIds.size()) - 1;
+            if (event->key() == Qt::Key_Left && idx > 0)
+                idx--;
+            else if (event->key() == Qt::Key_Right && idx < maxIdx)
+                idx++;
+            m_playAlongSynth->setNextNoteIndex(0, idx);
+            if (idx >= 0 && idx <= maxIdx)
+                m_scoreWidget->overlayHighlight(0, m_vrvVoices[0].elementIds[idx]);
+            event->accept();
+            return;
+        }
+    }
+
     // Tap-to-play: laptop keyboard as MIDI controller (letter keys only)
     // Works even when video isn't playing — skip when Cmd/Ctrl is held
     if (m_playModeActive && !(event->modifiers() & Qt::ControlModifier)) {

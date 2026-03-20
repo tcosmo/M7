@@ -4,6 +4,7 @@
 #include <miniaudio/miniaudio.h>
 #include <atomic>
 #include <cstring>
+#include <QThread>
 
 #ifdef USE_MUSESCORE
 #include "engraving/dom/score.h"
@@ -169,30 +170,18 @@ bool PlayAlongSynth::loadSoundfont(const QString& path)
 
     stopNote();
 
-    // Mute audio callback to prevent deadlock with fluidsynth's internal mutex
-    g_synthMuted.store(true, std::memory_order_release);
+    // Use ensureSoundfont to load (cached — never unloads, never deadlocks)
+    int id = ensureSoundfont(path);
+    if (id < 0) return false;
 
-    // Unload previous soundfont (frees ~1GB for large GM soundfonts)
-    if (m_sfontId >= 0) {
-        fluid_synth_sfunload(fs(m_synth), m_sfontId, 1);
-        m_sfontId = -1;
-        m_currentSfontPath.clear();
-    }
-
-    m_sfontId = fluid_synth_sfload(fs(m_synth), path.toUtf8().constData(), 1);
-
-    g_synthMuted.store(false, std::memory_order_release);
-
-    if (m_sfontId < 0) {
-        qWarning() << "PlayAlongSynth: failed to load soundfont:" << path;
-        return false;
-    }
-
+    m_sfontId = id;
     m_currentSfontPath = path;
 
-    // Re-apply GM programs for existing voices
+    // Re-apply GM programs for existing voices using the new soundfont
     for (const auto& v : m_voices) {
-        fluid_synth_program_change(fs(m_synth), v.channel, v.gmProgram);
+        int bank = 0;
+        int prog = v.gmProgram % 128;
+        fluid_synth_program_select(fs(m_synth), v.channel, id, bank, prog);
     }
     setPitchOffset(m_pitchOffset);
 
@@ -223,6 +212,7 @@ int PlayAlongSynth::ensureSoundfont(const QString& path)
     // Mute audio callback during sfload to prevent deadlock
     // (fluidsynth's internal mutex conflicts with write_float on audio thread)
     g_synthMuted.store(true, std::memory_order_release);
+    QThread::msleep(20);
     int id = fluid_synth_sfload(fs(m_synth), path.toUtf8().constData(), 0); // 0 = don't reset
     g_synthMuted.store(false, std::memory_order_release);
     if (id < 0) {

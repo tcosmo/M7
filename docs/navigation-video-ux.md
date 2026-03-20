@@ -87,12 +87,14 @@ firing while browsing levels.
 The miniaudio audio callback runs on a separate thread, calling `fluid_synth_write_float` at ~60fps.
 FluidSynth's `sfload`/`sfunload` functions compete for the same internal mutex → **deadlock**.
 
-**Solution:** `static std::atomic<bool> g_synthMuted` in `playalongsynth.cpp`. Before any sfload/sfunload,
-set to `true`. The audio callback checks this and outputs silence instead of calling `write_float`.
-Set back to `false` after the operation.
+**Solution: never unload soundfonts.** Each soundfont is loaded once via `ensureSoundfont()` (cached
+by path in `m_loadedSfonts`). `loadSoundfont()` delegates to `ensureSoundfont()` then switches the
+active soundfont via `fluid_synth_program_select()` — instant, no lock contention.
 
-`loadSoundfont` also caches `m_currentSfontPath` to skip reloading the same soundfont.
-`ensureSoundfont` (multi-voice) caches in `m_loadedSfonts` map.
+First-time loads use `g_synthMuted` atomic flag + `QThread::msleep(20)` so the audio callback
+outputs silence while `fluid_synth_sfload` runs. RAM cost: ~1.1GB for both GM soundfonts.
+
+**NEVER call `fluid_synth_sfunload`.** It deadlocks with the audio thread.
 
 ## What Was Removed
 

@@ -650,8 +650,11 @@ void App::setupToolbar()
         // Re-enable cursor (resetScoreState hides it via hideCursor JS)
         if (m_trackingAction->isChecked()) {
             m_scoreWidget->setCursorVisible(true);
-            if (m_useVerovio)
+            if (m_useVerovio) {
                 m_scoreWidget->runWebJavaScript("showCursor()");
+                m_syncTimer->setTime(0);
+                m_scoreWidget->setCursorTick(m_syncTimer->currentTick());
+            }
         }
         playerSeekTo(0);
         playerPlay();
@@ -2600,8 +2603,10 @@ void App::switchInterpretation(int index)
         m_trackingButton->setEnabled(true);
         m_trackingAction->setChecked(true);
         m_scoreWidget->setCursorVisible(true);
-        if (m_useVerovio)
+        if (m_useVerovio) {
             m_scoreWidget->runWebJavaScript("showCursor()");
+            m_scoreWidget->setCursorTick(m_syncTimer->currentTick());
+        }
     } else {
         m_trackingAction->setChecked(false);
         m_trackingAction->setEnabled(false);
@@ -2806,8 +2811,11 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             m_trackingButton->setEnabled(true);
             m_trackingAction->setChecked(true);
             m_scoreWidget->setCursorVisible(true);
-            if (m_useVerovio)
+            if (m_useVerovio) {
                 m_scoreWidget->runWebJavaScript("showCursor()");
+                m_syncTimer->setTime(0);
+                m_scoreWidget->setCursorTick(m_syncTimer->currentTick());
+            }
         }
 
         // Hide the right sidebar by default for levels

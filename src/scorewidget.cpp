@@ -995,6 +995,8 @@ void ScoreWidget::setEngine(scoretracker::ScoreEngine* engine)
                     if (!ok || ver != m_timemapVersion) return;
                     m_webView->page()->runJavaScript(tmJs);
                     fetchNotePositions();
+                    // Show cursor at tick 0 immediately after timemap is ready
+                    setCursorTick(0);
                 });
         }
 

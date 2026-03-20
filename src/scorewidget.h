@@ -195,6 +195,7 @@ public:
     void setPlayModeActive(bool active);
     void highlightNoteIds(const QStringList& ids, int voice = 0, bool scroll = false);
     void runWebJavaScript(const QString& js);
+    void setMeasureTicks(const std::vector<int>& ticks);
     void setCursorTick(int tick);
     void overlayHighlight(int voice, const QString& elementId);
     void overlayClearHighlight(int voice);
@@ -206,12 +207,14 @@ signals:
     void zoomChanged(double zoom);
     void beatClicked(int beatIndex);
     void beatDoubleClicked(int beatIndex);
+    void noteClicked(const QString& elementId);
 
 public slots:
     void setCursorRect(const QRectF& rect, int pageIndex);
 
 protected:
     bool event(QEvent* event) override;
+    bool eventFilter(QObject* obj, QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
 
 private:

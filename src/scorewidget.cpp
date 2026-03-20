@@ -1003,6 +1003,10 @@ void ScoreWidget::setEngine(scoretracker::ScoreEngine* engine)
         m_webView->raise();
         m_canvas->hide();
 
+        // Install event filter on the web view's focus proxy to detect note clicks
+        if (m_webView->focusProxy())
+            m_webView->focusProxy()->installEventFilter(this);
+
         // Create overlay for QPainter-based highlights
         if (!m_overlay) {
             m_overlay = new WebScoreOverlay(this);
@@ -1103,6 +1107,26 @@ bool ScoreWidget::event(QEvent* event)
         }
     }
     return QScrollArea::event(event);
+}
+
+bool ScoreWidget::eventFilter(QObject* obj, QEvent* event)
+{
+    // Detect mouse clicks on the web view to find clicked notes
+    if (event->type() == QEvent::MouseButtonRelease && m_webView && m_webView->isVisible()) {
+        // Short delay so the JS click handler runs first
+        QTimer::singleShot(50, this, [this]() {
+            if (!m_webView) return;
+            m_webView->page()->runJavaScript(
+                QStringLiteral("getClickedNote()"),
+                [this](const QVariant& result) {
+                    QString noteId = result.toString();
+                    if (!noteId.isEmpty()) {
+                        emit noteClicked(noteId);
+                    }
+                });
+        });
+    }
+    return QScrollArea::eventFilter(obj, event);
 }
 
 void ScoreWidget::setCursorRect(const QRectF& rect, int pageIndex)
@@ -1395,6 +1419,18 @@ void ScoreWidget::runWebJavaScript(const QString& js)
 {
     if (m_webView && m_webView->isVisible())
         m_webView->page()->runJavaScript(js);
+}
+
+void ScoreWidget::setMeasureTicks(const std::vector<int>& ticks)
+{
+    if (!m_webView || !m_webView->isVisible()) return;
+    QString js = "setMeasureTicks([";
+    for (size_t i = 0; i < ticks.size(); ++i) {
+        if (i > 0) js += ",";
+        js += QString::number(ticks[i]);
+    }
+    js += "]);";
+    m_webView->page()->runJavaScript(js);
 }
 
 void ScoreWidget::setPlayModeActive(bool active)

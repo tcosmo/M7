@@ -103,6 +103,7 @@ public:
 
     // Returns the next note index for voice 0 (for external highlight management)
     int nextNoteIndex(int voiceIdx = 0) const;
+    void setNextNoteIndex(int voiceIdx, int index);
 
     // Returns the tick of the last played note (for recording tracking data)
     int lastPlayedTick(int voiceIdx = 0) const;

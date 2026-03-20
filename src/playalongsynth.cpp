@@ -469,6 +469,13 @@ int PlayAlongSynth::nextNoteIndex(int voiceIdx) const
     return m_voices[voiceIdx].nextIndex;
 }
 
+void PlayAlongSynth::setNextNoteIndex(int voiceIdx, int index)
+{
+    if (voiceIdx < 0 || voiceIdx >= static_cast<int>(m_voices.size())) return;
+    stopNote();
+    m_voices[voiceIdx].nextIndex = std::max(0, std::min(index, static_cast<int>(m_voices[voiceIdx].notes.size())));
+}
+
 void PlayAlongSynth::setGmProgram(int program)
 {
     // program may be encoded as bank*128 + preset

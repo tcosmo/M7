@@ -134,6 +134,25 @@ App::App(QWidget* parent)
     connect(m_syncTimer, &SyncTimer::cursorRectChanged,
             m_scoreWidget, &ScoreWidget::setCursorRect);
 
+    // Click on a note in the score → move the corresponding voice highlighter there
+    connect(m_scoreWidget, &ScoreWidget::noteClicked, this, [this](const QString& elementId) {
+        if (!m_playModeActive || m_vrvVoices.empty()) return;
+
+        // Find which voice and index this note belongs to
+        for (int vi = 0; vi < static_cast<int>(m_vrvVoices.size()); ++vi) {
+            auto& vv = m_vrvVoices[vi];
+            for (int ni = 0; ni < static_cast<int>(vv.elementIds.size()); ++ni) {
+                if (vv.elementIds[ni] == elementId) {
+                    // Move synth position and highlight to this note
+                    m_playAlongSynth->setNextNoteIndex(vi, ni);
+                    m_scoreWidget->overlayHighlight(vi, elementId);
+                    qDebug() << "Note clicked: voice" << vi << "index" << ni << "id" << elementId;
+                    return;
+                }
+            }
+        }
+    });
+
     connect(m_partPanel, &PartPanel::partsChanged, [this]() {
 #ifdef USE_MUSESCORE
         m_scoreWidget->setScore(m_score); // refresh
@@ -626,6 +645,8 @@ void App::setupToolbar()
     m_stopAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
     connect(m_stopAction, &QAction::triggered, this, [this]() {
         resetScoreState();
+        // Restart means we already played — don't trigger first-play reset again
+        m_hasPlayedInLevel = true;
         // Re-enable cursor (resetScoreState hides it)
         if (m_trackingAction->isChecked()) {
             m_scoreWidget->setCursorVisible(true);
@@ -703,12 +724,13 @@ void App::setupToolbar()
     });
 
     auto* volPopup = new QWidget(this, Qt::Popup);
-    volPopup->setFixedSize(36, 130);
+    volPopup->setFixedSize(46, 140);
     volPopup->setStyleSheet(QString(
         "background: %1; border: none; border-radius: 8px;"
     ).arg(Theme::panelBg().name()));
     auto* volLay = new QVBoxLayout(volPopup);
-    volLay->setContentsMargins(8, 8, 8, 8);
+    volLay->setContentsMargins(8, 10, 8, 10);
+    volLay->setAlignment(Qt::AlignCenter);
     volLay->addWidget(m_volumeSlider);
 
     connect(volButton, &QPushButton::clicked, this, [volButton, volPopup]() {
@@ -2913,6 +2935,20 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             // For Verovio, parts were filtered during loadScore — just set the engine
             // on the ScoreWidget to trigger web view rendering
             m_scoreWidget->setEngine(m_engine.get());
+            // Send measure start ticks from beat data for smooth cursor in silent measures
+            {
+                const auto& beatTicks = m_syncTimer->beatTicks();
+                int bpm = m_syncTimer->beatsPerMeasure();
+                if (bpm > 0 && !beatTicks.empty()) {
+                    std::vector<int> measureTicks;
+                    for (size_t i = 0; i < beatTicks.size(); i += bpm)
+                        measureTicks.push_back(beatTicks[i]);
+                    // Delay so the web view's loadFinished + timemap JS runs first
+                    QTimer::singleShot(500, m_scoreWidget, [this, measureTicks]() {
+                        m_scoreWidget->setMeasureTicks(measureTicks);
+                    });
+                }
+            }
             lap("setEngine (web view)");
         }
 
@@ -3387,8 +3423,8 @@ void App::keyPressEvent(QKeyEvent* event)
                               || (zone == "right" && isRight);
                     if (match) {
                         m_voiceKeysHeld[vi]++;
-                        // Game mode: measure distance BEFORE advancing (highlight is at current note)
-                        if (m_gameBar->isGameMode()) {
+                        // Game mode: only score when video is playing
+                        if (m_gameBar->isGameMode() && playerIsPlaying()) {
                             double dist = m_scoreWidget->highlightCursorDistance(vi);
                             if (dist >= 0) m_gameBar->recordHit(dist);
                         }
@@ -3409,8 +3445,8 @@ void App::keyPressEvent(QKeyEvent* event)
             } else {
                 // Single-voice Verovio
                 m_keysHeld++;
-                // Game mode: measure distance BEFORE advancing
-                if (m_gameBar->isGameMode()) {
+                // Game mode: only score when video is playing
+                if (m_gameBar->isGameMode() && playerIsPlaying()) {
                     double dist = m_scoreWidget->highlightCursorDistance(0);
                     if (dist >= 0) m_gameBar->recordHit(dist);
                 }

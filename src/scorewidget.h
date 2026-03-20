@@ -195,7 +195,6 @@ public:
     void setPlayModeActive(bool active);
     void highlightNoteIds(const QStringList& ids, int voice = 0, bool scroll = false);
     void runWebJavaScript(const QString& js);
-    void setMeasureTicks(const std::vector<int>& ticks);
     void setCursorTick(int tick);
     void overlayHighlight(int voice, const QString& elementId);
     void overlayClearHighlight(int voice);

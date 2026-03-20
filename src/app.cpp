@@ -2935,20 +2935,6 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
             // For Verovio, parts were filtered during loadScore — just set the engine
             // on the ScoreWidget to trigger web view rendering
             m_scoreWidget->setEngine(m_engine.get());
-            // Send measure start ticks from beat data for smooth cursor in silent measures
-            {
-                const auto& beatTicks = m_syncTimer->beatTicks();
-                int bpm = m_syncTimer->beatsPerMeasure();
-                if (bpm > 0 && !beatTicks.empty()) {
-                    std::vector<int> measureTicks;
-                    for (size_t i = 0; i < beatTicks.size(); i += bpm)
-                        measureTicks.push_back(beatTicks[i]);
-                    // Delay so the web view's loadFinished + timemap JS runs first
-                    QTimer::singleShot(500, m_scoreWidget, [this, measureTicks]() {
-                        m_scoreWidget->setMeasureTicks(measureTicks);
-                    });
-                }
-            }
             lap("setEngine (web view)");
         }
 

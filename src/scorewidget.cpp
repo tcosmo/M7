@@ -1421,18 +1421,6 @@ void ScoreWidget::runWebJavaScript(const QString& js)
         m_webView->page()->runJavaScript(js);
 }
 
-void ScoreWidget::setMeasureTicks(const std::vector<int>& ticks)
-{
-    if (!m_webView || !m_webView->isVisible()) return;
-    QString js = "setMeasureTicks([";
-    for (size_t i = 0; i < ticks.size(); ++i) {
-        if (i > 0) js += ",";
-        js += QString::number(ticks[i]);
-    }
-    js += "]);";
-    m_webView->page()->runJavaScript(js);
-}
-
 void ScoreWidget::setPlayModeActive(bool active)
 {
     m_playModeActive = active;

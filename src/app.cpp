@@ -310,7 +310,10 @@ void App::setupUI()
         m_instrumentPanelLayout->setSpacing(4);
 
         // Scan soundfonts directory
-        m_soundfontsDir = QCoreApplication::applicationDirPath() + "/../../resources/sounds";
+        QString bundleRes = QCoreApplication::applicationDirPath() + "/../Resources";
+        m_soundfontsDir = QDir(bundleRes + "/sounds").exists()
+            ? bundleRes + "/sounds"
+            : QCoreApplication::applicationDirPath() + "/../../resources/sounds";
         QDir sfDir(m_soundfontsDir);
         QStringList sfFiles = sfDir.entryList({"*.sf2", "*.sf3"}, QDir::Files, QDir::Name);
         for (const auto& fn : sfFiles) {
@@ -948,8 +951,9 @@ bool App::loadScore(const QString& musicXmlPath, const QList<int>& parts)
         if (!m_soundfontPaths.isEmpty()) {
             sf3Path = m_soundfontPaths.first();
         } else {
-            sf3Path = QCoreApplication::applicationDirPath()
-                + "/../../resources/sounds/MS Basic.sf3";
+            QString bRes = QCoreApplication::applicationDirPath() + "/../Resources/sounds/MS Basic.sf3";
+            sf3Path = QFile::exists(bRes) ? bRes
+                : QCoreApplication::applicationDirPath() + "/../../resources/sounds/MS Basic.sf3";
         }
         m_playAlongSynth->init(sf3Path);
 

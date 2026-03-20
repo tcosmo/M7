@@ -25,7 +25,8 @@ VerovioEngine::VerovioEngine()
     // Set resource path — look relative to the executable or in thirdparty
     QString appDir = QCoreApplication::applicationDirPath();
     QStringList candidates = {
-        appDir + "/../../thirdparty/verovio/data",
+        appDir + "/../Resources/verovio/data",        // macOS bundle
+        appDir + "/../../thirdparty/verovio/data",     // dev layout
         appDir + "/../share/verovio/data",
         appDir + "/verovio/data",
     };

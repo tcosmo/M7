@@ -203,7 +203,43 @@ if(USE_MUSESCORE)
     )
 endif()
 
-add_executable(playbach ${PLAYBACH_SOURCES})
+add_executable(playbach MACOSX_BUNDLE ${PLAYBACH_SOURCES})
+
+# macOS bundle configuration
+set_target_properties(playbach PROPERTIES
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_LIST_DIR}/resources/Info.plist.in"
+    MACOSX_BUNDLE_BUNDLE_NAME "PlayBach"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.mmmm.playbach"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+    MACOSX_BUNDLE_BUNDLE_VERSION "1"
+    OUTPUT_NAME "PlayBach"
+)
+
+# Copy resources into the bundle
+set(BUNDLE_RESOURCES_DIR "$<TARGET_BUNDLE_DIR:playbach>/Contents/Resources")
+
+# Icon
+set(ICON_FILE "${CMAKE_CURRENT_LIST_DIR}/resources/icons/PlayBach.icns")
+set_source_files_properties(${ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+target_sources(playbach PRIVATE ${ICON_FILE})
+
+# Copy resource directories after build
+add_custom_command(TARGET playbach POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_LIST_DIR}/resources/worlds"
+        "${BUNDLE_RESOURCES_DIR}/worlds"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_LIST_DIR}/resources/Magnificat"
+        "${BUNDLE_RESOURCES_DIR}/Magnificat"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_LIST_DIR}/resources/sounds"
+        "${BUNDLE_RESOURCES_DIR}/sounds"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_LIST_DIR}/thirdparty/verovio/data"
+        "${BUNDLE_RESOURCES_DIR}/verovio/data"
+    COMMENT "Copying resources into PlayBach.app bundle"
+)
 
 qt_add_resources(playbach "icons"
     PREFIX "/"

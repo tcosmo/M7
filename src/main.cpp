@@ -3,6 +3,7 @@
 #include <QWindow>
 #include <QDebug>
 #include <QFileInfo>
+#include <QDir>
 #include <QPalette>
 #include <QStackedWidget>
 #include <QStyleFactory>
@@ -246,8 +247,13 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Load worlds from resources directory
-    QString worldsDir = QCoreApplication::applicationDirPath() + "/../../resources/worlds";
+    // Load worlds from resources directory (bundle or dev layout)
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString bundleResources = appDir + "/../Resources";
+    QString devResources = appDir + "/../../resources";
+    QString worldsDir = QDir(bundleResources + "/worlds").exists()
+        ? bundleResources + "/worlds"
+        : devResources + "/worlds";
     app.loadWorlds(worldsDir);
 
     // --test-levels: automated level cycling test

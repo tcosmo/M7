@@ -2833,7 +2833,6 @@ void App::loadLevel(int worldIndex, int sectionIndex, int levelIndex)
                 handle->setEnabled(false);
             // Game mode only available when tracking data exists
             m_gameBar->setGameModeAvailable(!m_syncTimer->beatTimes().empty());
-            m_gameBar->setVoiceCount(static_cast<int>(m_vrvVoices.size()));
             m_gameBar->reset();
         }
 

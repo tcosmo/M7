@@ -82,6 +82,18 @@ When `m_centralStack->currentIndex() == 0` (navigation view), ALL keyboard event
 blocked (spacebar consumed silently). This prevents play-along synth key events from
 firing while browsing levels.
 
+## FluidSynth / Soundfont Thread Safety
+
+The miniaudio audio callback runs on a separate thread, calling `fluid_synth_write_float` at ~60fps.
+FluidSynth's `sfload`/`sfunload` functions compete for the same internal mutex → **deadlock**.
+
+**Solution:** `static std::atomic<bool> g_synthMuted` in `playalongsynth.cpp`. Before any sfload/sfunload,
+set to `true`. The audio callback checks this and outputs silence instead of calling `write_float`.
+Set back to `false` after the operation.
+
+`loadSoundfont` also caches `m_currentSfontPath` to skip reloading the same soundfont.
+`ensureSoundfont` (multi-voice) caches in `m_loadedSfonts` map.
+
 ## What Was Removed
 
 - Sidebar video (`setVideoWidget`, sidebar video container)

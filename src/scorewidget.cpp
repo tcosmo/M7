@@ -1344,18 +1344,19 @@ double ScoreWidget::highlightCursorDistance(int voice) const
     if (noteCenter.x() < 0) return -1;
     if (m_lastCursorX <= 0) return -1;
 
-    // Check if the note is on the same system as the cursor.
-    // The cursor's system bounds (top/bottom Y) come from JS _getSysBounds.
-    // If the note's Y falls outside those bounds, it's on a different system
-    // (system break) — treat as a hit since the player tapped on time.
-    if (m_cursorSysBottom > m_cursorSysTop) { // bounds are valid
-        double noteY = noteCenter.y();
-        if (noteY < m_cursorSysTop || noteY > m_cursorSysBottom) {
-            return 0.0; // different system → automatic hit
+    double dx = std::abs(noteCenter.x() - m_lastCursorX);
+
+    // System break grace: cursor is near the right edge of the page and note
+    // is near the left edge — this is the first note of a new system line.
+    // The raw dx would be huge but the player tapped on time.
+    if (m_canvas && m_canvas->engine()) {
+        double pageW = m_canvas->engine()->pageSize(0).width();
+        if (pageW > 0 && m_lastCursorX > pageW * 0.7 && noteCenter.x() < pageW * 0.3) {
+            return 0.0; // system break transition — forgive
         }
     }
 
-    return std::abs(noteCenter.x() - m_lastCursorX);
+    return dx;
 }
 
 void ScoreWidget::fetchNotePositions()

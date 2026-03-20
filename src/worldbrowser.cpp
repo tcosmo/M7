@@ -771,7 +771,7 @@ void LevelBrowser::rebuild()
             auto* hDiff = new QLabel("Difficulty"); hDiff->setFixedWidth(70); hDiff->setAlignment(Qt::AlignCenter); hDiff->setStyleSheet(hdrStyle);
             auto* hMyPlays = new QLabel("My Plays"); hMyPlays->setFixedWidth(60); hMyPlays->setAlignment(Qt::AlignCenter); hMyPlays->setStyleSheet(hdrStyle);
             auto* hTotal = new QLabel("Total Plays"); hTotal->setFixedWidth(75); hTotal->setAlignment(Qt::AlignCenter); hTotal->setStyleSheet(hdrStyle);
-            auto* hAcc = new QLabel("Accuracy"); hAcc->setFixedWidth(65); hAcc->setAlignment(Qt::AlignCenter); hAcc->setStyleSheet(hdrStyle);
+            auto* hAcc = new QLabel("Best Accuracy"); hAcc->setFixedWidth(95); hAcc->setAlignment(Qt::AlignCenter); hAcc->setStyleSheet(hdrStyle);
             auto* hPlay = new QLabel(""); hPlay->setFixedWidth(80);
             hl->addWidget(hNum); hl->addWidget(hTitle, 1); hl->addWidget(hInstr); hl->addWidget(hDiff); hl->addWidget(hMyPlays); hl->addWidget(hTotal); hl->addWidget(hAcc); hl->addWidget(hPlay);
             movLayout->addWidget(headerRow);
@@ -852,7 +852,7 @@ void LevelBrowser::rebuild()
 
             // Accuracy (placeholder — will come from player database)
             auto* accLabel = new QLabel("—");
-            accLabel->setFixedWidth(65);
+            accLabel->setFixedWidth(95);
             accLabel->setAlignment(Qt::AlignCenter);
             accLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(Theme::textHint().name()));
             rl->addWidget(accLabel);

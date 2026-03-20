@@ -1155,7 +1155,7 @@ void App::selectFileSource()
     playerPause();
 }
 
-bool App::loadBeatData(const QString& jsonPath)
+bool App::loadBeatData(const QString& jsonPath, double timeOffset)
 {
     m_beatDataPath = QFileInfo(jsonPath).absoluteFilePath();
 
@@ -1229,12 +1229,16 @@ bool App::loadBeatData(const QString& jsonPath)
         }
     }
 
+    // beatsOffset is applied in onPositionChanged, not to the beat data itself
+    Q_UNUSED(timeOffset);
+
     m_syncTimer->setBeatTimes(beatTimes, beatsPerMeasure);
     m_syncTimer->setBeatTicks(beatTicks);
     m_syncTimer->setMeasureStarts(measureStarts);
 
     qDebug() << "Loaded beat data:" << beatTimes.size() << "beats,"
-             << measureStarts.size() << "measures, beats_per_measure:" << beatsPerMeasure;
+             << measureStarts.size() << "measures, beats_per_measure:" << beatsPerMeasure
+             << "offset:" << timeOffset;
     return true;
 }
 
@@ -1290,8 +1294,9 @@ void App::onSeekSliderMoved(int value)
 
 void App::onPositionChanged(double seconds)
 {
-    // Adjust for interpretation start offset when coming from raw player position
-    double adjusted = std::max(0.0, seconds - m_interpStart);
+    // Adjust for interpretation start offset and beats offset
+    // beatsOffset delays when the beat data starts (positive = music starts later in video)
+    double adjusted = std::max(0.0, seconds - m_interpStart - m_beatsOffset);
 
     // Auto-pause at interpretation end
     if (m_interpEnd > 0 && seconds >= m_interpEnd && playerIsPlaying()) {
@@ -1520,6 +1525,7 @@ void App::loadSources(const QString& jsonPath)
     m_sourceInstrumentVols.clear();
     m_sourceVolumes.clear();
     m_sourceBeatsFiles.clear();
+    m_sourceBeatsOffsets.clear();
     m_sourceStartTimes.clear();
     m_sourceEndTimes.clear();
     m_sourceAudioFile.clear();
@@ -1542,6 +1548,7 @@ void App::loadSources(const QString& jsonPath)
                     m_sourceInstrumentVols.append(ytObj.contains("instrumentVolume") ? ytObj["instrumentVolume"].toInt() : -1);
                     m_sourceVolumes.append(ytObj.contains("volume") ? ytObj["volume"].toInt() : -1);
                     m_sourceBeatsFiles.append(ytObj.contains("beats") ? sourceDir.absoluteFilePath(ytObj["beats"].toString()) : QString());
+                    m_sourceBeatsOffsets.append(ytObj.value("beatsOffset").toDouble(0));
                     m_sourceStartTimes.append(ytObj.value("start").toDouble(0));
                     m_sourceEndTimes.append(ytObj.value("end").toDouble(0));
                 } else if (item.isString()) {
@@ -1551,6 +1558,7 @@ void App::loadSources(const QString& jsonPath)
                     m_sourceInstrumentVols.append(-1);
                     m_sourceVolumes.append(-1);
                     m_sourceBeatsFiles.append(QString());
+                    m_sourceBeatsOffsets.append(0);
                     m_sourceStartTimes.append(0);
                     m_sourceEndTimes.append(0);
                 }
@@ -1562,6 +1570,7 @@ void App::loadSources(const QString& jsonPath)
             m_sourceInstrumentVols.append(-1);
             m_sourceVolumes.append(-1);
             m_sourceBeatsFiles.append(QString());
+            m_sourceBeatsOffsets.append(0);
             m_sourceStartTimes.append(0);
             m_sourceEndTimes.append(0);
         }
@@ -1594,11 +1603,14 @@ void App::loadSources(const QString& jsonPath)
     // Apply initial start/end times
     m_activeInterpretation = sel;
     m_interpStart = (sel < m_sourceStartTimes.size()) ? m_sourceStartTimes[sel] : 0;
+    m_beatsOffset = (sel < m_sourceBeatsOffsets.size()) ? m_sourceBeatsOffsets[sel] : 0;
     m_interpEnd = (sel < m_sourceEndTimes.size()) ? m_sourceEndTimes[sel] : 0;
+    qDebug() << "loadSources: interpStart=" << m_interpStart << "beatsOffset=" << m_beatsOffset << "interpEnd=" << m_interpEnd;
 
     // Load per-interpretation beats (overrides section-level beats)
     if (sel < m_sourceBeatsFiles.size() && !m_sourceBeatsFiles[sel].isEmpty()) {
-        loadBeatData(m_sourceBeatsFiles[sel]);
+        double offset = (sel < m_sourceBeatsOffsets.size()) ? m_sourceBeatsOffsets[sel] : 0.0;
+        loadBeatData(m_sourceBeatsFiles[sel], offset);
         m_trackingButton->setEnabled(true);
     } else if (sel < m_sourceBeatsFiles.size()) {
         if (m_beatDataPath.isEmpty()) {
@@ -2591,6 +2603,7 @@ void App::switchInterpretation(int index)
 
     // Apply new interpretation's settings
     m_interpStart = (index < m_sourceStartTimes.size()) ? m_sourceStartTimes[index] : 0;
+    m_beatsOffset = (index < m_sourceBeatsOffsets.size()) ? m_sourceBeatsOffsets[index] : 0;
     m_interpEnd = (index < m_sourceEndTimes.size()) ? m_sourceEndTimes[index] : 0;
 
     if (index < m_sourceTunings.size())
@@ -2600,7 +2613,8 @@ void App::switchInterpretation(int index)
 
     // Load per-interpretation beat data
     if (index < m_sourceBeatsFiles.size() && !m_sourceBeatsFiles[index].isEmpty()) {
-        loadBeatData(m_sourceBeatsFiles[index]);
+        double offset = (index < m_sourceBeatsOffsets.size()) ? m_sourceBeatsOffsets[index] : 0.0;
+        loadBeatData(m_sourceBeatsFiles[index], offset);
         // setTime(0) now properly resets m_lastTick to first beat tick
         m_syncTimer->setTime(0);
         m_trackingAction->setEnabled(true);

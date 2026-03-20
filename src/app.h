@@ -64,7 +64,7 @@ public:
 #endif
     bool loadScore(const QString& musicXmlPath, const QList<int>& parts = {});
     bool loadAudio(const QString& audioPath);
-    bool loadBeatData(const QString& jsonPath);
+    bool loadBeatData(const QString& jsonPath, double timeOffset = 0.0);
     void loadYouTube(const QString& url, bool preview = false);
     void loadSources(const QString& jsonPath);
     void setVisibleParts(const QList<int>& partNumbers);
@@ -170,11 +170,13 @@ private:
     QList<int> m_sourceInstrumentVols; // per-interpretation instrument volume (0–150), -1 = use default
     QList<int> m_sourceVolumes;        // per-interpretation master volume (0–100), -1 = use default
     QStringList m_sourceBeatsFiles;    // per-interpretation beats JSON path, empty = no beats
+    QList<double> m_sourceBeatsOffsets; // per-interpretation beat time offset in seconds
     QList<double> m_sourceStartTimes;  // per-interpretation start offset in seconds, 0 = from beginning
     QList<double> m_sourceEndTimes;    // per-interpretation end time in seconds, 0 = no limit
     int m_activeInterpretation = 0;
     int m_preselectedInterpretation = 0;
     double m_interpStart = 0;          // active interpretation start offset
+    double m_beatsOffset = 0;          // active interpretation beat data time offset
     double m_interpEnd = 0;            // active interpretation end time (0 = no limit)
     QString m_sourceAudioFile;
     SyncTimer* m_syncTimer = nullptr;

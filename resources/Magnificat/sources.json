@@ -4,10 +4,13 @@
     "youtube": [
         {
             "beats": "./beatdata_jordi_savall.json",
+            "beatsOffset": 1.55,
+            "end": 176,
             "instrumentVolume": 140,
             "label": "Jordi Savall",
+            "start": 1,
             "tuning": -0.9,
-            "url": "https://www.youtube.com/watch?v=fUt88ImPV-E"
+            "url": "https://www.youtube.com/watch?v=zK9i1f3l-rU"
         },
         {
             "beats": "./beatdata_ton_koopman_amsterdam_baroque_orchestra_choir.json",
@@ -34,22 +37,6 @@
             "label": "Oxford Scholar Cantorum",
             "tuning": 0.1,
             "url": "https://www.youtube.com/watch?v=kYmaAS4NsPU"
-        },
-        {
-            "end": 203,
-            "instrumentVolume": 104,
-            "label": "Nikolaus Harnoncourt",
-            "start": 6,
-            "tuning": -0.8,
-            "url": "https://www.youtube.com/watch?v=41blIyHQ0hs"
-        },
-        {
-            "end": 175,
-            "instrumentVolume": 127,
-            "label": "Netherlands Bach Society",
-            "start": 7,
-            "tuning": -1,
-            "url": "https://www.youtube.com/watch?v=EsUWG2axB3w"
         }
     ]
 }

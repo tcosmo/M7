@@ -1129,8 +1129,13 @@ bool ScoreWidget::eventFilter(QObject* obj, QEvent* event)
         return true; // eat the matching release
     }
 
-    // Detect mouse clicks on the web view to find clicked notes
+    // Detect mouse clicks on the web view to find clicked notes.
+    // Also reclaim focus from Chromium so keyboard shortcuts keep working.
     if (event->type() == QEvent::MouseButtonRelease && m_webView && m_webView->isVisible()) {
+        // Reclaim focus from the web view after a short delay
+        QTimer::singleShot(100, this, [this]() {
+            if (window()) window()->setFocus();
+        });
         // Short delay so the JS click handler runs first
         QTimer::singleShot(50, this, [this]() {
             if (!m_webView) return;

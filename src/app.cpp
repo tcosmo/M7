@@ -89,6 +89,7 @@ App::App(QWidget* parent)
     setWindowTitle("PlayBach");
     resize(1250, 850);
 
+
     m_audioPlayer = new AudioPlayer(this);
     m_syncTimer = new SyncTimer(this);
 #ifdef USE_MUSESCORE
@@ -3421,6 +3422,10 @@ void App::keyPressEvent(QKeyEvent* event)
     // Tap-to-play: laptop keyboard as MIDI controller (letter keys only)
     // Overlap keys for legato, release all for noteoff
     // Arrow keys: move voice 0 highlighter left/right
+    if (m_playModeActive) {
+        // Reclaim focus from YouTube web view so arrow keys work after play-along
+        setFocus();
+    }
     if (m_playModeActive && !m_vrvVoices.empty() && !event->isAutoRepeat()) {
         if (event->key() == Qt::Key_Left || event->key() == Qt::Key_Right) {
             int idx = m_playAlongSynth->nextNoteIndex(0);

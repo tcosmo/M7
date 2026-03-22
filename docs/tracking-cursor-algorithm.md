@@ -153,8 +153,9 @@ When the note and cursor are on different systems (note Y outside `[cursorSysTop
 
 ## Tracking Button Connection
 
-- Cursor only updates when `m_trackingAction->isChecked()` is true
-- Toggling tracking off calls `hideCursor()` in JS
+- Cursor position always updates (needed for game scoring even with cursor hidden)
+- Cursor visibility controlled by `_cursorVisible` JS flag: `hideCursor()` / `showCursor()`
+- Toggling tracking off hides the cursor div but position data (`_cursorX`, system bounds) still updates
 - `resetScoreState()` hides cursor, resets sync timer, resets highlights
 
 ## Restart (Cmd+R) / Level Entry
@@ -203,3 +204,25 @@ Left/right arrow keys move voice 0's highlighter one note at a time:
 - Clamped to `[0, lastNoteIndex]`
 - Updates both `PlayAlongSynth::setNextNoteIndex(0, idx)` and `overlayHighlight(0, elementId)`
 - Only active when `m_playModeActive` is true
+
+## Focus Management
+
+YouTube's `QWebEngineView` steals keyboard focus when the user clicks on the video player.
+Once Chromium has focus, `App::keyPressEvent` never fires, breaking arrow keys and other shortcuts.
+
+**Solution:** `setFocus()` is called on the main window whenever the user presses a letter key
+for play-along. This reclaims focus from the YouTube web view without interfering with YouTube
+controls (no global key interception, respecting YouTube iframe ToS).
+
+Score web view clicks also reclaim focus via `window()->setFocus()` in `ScoreWidget::eventFilter`.
+
+## beatsOffset
+
+The `"beatsOffset"` field in `sources.json` shifts the beat data timing for interpretations
+where the beat data was recorded from a different video. Applied in `onPositionChanged`:
+
+```
+adjusted = max(0, videoSeconds - interpStart - beatsOffset)
+```
+
+Positive offset = music starts later in the new video than the beat data expects.
